@@ -16,23 +16,23 @@ defmodule Ch.Query do
 
   # TODO since these are executed in the caller, maybe it's better to do encoding / decoding here?
   defimpl DBConnection.Query do
-    def parse(query, opts) do
-      IO.inspect([query: query, opts: opts, pid: self()], label: "Query.parse")
+    def parse(query, _opts) do
+      # IO.inspect([query: query, opts: opts, pid: self()], label: "Query.parse")
       query
     end
 
-    def describe(query, opts) do
-      IO.inspect([query: query, opts: opts, pid: self()], label: "Query.describe")
+    def describe(query, _opts) do
+      # IO.inspect([query: query, opts: opts, pid: self()], label: "Query.describe")
       query
     end
 
-    def encode(query, params, opts) do
-      IO.inspect([query: query, params: params, opts: opts, pid: self()], label: "Query.encode")
+    def encode(_query, params, _opts) do
+      # IO.inspect([query: query, params: params, opts: opts, pid: self()], label: "Query.encode")
       params
     end
 
-    def decode(query, result, opts) do
-      IO.inspect([query: query, result: result, opts: opts, pid: self()], label: "Query.decode")
+    def decode(_query, result, _opts) do
+      # IO.inspect([query: query, result: result, opts: opts, pid: self()], label: "Query.decode")
       result
     end
   end

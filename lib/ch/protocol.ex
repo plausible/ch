@@ -1,7 +1,6 @@
 defmodule Ch.Protocol do
   @moduledoc false
   use DBConnection
-  alias String.Chars.NaiveDateTime
   alias Ch.Error
 
   @impl true
@@ -43,7 +42,7 @@ defmodule Ch.Protocol do
   @impl true
   def checkout(conn) do
     # TODO does repo (or is it db_connection) retry?
-    IO.inspect([pid: self()], label: "Protocol.checkout")
+    # IO.inspect([pid: self()], label: "Protocol.checkout")
 
     if Mint.HTTP1.open?(conn) do
       {:ok, conn}
@@ -73,8 +72,8 @@ defmodule Ch.Protocol do
   end
 
   @impl true
-  def handle_prepare(query, opts, conn) do
-    IO.inspect([query: query, opts: opts, pid: self()], label: "Protocol.handle_prepare")
+  def handle_prepare(query, _opts, conn) do
+    # IO.inspect([query: query, opts: opts, pid: self()], label: "Protocol.handle_prepare")
     {:ok, query, conn}
   end
 
@@ -82,10 +81,10 @@ defmodule Ch.Protocol do
 
   @impl true
   def handle_execute(query, params, opts, conn) do
-    IO.inspect(
-      [query: query, params: params, opts: opts, pid: self()],
-      label: "Protocol.handle_execute"
-    )
+    # IO.inspect(
+    #   [query: query, params: params, opts: opts, pid: self()],
+    #   label: "Protocol.handle_execute"
+    # )
 
     database = opts[:database] || Mint.HTTP1.get_private(conn, :database) || "default"
     %Ch.Query{statement: statement, command: command} = query
@@ -101,10 +100,11 @@ defmodule Ch.Protocol do
             |> NimbleCSV.RFC4180.dump_to_stream()
             |> Enum.into([])
 
-          [statement | csv]
+          # CSV with names?
+          [statement, " FORMAT CSV " | csv]
 
         _other ->
-          [statement]
+          [statement | " FORMAT CSVWithNamesAndTypes"]
       end
 
     path =
@@ -131,10 +131,36 @@ defmodule Ch.Protocol do
 
         case receive_stream(conn, ref) do
           {:ok, conn, [{:status, ^ref, 200}, _headers | responses]} ->
-            {:ok, query, collect_body(responses, ref), conn}
+            csv =
+              responses
+              |> collect_body(ref)
+              |> IO.iodata_to_binary()
 
-          {:ok, conn, [{:status, ^ref, status}, _headers | _responses]} ->
-            {:error, Error.exception("unexpected http status: #{status}"), conn}
+              # TODO types
+              |> NimbleCSV.RFC4180.parse_string(skip_headers: false)
+
+            result =
+              case command do
+                :insert ->
+                  csv
+
+                # result = decode_rows_from_csv(rows, header)
+                _other ->
+                  case csv do
+                    [_names, types | rows] ->
+                      types = atom_types(types)
+                      decode_rows(rows, types)
+
+                    _other ->
+                      csv
+                  end
+              end
+
+            {:ok, query, result, conn}
+
+          {:ok, conn, [{:status, ^ref, _status}, _headers | responses]} ->
+            error = collect_body(responses, ref) |> IO.iodata_to_binary()
+            {:error, Error.exception(error), conn}
 
           {:error, conn, error, _responses} ->
             {:disconnect, error, conn}
@@ -222,4 +248,26 @@ defmodule Ch.Protocol do
   end
 
   defp encode_value_for_csv(%s{} = d) when s in [Date, DateTime, NaiveDateTime], do: d
+
+  defp atom_types(["String" | rest]), do: [:string | atom_types(rest)]
+  defp atom_types(["UInt" <> _ | rest]), do: [:integer | atom_types(rest)]
+  defp atom_types(["Int" <> _ | rest]), do: [:integer | atom_types(rest)]
+  defp atom_types(["DateTime" | rest]), do: [:datetime | atom_types(rest)]
+  defp atom_types([] = done), do: done
+
+  defp decode_rows([row | rest], types) do
+    [decode_row(row, types) | decode_rows(rest, types)]
+  end
+
+  defp decode_rows([] = done, _types), do: done
+
+  defp decode_row([s | row], [:string | types]), do: [s | decode_row(row, types)]
+
+  defp decode_row([i | row], [:integer | types]),
+    do: [String.to_integer(i) | decode_row(row, types)]
+
+  defp decode_row([d | row], [:datetime | types]),
+    do: [NaiveDateTime.from_iso8601!(d) | decode_row(row, types)]
+
+  defp decode_row([] = done, []), do: done
 end
