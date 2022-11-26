@@ -1,7 +1,7 @@
 HTTP-based ClickHouse client.
 
 ```elixir
-iex> Mix.install [{:ch, github: "ruslandoga/ch"}]
+iex> Mix.install([{:ch, github: "ruslandoga/ch"}])
 
 iex> {:ok, conn} = Ch.start_link(scheme: "http", host: "localhost", port: 8123, database: "default")
 

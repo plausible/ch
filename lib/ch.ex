@@ -1,18 +1,22 @@
 defmodule Ch do
-  @moduledoc """
-  Documentation for `Ch`.
-  """
+  @moduledoc File.read!("README.md")
 
-  @doc """
-  Hello world.
+  def start_link(opts \\ []) do
+    DBConnection.start_link(Ch.Protocol, opts)
+  end
 
-  ## Examples
+  def child_spec(opts) do
+    DBConnection.child_spec(Ch.Protocol, opts)
+  end
 
-      iex> Ch.hello()
-      :world
+  def query(conn, statement, params \\ [], opts \\ []) do
+    with {:ok, _query, result} <- DBConnection.prepare_execute(conn, statement, params, opts) do
+      {:ok, result}
+    end
+  end
 
-  """
-  def hello do
-    :world
+  def query!(conn, statement, params \\ [], opts \\ []) do
+    {_query, result} = DBConnection.prepare_execute!(conn, statement, params, opts)
+    result
   end
 end

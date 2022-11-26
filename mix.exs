@@ -22,7 +22,9 @@ defmodule Ch.MixProject do
   defp deps do
     [
       {:mint, "~> 1.4"},
-      {:db_connection, "~> 2.4"}
+      {:db_connection, "~> 2.4"},
+      {:nimble_csv, "~> 1.2"},
+      {:jason, "~> 1.4"}
     ]
   end
 end
