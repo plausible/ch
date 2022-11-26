@@ -10,13 +10,17 @@ defmodule Ch do
   end
 
   def query(conn, statement, params \\ [], opts \\ []) do
-    with {:ok, _query, result} <- DBConnection.prepare_execute(conn, statement, params, opts) do
+    IO.inspect([pid: self()], label: "Ch.query")
+    query = Ch.Query.build(statement)
+
+    with {:ok, _query, result} <- DBConnection.prepare_execute(conn, query, params, opts) do
       {:ok, result}
     end
   end
 
   def query!(conn, statement, params \\ [], opts \\ []) do
-    {_query, result} = DBConnection.prepare_execute!(conn, statement, params, opts)
+    query = Ch.Query.build(statement)
+    {_query, result} = DBConnection.prepare_execute!(conn, query, params, opts)
     result
   end
 end

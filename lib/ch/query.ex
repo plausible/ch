@@ -1,6 +1,45 @@
 defmodule Ch.Query do
   @moduledoc false
-end
+  defstruct [:statement, :command]
 
-defimpl DBConnection.Query, for: Ch.Query do
+  def build(statement) do
+    build(statement, extract_command(statement))
+  end
+
+  def build(statement, command) do
+    %__MODULE__{statement: statement, command: command}
+  end
+
+  defp extract_command("INSERT " <> _rest), do: :insert
+  defp extract_command("insert " <> _rest), do: :insert
+  defp extract_command(_other), do: nil
+
+  # TODO since these are executed in the caller, maybe it's better to do encoding / decoding here?
+  defimpl DBConnection.Query do
+    def parse(query, opts) do
+      IO.inspect([query: query, opts: opts, pid: self()], label: "Query.parse")
+      query
+    end
+
+    def describe(query, opts) do
+      IO.inspect([query: query, opts: opts, pid: self()], label: "Query.describe")
+      query
+    end
+
+    def encode(query, params, opts) do
+      IO.inspect([query: query, params: params, opts: opts, pid: self()], label: "Query.encode")
+      params
+    end
+
+    def decode(query, result, opts) do
+      IO.inspect([query: query, result: result, opts: opts, pid: self()], label: "Query.decode")
+      result
+    end
+  end
+
+  defimpl String.Chars do
+    def to_string(%{statement: statement}) do
+      IO.iodata_to_binary(statement)
+    end
+  end
 end
