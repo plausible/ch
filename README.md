@@ -39,7 +39,7 @@ iex> Ch.query(conn, "ALTER TABLE example DELETE WHERE a < {a:Int8}", %{a: 100})
 {:ok, []}
 
 iex> Ch.query(conn, "SELECT count() FROM example")
-{:ok, [["0"]]}
+{:ok, [[0]]}
 
 iex> Ch.query(conn, "DROP TABLE example")
 {:ok, []}
