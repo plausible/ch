@@ -92,16 +92,7 @@ defmodule Ch.Protocol do
     body =
       case command do
         :insert ->
-          # TODO
-          # Mint.HTTP1.stream_request_body
-          csv =
-            params
-            |> Stream.map(fn row -> Enum.map(row, fn value -> encode_value_for_csv(value) end) end)
-            |> NimbleCSV.RFC4180.dump_to_stream()
-            |> Enum.into([])
-
-          # CSV with names?
-          [statement, " FORMAT CSV " | csv]
+          :stream
 
         _other ->
           [statement | " FORMAT CSVWithNamesAndTypes"]
@@ -126,44 +117,72 @@ defmodule Ch.Protocol do
     # TODO ok to POST for everything, does it make the query not a readonly?
     case Mint.HTTP1.request(conn, "POST", path, headers, body) do
       {:ok, conn, ref} ->
-        # body |> Stream.chunk_every()
-        # Mint.HTTP1.stream_request_body(conn, ref, )
+        maybe_stream =
+          case command do
+            :insert ->
+              csv =
+                params
+                |> Stream.map(fn row ->
+                  Enum.map(row, fn value -> encode_value_for_csv(value) end)
+                end)
+                |> NimbleCSV.RFC4180.dump_to_stream()
 
-        case receive_stream(conn, ref) do
-          {:ok, conn, [{:status, ^ref, 200}, _headers | responses]} ->
-            csv =
-              responses
-              |> collect_body(ref)
-              |> IO.iodata_to_binary()
+              # CSV with names?
+              Stream.concat([[statement | " FORMAT CSV "]], csv)
+              # |> Stream.chunk_every(100)
+              |> Enum.reduce_while({:ok, conn}, fn
+                chunk, {:ok, conn} -> {:cont, Mint.HTTP1.stream_request_body(conn, ref, chunk)}
+                _chunk, error -> {:halt, error}
+              end)
+              |> case do
+                {:ok, conn} ->
+                  Mint.HTTP1.stream_request_body(conn, ref, :eof)
 
-              # TODO types
-              |> NimbleCSV.RFC4180.parse_string(skip_headers: false)
-
-            result =
-              case command do
-                :insert ->
-                  csv
-
-                # result = decode_rows_from_csv(rows, header)
-                _other ->
-                  case csv do
-                    [_names, types | rows] ->
-                      types = atom_types(types)
-                      decode_rows(rows, types)
-
-                    _other ->
-                      csv
-                  end
+                {:halt, {:error, conn, error}} ->
+                  {:error, conn, error, []}
               end
 
-            {:ok, query, result, conn}
+            _other ->
+              {:ok, conn}
+          end
 
-          {:ok, conn, [{:status, ^ref, _status}, _headers | responses]} ->
-            error = collect_body(responses, ref) |> IO.iodata_to_binary()
-            {:error, Error.exception(error), conn}
+        with {:ok, conn} <- maybe_stream do
+          case receive_stream(conn, ref) do
+            {:ok, conn, [{:status, ^ref, 200}, _headers | responses]} ->
+              csv =
+                responses
+                |> collect_body(ref)
+                |> IO.iodata_to_binary()
 
-          {:error, conn, error, _responses} ->
-            {:disconnect, error, conn}
+                # TODO types
+                |> NimbleCSV.RFC4180.parse_string(skip_headers: false)
+
+              result =
+                case command do
+                  :insert ->
+                    csv
+
+                  # result = decode_rows_from_csv(rows, header)
+                  _other ->
+                    case csv do
+                      [_names, types | rows] ->
+                        types = atom_types(types)
+                        decode_rows(rows, types)
+
+                      _other ->
+                        csv
+                    end
+                end
+
+              {:ok, query, result, conn}
+
+            {:ok, conn, [{:status, ^ref, _status}, _headers | responses]} ->
+              error = collect_body(responses, ref) |> IO.iodata_to_binary()
+              {:error, Error.exception(error), conn}
+
+            {:error, conn, error, _responses} ->
+              {:disconnect, error, conn}
+          end
         end
 
       {:error, conn, reason} ->
