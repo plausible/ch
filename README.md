@@ -18,6 +18,12 @@ iex> Ch.query(conn, "SELECT 1 + {a:Int8}", %{a: 2})
 iex> Ch.query(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) engine=Memory")
 {:ok, []}
 
+iex> Ch.query(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) engine=Memory")
+{:error,
+ %Ch.Error{
+   message: "Code: 57. DB::Exception: Table default.example already exists. (TABLE_ALREADY_EXISTS) (version 22.10.1.1175 (official build))\n"
+ }}
+
 iex> Ch.query(conn, "SHOW TABLES")
 {:ok, [["example"]]}
 
