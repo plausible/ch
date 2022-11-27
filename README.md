@@ -1,4 +1,4 @@
-HTTP-based ClickHouse client. Uses [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) for inserts.
+HTTP-based ClickHouse client.
 
 Usage:
 
