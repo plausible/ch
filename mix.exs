@@ -25,7 +25,8 @@ defmodule Ch.MixProject do
       {:db_connection, "~> 2.4"},
       {:nimble_csv, "~> 1.2"},
       {:jason, "~> 1.4"},
-      {:benchee, "~> 1.1", only: [:bench]}
+      {:benchee, "~> 1.1", only: [:bench]},
+      {:dialyxir, "~> 1.2", onlt: [:dev], runtime: false}
     ]
   end
 end

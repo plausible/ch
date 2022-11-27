@@ -2,14 +2,15 @@ defmodule Ch.Query do
   @moduledoc false
   defstruct [:statement, :command]
 
-  def build(statement) do
-    build(statement, extract_command(statement))
+  def build(statement, opts \\ []) do
+    _build(statement, opts[:command] || extract_command(statement))
   end
 
-  def build(statement, command) do
+  defp _build(statement, command) do
     %__MODULE__{statement: statement, command: command}
   end
 
+  # TODO add iolist support ["i" | [["NSE", "RT"]]], etc.
   defp extract_command("INSERT " <> _rest), do: :insert
   defp extract_command("insert " <> _rest), do: :insert
   defp extract_command(_other), do: nil

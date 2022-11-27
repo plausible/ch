@@ -16,21 +16,11 @@ iex> Ch.query(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) engine
 {:ok, []}
 
 iex> Ch.query(conn, "SHOW TABLES")
-{:ok,
- [
-   [".inner_id.a4735445-0110-498c-851c-1ee93453a644"],
-   ["example"],
-   ["material_view"]
- ]}
+{:ok, [["example"]]}
 
-iex> to_insert = [
-...>   [1, "1", ~N[2022-11-26 09:38:24]],
-...>   [2, "2", ~N[2022-11-26 09:38:25]],
-...>   [3, "3", ~N[2022-11-26 09:38:26]]
-...> ]
-
-iex> Ch.query(conn, "INSERT INTO example(a, b, c)", to_insert)
-{:ok, []}
+iex> enumerable = [[1, "1", ~N[2022-11-26 09:38:24]], [2, "2", ~N[2022-11-26 09:38:25]], [3, "3", ~N[2022-11-26 09:38:26]]]
+iex> Ch.query(conn, "INSERT INTO example(a, b, c)", enumerable)
+{:ok, _rows_written = 3}
 
 iex> Ch.query(conn, "SELECT * FROM example WHERE a > {a:Int8}", %{a: 1})
 {:ok, [[2, "2", ~N[2022-11-26 09:38:25]], [3, "3", ~N[2022-11-26 09:38:26]]]}
@@ -41,13 +31,21 @@ iex> Ch.query(conn, "ALTER TABLE example DELETE WHERE a < {a:Int8}", %{a: 100})
 iex> Ch.query(conn, "SELECT count() FROM example")
 {:ok, [[0]]}
 
+iex> File.write!("example.csv", "1,1,2022-11-26 09:38:24\n2,2,2022-11-26 09:38:25\n3,3,2022-11-26 09:38:26")
+iex> Ch.query(conn, "INSERT INTO example(a, b, c)", File.stream!("example.csv"), format: "CSV")
+{:ok, _rows_written = 3}
+
+iex> File.write!("example.csv", "a,b,c\n1,1,2022-11-26 09:38:24\n2,2,2022-11-26 09:38:25\n3,3,2022-11-26 09:38:26")
+iex> Ch.query(conn, "INSERT INTO example", File.stream!("example.csv"), format: "CSVWithNames")
+{:ok, _rows_written = 3}
+
+iex> Ch.query(conn, "SELECT count() FROM {table:Identifier}", %{"table" => "example"})
+{:ok, [[6]]}
+
+iex> File.rm!("example.csv")
 iex> Ch.query(conn, "DROP TABLE example")
 {:ok, []}
 
 iex> Ch.query(conn, "SHOW TABLES")
-{:ok,
- [
-   [".inner_id.a4735445-0110-498c-851c-1ee93453a644"],
-   ["material_view"]
- ]}
+{:ok, []}
 ```
