@@ -217,7 +217,7 @@ defmodule Ch.Protocol do
         ok
 
       # TODO headers have error code, use that
-      {:ok, _conn, [_status, _headers | responses]} ->
+      {:ok, conn, [_status, _headers | responses]} ->
         error = responses |> collect_body(ref) |> IO.iodata_to_binary()
         {:error, Error.exception(error), conn}
 
