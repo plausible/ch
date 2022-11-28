@@ -12,8 +12,8 @@ iex> Ch.query(conn, "SELECT 1 + 1")
 {:ok, [[2]]}
 
 # https://clickhouse.com/docs/en/interfaces/http/#cli-queries-with-parameters
-iex> Ch.query(conn, "SELECT 1 + {a:Int8}", %{a: 2})
-{:ok, [[3]]}
+Ch.query(pid, "SELECT {a:Array(UInt8)}, {b:UInt8}, {c:String}, {d:DateTime}", %{a: [1,2], b: 123, c: "123", d: NaiveDateTime.truncate(NaiveDateTime.utc_now(), :second)})
+{:ok, [[[1, 2], 123, "123", ~N[2022-11-28 02:45:49]]]}
 
 iex> Ch.query(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) engine=Memory")
 {:ok, []}

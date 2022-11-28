@@ -98,7 +98,7 @@ defmodule Ch.Protocol do
 
     qs =
       params
-      |> Map.new(fn {k, v} -> {"param_#{k}", v} end)
+      |> Map.new(fn {k, v} -> {"param_#{k}", encode(v)} end)
       |> URI.encode_query()
 
     path = "/?" <> qs
@@ -168,7 +168,7 @@ defmodule Ch.Protocol do
       when is_list(rows) or is_struct(rows, Stream) do
     csv_stream =
       rows
-      |> Stream.map(fn row -> Enum.map(row, fn val -> encode_value_for_csv(val) end) end)
+      |> Stream.map(fn row -> Enum.map(row, fn val -> encode(val) end) end)
       |> NimbleCSV.RFC4180.dump_to_stream()
 
     opts = [{:format, "CSV"} | List.keydelete(opts, :format, 0)]
@@ -276,21 +276,36 @@ defmodule Ch.Protocol do
 
   defp collect_body([{:done, ref}], ref), do: []
 
-  # TODO
-  defp encode_value_for_csv(n) when is_number(n), do: n
-  defp encode_value_for_csv(b) when is_binary(b), do: b
+  defp encode(n) when is_number(n), do: n
+  defp encode(b) when is_binary(b), do: b
+  defp encode(%s{} = d) when s in [Date, DateTime, NaiveDateTime], do: d
 
-  defp encode_value_for_csv(l) when is_list(l) do
-    ["Array(", l |> Enum.map(&encode_value_for_csv/1) |> Enum.intersperse(","), ")"]
+  defp encode(a) when is_list(a) do
+    IO.iodata_to_binary([?[, encode_array(a), ?]])
   end
 
-  defp encode_value_for_csv(%s{} = d) when s in [Date, DateTime, NaiveDateTime], do: d
+  defp encode_array([s | rest]) when is_binary(s) do
+    [?', escape_array(s), "'," | encode_array(rest)]
+  end
 
-  defp atom_types(["String" | rest]), do: [:string | atom_types(rest)]
-  defp atom_types(["UInt" <> _ | rest]), do: [:integer | atom_types(rest)]
-  defp atom_types(["Int" <> _ | rest]), do: [:integer | atom_types(rest)]
-  defp atom_types(["DateTime" | rest]), do: [:datetime | atom_types(rest)]
+  defp encode_array([i | rest]) when is_integer(i) do
+    [to_string(i), "," | encode_array(rest)]
+  end
+
+  defp encode_array([]), do: []
+
+  # TODO
+  defp escape_array(s), do: String.replace(s, "'", "\\'")
+
+  defp atom_types([type | rest]), do: [atom_type(type) | atom_types(rest)]
   defp atom_types([] = done), do: done
+
+  defp atom_type("String" <> _), do: :string
+  defp atom_type("UInt" <> _), do: :integer
+  defp atom_type("Int" <> _), do: :integer
+  defp atom_type("DateTime" <> _), do: :datetime
+  defp atom_type("Date" <> _), do: :date
+  defp atom_type("Array(" <> inner_type), do: {:array, atom_type(inner_type)}
 
   defp decode_rows([row | rest], types) do
     [decode_row(types, row) | decode_rows(rest, types)]
@@ -298,17 +313,34 @@ defmodule Ch.Protocol do
 
   defp decode_rows([] = done, _types), do: done
 
-  defp decode_row([:string | types], [s | row]) do
-    [s | decode_row(row, types)]
-  end
-
-  defp decode_row([:integer | types], [i | row]) do
-    [String.to_integer(i) | decode_row(row, types)]
-  end
-
-  defp decode_row([:datetime | types], [d | row]) do
-    [NaiveDateTime.from_iso8601!(d) | decode_row(row, types)]
+  defp decode_row([t | types], [v | row]) do
+    [decode_value(t, v) | decode_row(types, row)]
   end
 
   defp decode_row([] = done, []), do: done
+
+  # TODO
+  defp decode_array("," <> rest, type, inner_acc, acc) do
+    decode_array(rest, type, "", [decode_value(type, inner_acc) | acc])
+  end
+
+  defp decode_array("]" <> rest, type, inner_acc, acc) do
+    decode_array(rest, type, "", [decode_value(type, inner_acc) | acc])
+  end
+
+  defp decode_array("[" <> rest, type, inner_acc, acc) do
+    decode_array(rest, type, inner_acc, acc)
+  end
+
+  defp decode_array(<<v, rest::bytes>>, type, inner_acc, acc) do
+    decode_array(rest, type, <<inner_acc::bytes, v>>, acc)
+  end
+
+  defp decode_array("", _type, "", acc), do: :lists.reverse(acc)
+
+  defp decode_value(:string, s), do: s
+  defp decode_value(:integer, i), do: String.to_integer(i)
+  defp decode_value(:datetime, dt), do: NaiveDateTime.from_iso8601!(dt)
+  defp decode_value(:date, d), do: Date.from_iso8601!(d)
+  defp decode_value({:array, t}, a), do: decode_array(a, t, "", [])
 end
