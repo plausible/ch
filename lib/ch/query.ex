@@ -11,8 +11,8 @@ defmodule Ch.Query do
   end
 
   # TODO add iolist support ["i" | [["NSE", "RT"]]], etc.
-  defp extract_command("INSERT " <> _rest), do: :insert
-  defp extract_command("insert " <> _rest), do: :insert
+  defp extract_command("INSERT" <> _rest), do: :insert
+  defp extract_command("insert" <> _rest), do: :insert
   defp extract_command(_other), do: nil
 
   # TODO since these are executed in the caller, maybe it's better to do encoding / decoding here?

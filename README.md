@@ -28,9 +28,9 @@ iex> Ch.query(conn, "SHOW TABLES")
 {:ok, [["example"]]}
 
 # inserts support Enumerable.t, meaning lists or streams
-# by default the enumerable is encoded to a CSV stream and sent as a chunked request with chunk=row
+# by default the enumerable is encoded to a RowBinary stream and sent as a chunked request with chunk=row
 iex> enumerable = [[1, "1", ~N[2022-11-26 09:38:24]], [2, "2", ~N[2022-11-26 09:38:25]], [3, "3", ~N[2022-11-26 09:38:26]]]
-iex> Ch.query(conn, "INSERT INTO example(a, b, c)", enumerable)
+iex> Ch.query(conn, "INSERT INTO example(a, b, c)", enumerable, types: [:u32, :string, :datetime])
 {:ok, _rows_written = 3}
 
 iex> Ch.query(conn, "SELECT * FROM example WHERE a > {a:Int8}", %{a: 1})
@@ -42,7 +42,7 @@ iex> Ch.query(conn, "ALTER TABLE example DELETE WHERE a < {a:Int8}", %{a: 100})
 iex> Ch.query(conn, "SELECT count() FROM example")
 {:ok, [[0]]}
 
-# %File.Stream{} is not encoded as is sent as is
+# if :format is supplied, no encoding is done and the stream is sent as is
 iex> File.write!("example.csv", "1,1,2022-11-26 09:38:24\n2,2,2022-11-26 09:38:25\n3,3,2022-11-26 09:38:26")
 iex> Ch.query(conn, "INSERT INTO example(a, b, c)", File.stream!("example.csv"), format: "CSV")
 {:ok, _rows_written = 3}
