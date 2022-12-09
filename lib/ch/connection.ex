@@ -74,13 +74,14 @@ defmodule Ch.Connection do
       # TODO or lists:keyfind
       raw_summary = :proplists.get_value("x-clickhouse-summary", headers, nil)
 
+      # TODO DRY
       written_rows =
         if raw_summary do
           %{"written_rows" => written_rows} = Jason.decode!(raw_summary)
           String.to_integer(written_rows)
         end
 
-      {:ok, query, written_rows, conn}
+      {:ok, query, %{num_rows: written_rows, rows: []}, conn}
     end
   end
 
@@ -92,9 +93,18 @@ defmodule Ch.Connection do
     # TODO ok to POST for everything, does it make the query not a readonly?
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), body),
          {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
-      [_status, _headers | responses] = responses
-      decoded = responses |> collect_body(ref) |> IO.iodata_to_binary() |> maybe_decode_csv()
-      {:ok, query, decoded, conn}
+      [_status, {:headers, _ref, _headers} | responses] = responses
+      # raw_summery = :proplists.get_value("x-clickhouse-summary", headers, nil)
+      rows = responses |> collect_body(ref) |> IO.iodata_to_binary() |> maybe_decode_csv()
+
+      # TODO DRY
+      # num_rows =
+      #   if raw_summery do
+      #     %{"read_rows" => read_rows} = Jason.decode!(raw_summery) |> IO.inspect()
+      #     String.to_integer(read_rows)
+      #   end || length(rows)
+
+      {:ok, query, %{num_rows: length(rows), rows: rows}, conn}
     end
   end
 
