@@ -87,13 +87,7 @@ defmodule Ch.Connection do
   def handle_execute(query, params, opts, conn) do
     %Ch.Query{statement: statement} = query
     body = [statement, " FORMAT CSVWithNamesAndTypes"]
-
-    qs =
-      params
-      |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end)
-      |> URI.encode_query()
-
-    path = "/?" <> qs
+    path = "/?" <> encode_params_qs(params)
 
     # TODO ok to POST for everything, does it make the query not a readonly?
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), body),
@@ -258,6 +252,22 @@ defmodule Ch.Connection do
   end
 
   defp collect_body([{:done, ref}], ref), do: []
+
+  # TODO support just one approach?
+  defp encode_params_qs(params) when is_map(params) do
+    params |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end) |> URI.encode_query()
+  end
+
+  defp encode_params_qs([{_k, _v} | _] = params) do
+    params |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end) |> URI.encode_query()
+  end
+
+  defp encode_params_qs(params) when is_list(params) do
+    params
+    |> Enum.with_index()
+    |> Map.new(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
+    |> URI.encode_query()
+  end
 
   defp encode_param(n) when is_number(n), do: n
   defp encode_param(b) when is_binary(b), do: b

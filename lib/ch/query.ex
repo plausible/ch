@@ -10,7 +10,7 @@ defmodule Ch.Query do
     %__MODULE__{statement: statement, command: command}
   end
 
-  # TODO add iolist support ["i" | [["NSE", "RT"]]], etc.
+  # TODO add iolist support [" i" | [["NSE", "RT"]]], etc.
   defp extract_command("INSERT" <> _rest), do: :insert
   defp extract_command("insert" <> _rest), do: :insert
   defp extract_command(_other), do: nil
