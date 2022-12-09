@@ -1,5 +1,6 @@
 defmodule Ch.Protocol do
   @moduledoc false
+  # @compile {:bin_opt_info, true}
   import Bitwise
   @epoch_date ~D[1970-01-01]
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
@@ -51,16 +52,16 @@ defmodule Ch.Protocol do
 
   def decode_rows(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
 
-  defp skip_names(rest, 0, count), do: decode_types(rest, count, _acc = [])
+  defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
 
   # TODO proper varint
   defp skip_names(<<0::1, v::7, _::size(v)-bytes, rest::bytes>>, left, count) do
     skip_names(rest, left - 1, count)
   end
 
-  defp decode_types(rows, 0, types) do
+  defp decode_types(<<rest::bytes>>, 0, types) do
     types = :lists.reverse(types)
-    _decode_rows(rows, types, [], [], types)
+    _decode_rows(rest, types, [], [], types)
   end
 
   # TODO uf
@@ -142,7 +143,7 @@ defmodule Ch.Protocol do
     _decode_array(rest, type, count, [], inner_types, inner_acc, outer_acc, types)
   end
 
-  defp _decode_rows(rest, [], row, outer_acc, types) do
+  defp _decode_rows(<<rest::bytes>>, [], row, outer_acc, types) do
     _decode_rows(rest, types, [], [:lists.reverse(row) | outer_acc], types)
   end
 
@@ -150,7 +151,16 @@ defmodule Ch.Protocol do
     :lists.reverse(rows)
   end
 
-  defp _decode_array(rest, _type, _count = 0, array, inner_types, inner_acc, outer_acc, types) do
+  defp _decode_array(
+         <<rest::bytes>>,
+         _type,
+         _count = 0,
+         array,
+         inner_types,
+         inner_acc,
+         outer_acc,
+         types
+       ) do
     _decode_rows(rest, inner_types, [:lists.reverse(array) | inner_acc], outer_acc, types)
   end
 
