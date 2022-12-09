@@ -70,11 +70,9 @@ defmodule Ch.Connection do
          {:ok, conn} <- stream_body(conn, ref, statement, params, opts),
          {:ok, conn, responses} <- receive_stream(conn, ref) do
       [_status, {:headers, _ref, headers} | _responses] = responses
-
       # TODO or lists:keyfind
       raw_summary = :proplists.get_value("x-clickhouse-summary", headers, nil)
 
-      # TODO DRY
       written_rows =
         if raw_summary do
           %{"written_rows" => written_rows} = Jason.decode!(raw_summary)
@@ -87,20 +85,26 @@ defmodule Ch.Connection do
 
   def handle_execute(query, params, opts, conn) do
     %Ch.Query{statement: statement} = query
-    body = [statement, " FORMAT CSVWithNamesAndTypes"]
+    # TODO names are useless, but there is no RowBinaryWithTypes
+    body = [statement, " FORMAT RowBinaryWithNamesAndTypes"]
     path = "/?" <> encode_params_qs(params)
 
     # TODO ok to POST for everything, does it make the query not a readonly?
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), body),
          {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
-      [_status, {:headers, _ref, _headers} | responses] = responses
-      # raw_summery = :proplists.get_value("x-clickhouse-summary", headers, nil)
-      rows = responses |> collect_body(ref) |> IO.iodata_to_binary() |> maybe_decode_csv()
+      [_status, _headers | responses] = responses
 
-      # TODO DRY
+      rows =
+        responses
+        |> collect_body(ref)
+        |> IO.iodata_to_binary()
+        # TODO decode as data comes in?
+        |> Protocol.decode_rows()
+
+      # TODO
       # num_rows =
-      #   if raw_summery do
-      #     %{"read_rows" => read_rows} = Jason.decode!(raw_summery) |> IO.inspect()
+      #   if raw_summary do
+      #     %{"read_rows" => read_rows} = Jason.decode!(raw_summary) |> IO.inspect()
       #     String.to_integer(read_rows)
       #   end || length(rows)
 
@@ -191,13 +195,6 @@ defmodule Ch.Connection do
     end
   end
 
-  def maybe_decode_csv(csv) do
-    case NimbleCSV.RFC4180.parse_string(csv, skip_headers: false) do
-      [_names, types | rows] -> decode_rows(rows, atom_types(types))
-      [] = empty -> empty
-    end
-  end
-
   defp receive_stream(conn, ref, opts \\ []) do
     case receive_stream(conn, ref, [], opts) do
       {:ok, _conn, [{:status, _ref, 200} | _rest]} = ok ->
@@ -279,8 +276,9 @@ defmodule Ch.Connection do
     |> URI.encode_query()
   end
 
-  defp encode_param(n) when is_number(n), do: n
+  defp encode_param(n) when is_number(n), do: Integer.to_string(n)
   defp encode_param(b) when is_binary(b), do: b
+  defp encode_param(f) when is_float(f), do: Float.to_string(f)
   defp encode_param(%s{} = d) when s in [Date, DateTime, NaiveDateTime], do: d
 
   defp encode_param(a) when is_list(a) do
@@ -288,62 +286,13 @@ defmodule Ch.Connection do
   end
 
   defp encode_array_param([s | rest]) when is_binary(s) do
-    [?', escape_array_param(s), "'," | encode_array_param(rest)]
+    # TODO faster escaping
+    [?', String.replace(s, "'", "\\'"), "'," | encode_array_param(rest)]
   end
 
-  defp encode_array_param([i | rest]) when is_integer(i) do
-    [to_string(i), "," | encode_array_param(rest)]
+  defp encode_array_param([el | rest]) do
+    [encode_param(el), "," | encode_array_param(rest)]
   end
 
-  defp encode_array_param([]), do: []
-
-  # TODO
-  defp escape_array_param(s), do: String.replace(s, "'", "\\'")
-
-  defp atom_types([type | rest]), do: [atom_type(type) | atom_types(rest)]
-  defp atom_types([] = done), do: done
-
-  defp atom_type("String" <> _), do: :string
-  defp atom_type("UInt" <> _), do: :integer
-  defp atom_type("Int" <> _), do: :integer
-  defp atom_type("DateTime" <> _), do: :datetime
-  defp atom_type("Date" <> _), do: :date
-  defp atom_type("Array(" <> inner_type), do: {:array, atom_type(inner_type)}
-
-  defp decode_rows([row | rest], types) do
-    [decode_row(types, row) | decode_rows(rest, types)]
-  end
-
-  defp decode_rows([] = done, _types), do: done
-
-  defp decode_row([t | types], [v | row]) do
-    [decode_value(t, v) | decode_row(types, row)]
-  end
-
-  defp decode_row([] = done, []), do: done
-
-  # TODO
-  defp decode_array("," <> rest, type, inner_acc, acc) do
-    decode_array(rest, type, "", [decode_value(type, inner_acc) | acc])
-  end
-
-  defp decode_array("]" <> rest, type, inner_acc, acc) do
-    decode_array(rest, type, "", [decode_value(type, inner_acc) | acc])
-  end
-
-  defp decode_array("[" <> rest, type, inner_acc, acc) do
-    decode_array(rest, type, inner_acc, acc)
-  end
-
-  defp decode_array(<<v, rest::bytes>>, type, inner_acc, acc) do
-    decode_array(rest, type, <<inner_acc::bytes, v>>, acc)
-  end
-
-  defp decode_array("", _type, "", acc), do: :lists.reverse(acc)
-
-  defp decode_value(:string, s), do: s
-  defp decode_value(:integer, i), do: String.to_integer(i)
-  defp decode_value(:datetime, dt), do: NaiveDateTime.from_iso8601!(dt)
-  defp decode_value(:date, d), do: Date.from_iso8601!(d)
-  defp decode_value({:array, t}, a), do: decode_array(a, t, "", [])
+  defp encode_array_param([] = done), do: done
 end
