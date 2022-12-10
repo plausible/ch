@@ -8,12 +8,17 @@ defmodule Ch.Protocol do
   def encode_row([el | els], [type | types]), do: [encode(type, el) | encode_row(els, types)]
   def encode_row([] = done, []), do: done
 
-  def encode_rows([row | rows], types), do: [encode_row(row, types) | encode_rows(rows, types)]
+  def encode_rows([row | rows], types), do: encode_rows(row, types, rows, types)
   def encode_rows([] = done, _types), do: done
 
-  # TODO
-  def encode(:varint, num) when num < 128, do: <<num>>
-  def encode(:varint, num), do: <<1::1, num::7, encode(:varint, num >>> 7)::bytes>>
+  defp encode_rows([el | els], [t | ts], rows, types) do
+    [encode(t, el) | encode_rows(els, ts, rows, types)]
+  end
+
+  defp encode_rows([], [], rows, types), do: encode_rows(rows, types)
+
+  def encode(:varint, num) when num < 128, do: num
+  def encode(:varint, num), do: [<<1::1, num::7>> | encode(:varint, num >>> 7)]
 
   def encode(:string, str) do
     [encode(:varint, byte_size(str)) | str]
@@ -32,8 +37,8 @@ defmodule Ch.Protocol do
   def encode(:f64, f), do: <<f::64-little-signed-float>>
   def encode(:f32, f), do: <<f::32-little-signed-float>>
 
-  def encode(:boolean, true), do: encode(:u8, 1)
-  def encode(:boolean, false), do: encode(:u8, 0)
+  def encode(:boolean, true), do: <<1::little>>
+  def encode(:boolean, false), do: <<0::little>>
 
   def encode({:array, type}, l) do
     [encode(:varint, length(l)) | encode_many(l, type)]
