@@ -106,6 +106,10 @@ defmodule Ch.Protocol do
     end
   end
 
+  for {raw, type} <- types do
+    def dump_type(unquote(type)), do: unquote(raw)
+  end
+
   patterns = [
     # TODO proper varint
     {quote(do: <<0::1, v::7, s::size(v)-bytes>>), :string, quote(do: s)},
