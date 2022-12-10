@@ -147,9 +147,9 @@ defmodule Ch.Connection do
 
   defp headers(conn, opts) do
     []
-    |> maybe_put_header("username", get_opts_or_private(conn, opts, :username))
-    |> maybe_put_header("password", get_opts_or_private(conn, opts, :password))
-    |> maybe_put_header("database", get_opts_or_private(conn, opts, :database))
+    |> maybe_put_header("x-clickhouse-user", get_opts_or_private(conn, opts, :username))
+    |> maybe_put_header("x-clickhouse-key", get_opts_or_private(conn, opts, :password))
+    |> maybe_put_header("x-clickhouse-database", get_opts_or_private(conn, opts, :database))
   end
 
   defp maybe_put_header(headers, _k, nil), do: headers
