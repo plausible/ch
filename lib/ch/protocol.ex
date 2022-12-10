@@ -70,7 +70,6 @@ defmodule Ch.Protocol do
     _decode_rows(rest, types, [], [], types)
   end
 
-  # TODO uf
   types = [
     {"String", :string},
     {"UInt8", :u8},
@@ -85,6 +84,10 @@ defmodule Ch.Protocol do
     {"Float64", :f64},
     {"Date", :date},
     {"DateTime", :datetime},
+    # TODO
+    {"LowCardinality(String)", :string},
+    {"LowCardinality(FixedString(2))", {:string, 2}},
+    # TODO
     {"Array(String)", {:array, :string}},
     {"Array(UInt8)", {:array, :u8}},
     {"Array(UInt16)", {:array, :u16}},
@@ -106,7 +109,9 @@ defmodule Ch.Protocol do
     end
   end
 
-  for {raw, type} <- types do
+  no_dump = ["LowCardinality(String)", "LowCardinality(FixedString(2))"]
+
+  for {raw, type} <- Enum.reject(types, fn {raw, _} -> raw in no_dump end) do
     def dump_type(unquote(type)), do: unquote(raw)
   end
 
@@ -115,6 +120,8 @@ defmodule Ch.Protocol do
     {quote(do: <<0::1, v::7, s::size(v)-bytes>>), :string, quote(do: s)},
     {quote(do: <<1::1, v1::7, 0::1, v2::7, s::size((v2 <<< 7) + v1)-bytes>>), :string,
      quote(do: s)},
+    # TODO
+    {quote(do: <<s::2-bytes>>), {:string, 2}, quote(do: s)},
     {quote(do: <<u::little>>), :u8, quote(do: u)},
     {quote(do: <<u::16-little>>), :u16, quote(do: u)},
     {quote(do: <<u::32-little>>), :u32, quote(do: u)},
