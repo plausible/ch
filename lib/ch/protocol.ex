@@ -17,9 +17,8 @@ defmodule Ch.Protocol do
 
   defp encode_rows([], [], rows, types), do: encode_rows(rows, types)
 
-  # TODO
-  def encode(:varint, num) when num < 128, do: <<num>>
-  def encode(:varint, num), do: [<<1::1, num::7>> | encode(:varint, num >>> 7)]
+  def encode(:varint, i) when i < 128, do: i
+  def encode(:varint, i), do: encode_varint_cont(i)
 
   def encode(:string, str) do
     [encode(:varint, byte_size(str)) | str]
@@ -49,9 +48,15 @@ defmodule Ch.Protocol do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
   end
 
-  def encode(:date, %Date{} = date) do
-    <<Date.diff(date, @epoch_date)::16-little>>
-  end
+  def encode(:datetime, nil), do: <<0::32-little>>
+
+  def encode(:date, %Date{} = date), do: <<Date.diff(date, @epoch_date)::16-little>>
+  def encode(:date, nil), do: <<0::16-little>>
+
+  # TODO
+  @compile [inline: [encode_varint_cont: 1]]
+  defp encode_varint_cont(i) when i < 128, do: [i]
+  defp encode_varint_cont(i), do: [0x80 ||| (i &&& 0x7F) | encode_varint_cont(i >>> 7)]
 
   defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
   defp encode_many([] = done, _type), do: done
