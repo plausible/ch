@@ -57,6 +57,7 @@ defmodule Ch.Protocol do
   defp encode_many([] = done, _type), do: done
 
   def decode_rows(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
+  def decode_rows(<<>>), do: []
 
   defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
 
