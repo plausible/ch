@@ -55,14 +55,18 @@ defmodule CSV do
   end
 
   def encode_row(row) do
-    Enum.map(row, fn
-      a when is_list(a) -> encode_array_param(a)
-      other -> other
-    end)
+    Enum.map(row, &encode_param/1)
   end
 
   defp encode_param(a) when is_list(a) do
     IO.iodata_to_binary([?[, encode_array_param(a), ?]])
+  end
+
+  defp encode_param(other), do: other
+
+  defp encode_array_param([s]) when is_binary(s) do
+    # TODO faster escaping
+    [?', String.replace(s, "'", "\\'"), "'"]
   end
 
   defp encode_array_param([s | rest]) when is_binary(s) do
@@ -70,9 +74,13 @@ defmodule CSV do
     [?', String.replace(s, "'", "\\'"), "'," | encode_array_param(rest)]
   end
 
+  defp encode_array_param([el]) do
+    encode_param(el)
+  end
+
   defp encode_array_param([el | rest]) do
     [encode_param(el), "," | encode_array_param(rest)]
   end
 
-  defp encode_array_param([] = done), do: done
+  defp encode_array_param([] = empty), do: empty
 end

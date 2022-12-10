@@ -17,7 +17,8 @@ defmodule Ch.Protocol do
 
   defp encode_rows([], [], rows, types), do: encode_rows(rows, types)
 
-  def encode(:varint, num) when num < 128, do: num
+  # TODO
+  def encode(:varint, num) when num < 128, do: <<num>>
   def encode(:varint, num), do: [<<1::1, num::7>> | encode(:varint, num >>> 7)]
 
   def encode(:string, str) do

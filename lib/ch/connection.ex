@@ -285,6 +285,7 @@ defmodule Ch.Connection do
     IO.iodata_to_binary([?[, encode_array_param(a), ?]])
   end
 
+  # TODO [1, 2] => 1,2, (CH doesn't seem to mind trailing comma, but still...)
   defp encode_array_param([s | rest]) when is_binary(s) do
     # TODO faster escaping
     [?', String.replace(s, "'", "\\'"), "'," | encode_array_param(rest)]
