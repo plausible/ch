@@ -18,40 +18,78 @@ defmodule Ch.Protocol do
   defp encode_rows([], [], rows, types), do: encode_rows(rows, types)
 
   # TODO
-  def encode(:varint, num) when num < 128, do: <<num>>
-  def encode(:varint, num), do: [<<1::1, num::7>> | encode(:varint, num >>> 7)]
+  def encode(:varint, num) when is_integer(num) and num < 128, do: <<num>>
 
-  def encode(:string, str) do
+  def encode(:varint, num) when is_integer(num) do
+    [<<1::1, num::7>> | encode(:varint, num >>> 7)]
+  end
+
+  def encode(:varint, nil), do: 0
+
+  def encode(:string, str) when is_binary(str) do
     [encode(:varint, byte_size(str)) | str]
   end
 
-  def encode(:u8, i), do: <<i::little>>
-  def encode(:u16, i), do: <<i::16-little>>
-  def encode(:u32, i), do: <<i::32-little>>
-  def encode(:u64, i), do: <<i::64-little>>
+  def encode(:string, nil), do: 0
 
-  def encode(:i8, i), do: <<i::little-signed>>
-  def encode(:i16, i), do: <<i::16-little-signed>>
-  def encode(:i32, i), do: <<i::32-little-signed>>
-  def encode(:i64, i), do: <<i::64-little-signed>>
+  def encode({:string, len}, str) when byte_size(str) == len do
+    str
+  end
 
-  def encode(:f64, f), do: <<f::64-little-signed-float>>
-  def encode(:f32, f), do: <<f::32-little-signed-float>>
+  def encode({:string, len}, nil), do: <<0::size(len * 8)>>
 
-  def encode(:boolean, true), do: <<1::little>>
-  def encode(:boolean, false), do: <<0::little>>
+  def encode(:u8, i) when is_integer(i), do: i
+  def encode(:u8, nil), do: 0
 
-  def encode({:array, type}, l) do
+  def encode(:u16, i) when is_integer(i), do: <<i::16-little>>
+  def encode(:u16, nil), do: <<0::16>>
+
+  def encode(:u32, i) when is_integer(i), do: <<i::32-little>>
+  def encode(:u32, nil), do: <<0::32>>
+
+  def encode(:u64, i) when is_integer(i), do: <<i::64-little>>
+  def encode(:u64, nil), do: <<0::64>>
+
+  def encode(:i8, i) when is_integer(i), do: <<i::signed>>
+  def encode(:i8, nil), do: 0
+
+  def encode(:i16, i) when is_integer(i), do: <<i::16-little-signed>>
+  def encode(:i16, nil), do: <<0::16>>
+
+  def encode(:i32, i) when is_integer(i), do: <<i::32-little-signed>>
+  def encode(:i32, nil), do: <<0::32>>
+
+  def encode(:i64, i) when is_integer(i), do: <<i::64-little-signed>>
+  def encode(:i64, nil), do: <<0::64>>
+
+  def encode(:f64, f) when is_number(f), do: <<f::64-little-signed-float>>
+  def encode(:f64, nil), do: <<0::64>>
+
+  def encode(:f32, f) when is_number(f), do: <<f::32-little-signed-float>>
+  def encode(:f32, nil), do: <<0::32>>
+
+  def encode(:boolean, true), do: 1
+  def encode(:boolean, false), do: 0
+  def encode(:boolean, nil), do: 0
+
+  def encode({:array, type}, [_ | _] = l) do
     [encode(:varint, length(l)) | encode_many(l, type)]
   end
+
+  def encode({:array, _type}, []), do: 0
+  def encode({:array, _type}, nil), do: 0
 
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
   end
 
+  def encode(:datetime, nil), do: <<0::32>>
+
   def encode(:date, %Date{} = date) do
     <<Date.diff(date, @epoch_date)::16-little>>
   end
+
+  def encode(:date, nil), do: <<0::16>>
 
   defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
   defp encode_many([] = done, _type), do: done
@@ -123,11 +161,11 @@ defmodule Ch.Protocol do
      quote(do: s)},
     # TODO
     {quote(do: <<s::2-bytes>>), {:string, 2}, quote(do: s)},
-    {quote(do: <<u::little>>), :u8, quote(do: u)},
+    {quote(do: <<u>>), :u8, quote(do: u)},
     {quote(do: <<u::16-little>>), :u16, quote(do: u)},
     {quote(do: <<u::32-little>>), :u32, quote(do: u)},
     {quote(do: <<u::64-little>>), :u64, quote(do: u)},
-    {quote(do: <<i::little-signed>>), :i8, quote(do: i)},
+    {quote(do: <<i::signed>>), :i8, quote(do: i)},
     {quote(do: <<i::16-little-signed>>), :i16, quote(do: i)},
     {quote(do: <<i::32-little-signed>>), :i32, quote(do: i)},
     {quote(do: <<i::64-little-signed>>), :i64, quote(do: i)},

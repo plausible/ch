@@ -1,5 +1,6 @@
 defmodule Ch.ProtocolTest do
   use ExUnit.Case, async: true
+  import Ch.Protocol
 
   test "encode -> decode" do
     spec = [
@@ -70,22 +71,48 @@ defmodule Ch.ProtocolTest do
 
     header = [
       Enum.map(1..cols, fn col -> "col#{col}" end),
-      Enum.map(types, &Ch.Protocol.dump_type/1)
+      Enum.map(types, &dump_type/1)
     ]
 
-    encoded = Ch.Protocol.encode_row(row, types)
+    encoded = encode_row(row, types)
 
     bin =
       IO.iodata_to_binary([
         cols,
-        Ch.Protocol.encode_rows(header, List.duplicate(:string, cols)),
+        encode_rows(header, List.duplicate(:string, cols)),
         encoded
       ])
 
-    [decoded] = Ch.Protocol.decode_rows(bin)
+    [decoded] = decode_rows(bin)
 
     for {original, decoded} <- Enum.zip(row, decoded) do
       assert original == decoded
     end
+  end
+
+  describe "decode_rows/1" do
+    test "accepts empty bin" do
+      assert decode_rows(<<>>) == []
+    end
+  end
+
+  test "encode nil" do
+    assert encode(:varint, nil) == 0
+    assert encode(:string, nil) == 0
+    assert encode({:string, 2}, nil) == <<0, 0>>
+    assert encode(:u8, nil) == 0
+    assert encode(:u16, nil) == <<0, 0>>
+    assert encode(:u32, nil) == <<0, 0, 0, 0>>
+    assert encode(:u64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+    assert encode(:i8, nil) == 0
+    assert encode(:i16, nil) == <<0, 0>>
+    assert encode(:i32, nil) == <<0, 0, 0, 0>>
+    assert encode(:i64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+    assert encode(:f32, nil) == <<0, 0, 0, 0>>
+    assert encode(:f64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+    assert encode(:boolean, nil) == 0
+    assert encode({:array, :string}, nil) == 0
+    assert encode(:date, nil) == <<0, 0>>
+    assert encode(:datetime, nil) == <<0, 0, 0, 0>>
   end
 end
