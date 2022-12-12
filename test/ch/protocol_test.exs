@@ -100,11 +100,11 @@ defmodule Ch.ProtocolTest do
     assert encode(:varint, nil) == 0
     assert encode(:string, nil) == 0
     assert encode({:string, 2}, nil) == <<0, 0>>
-    assert encode(:u8, nil) == 0
+    assert encode(:u8, nil) == <<0>>
     assert encode(:u16, nil) == <<0, 0>>
     assert encode(:u32, nil) == <<0, 0, 0, 0>>
     assert encode(:u64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-    assert encode(:i8, nil) == 0
+    assert encode(:i8, nil) == <<0>>
     assert encode(:i16, nil) == <<0, 0>>
     assert encode(:i32, nil) == <<0, 0, 0, 0>>
     assert encode(:i64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>

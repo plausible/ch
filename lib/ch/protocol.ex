@@ -38,35 +38,26 @@ defmodule Ch.Protocol do
 
   def encode({:string, len}, nil), do: <<0::size(len * 8)>>
 
-  def encode(:u8, i) when is_integer(i), do: i
-  def encode(:u8, nil), do: 0
+  for size <- [8, 16, 32, 64] do
+    def encode(unquote(:"u#{size}"), i) when is_integer(i) do
+      <<i::unquote(size)-little>>
+    end
 
-  def encode(:u16, i) when is_integer(i), do: <<i::16-little>>
-  def encode(:u16, nil), do: <<0::16>>
+    def encode(unquote(:"i#{size}"), i) when is_integer(i) do
+      <<i::unquote(size)-little-signed>>
+    end
 
-  def encode(:u32, i) when is_integer(i), do: <<i::32-little>>
-  def encode(:u32, nil), do: <<0::32>>
+    def encode(unquote(:"u#{size}"), nil), do: <<0::unquote(size)>>
+    def encode(unquote(:"i#{size}"), nil), do: <<0::unquote(size)>>
+  end
 
-  def encode(:u64, i) when is_integer(i), do: <<i::64-little>>
-  def encode(:u64, nil), do: <<0::64>>
+  for size <- [32, 64] do
+    def encode(unquote(:"f#{size}"), f) when is_number(f) do
+      <<f::unquote(size)-little-signed-float>>
+    end
 
-  def encode(:i8, i) when is_integer(i), do: <<i::signed>>
-  def encode(:i8, nil), do: 0
-
-  def encode(:i16, i) when is_integer(i), do: <<i::16-little-signed>>
-  def encode(:i16, nil), do: <<0::16>>
-
-  def encode(:i32, i) when is_integer(i), do: <<i::32-little-signed>>
-  def encode(:i32, nil), do: <<0::32>>
-
-  def encode(:i64, i) when is_integer(i), do: <<i::64-little-signed>>
-  def encode(:i64, nil), do: <<0::64>>
-
-  def encode(:f64, f) when is_number(f), do: <<f::64-little-signed-float>>
-  def encode(:f64, nil), do: <<0::64>>
-
-  def encode(:f32, f) when is_number(f), do: <<f::32-little-signed-float>>
-  def encode(:f32, nil), do: <<0::32>>
+    def encode(unquote(:"f#{size}"), nil), do: <<0::unquote(size)>>
+  end
 
   def encode(:boolean, true), do: 1
   def encode(:boolean, false), do: 0
