@@ -52,7 +52,7 @@ iex> Ch.query(conn, "INSERT INTO example", File.stream!("example.csv"), format: 
 {:ok, %{num_rows: 3, rows: []}}
 
 iex> Ch.query(conn, "SELECT count() FROM {table:Identifier}", %{"table" => "example"})
-{:ok, %{num_rows: 1, rows: [[0]]}}
+{:ok, %{num_rows: 1, rows: [[6]]}}
 
 iex> File.rm!("example.csv")
 iex> Ch.query(conn, "DROP TABLE example")
