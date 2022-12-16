@@ -173,8 +173,8 @@ defmodule Ch.Connection do
   def stream_body(conn, ref, statement, enumerable, opts) do
     format = opts[:format] || raise "missing :format for #{inspect(enumerable)}"
 
-    # TODO HTTP.stream_request_body(conn, ref, [statement, " FORMAT ", format, ?\s])?
-    stream = Stream.concat([[statement, " FORMAT ", format, ?\s]], enumerable)
+    # TODO HTTP.stream_request_body(conn, ref, [statement, " FORMAT ", format, "\r\n"])?
+    stream = Stream.concat([[statement, " FORMAT ", format, "\r\n"]], enumerable)
 
     # TODO bench vs manual
     reduced =
