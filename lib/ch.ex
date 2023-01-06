@@ -41,11 +41,12 @@ defmodule Ch do
       )
 
     with {:ok, _query, result} <- DBConnection.prepare_execute(conn, query, params, opts) do
-      rows = Ch.decode_rows(result)
+      rows = decode_row_binary_with_names_and_types(result)
       {:ok, %{num_rows: length(rows), rows: rows}}
     end
   end
 
-  defdelegate encode_row(row, types), to: Ch.Protocol
-  defdelegate decode_rows(data), to: Ch.Protocol
+  def encode_row_binary(row, types), do: Ch.Protocol.encode_row(row, types)
+  def decode_row_binary(data, types), do: Ch.Protocol.decode_rows(data, types)
+  def decode_row_binary_with_names_and_types(data), do: Ch.Protocol.decode_rows(data)
 end

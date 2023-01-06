@@ -88,6 +88,10 @@ defmodule Ch.Protocol do
   def decode_rows(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
   def decode_rows(<<>>), do: []
 
+  def decode_rows(<<data::bytes>>, types) do
+    _decode_rows(data, types, [], [], types)
+  end
+
   defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
 
   # TODO proper varint

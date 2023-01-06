@@ -18,10 +18,10 @@ iex> Ch.query(conn, "SELECT 1 + 1 FORMAT RowBinary")
 iex> Ch.query(conn, "SELECT 1 + 1 FORMAT CSVWithNames")
 {:ok, "\"plus(1, 1)\"\n2\n"}
 
-iex> with {:ok, data} <- Ch.query(conn, "SELECT 1 + 1 FORMAT RowBinaryWithNamesAndTypes"), do: Ch.decode_rows(data)
+iex> with {:ok, data} <- Ch.query(conn, "SELECT 1 + 1 FORMAT RowBinaryWithNamesAndTypes"), do: Ch.decode_row_binary_with_names_and_types(data)
 [[2]]
 
-iex> conn |> Ch.query!("SELECT 1 + {$0:Int8} FORMAT RowBinaryWithNamesAndTypes", _params = [2]) |> Ch.decode_rows()
+iex> conn |> Ch.query!("SELECT 1 + {$0:Int8} FORMAT RowBinaryWithNamesAndTypes", _params = [2]) |> Ch.decode_row_binary_with_names_and_types()
 [[3]]
 
 # `query_rows` is a helper that uses `FORMAT RowBinaryWithNamesAndTypes` and decodes the response automatically
@@ -47,7 +47,7 @@ iex> Ch.query_rows(conn, "SHOW TABLES")
 # INSERT
 iex> rows = [[1, "1", ~N[2022-11-26 09:38:24]], [2, "2", ~N[2022-11-26 09:38:25]], [3, "3", ~N[2022-11-26 09:38:26]]]
 iex> types = [:u32, :string, :datetime]
-iex> stream_or_iodata = Stream.map(rows, fn row -> Ch.encode_row(row, types) end)
+iex> stream_or_iodata = Stream.map(rows, fn row -> Ch.encode_row_binary(row, types) end)
 # `stream_or_iodata` is sent as a chunked request (~ Stream.each(stream_or_iodata, fn chunk -> send_chunk(chunk) end))
 iex> Ch.query(conn, "INSERT INTO example(a, b, c) FORMAT RowBinary", stream_or_iodata)
 {:ok, %{num_rows: 3, rows: []}}
