@@ -35,10 +35,10 @@ iex> Ch.query_rows(conn, statement, params)
 {:ok, %{num_rows: 1, rows: [[[1, 2], 123, "123", ~N[2023-01-06 03:06:32]]]}}
 
 # CREATE
-iex> Ch.query_rows(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) engine=Memory")
+iex> Ch.query_rows(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) ENGINE=Memory")
 {:ok, %{num_rows: 0, rows: []}}
 
-iex> Ch.query_rows(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) engine=Memory")
+iex> Ch.query_rows(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) ENGINE=Memory")
 {:error, %Ch.Error{message: "Code: 57. DB::Exception: Table default.example already exists. (TABLE_ALREADY_EXISTS) (version 22.10.1.1175 (official build))\n"}}
 
 iex> Ch.query_rows(conn, "SHOW TABLES")
