@@ -1,4 +1,4 @@
 defmodule Ch.Error do
   @moduledoc false
-  defexception [:message]
+  defexception [:code, :message]
 end

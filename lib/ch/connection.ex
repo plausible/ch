@@ -176,10 +176,17 @@ defmodule Ch.Connection do
       {:ok, _conn, [{:status, _ref, 200} | _rest]} = ok ->
         ok
 
-      # TODO headers have error code, use that
-      {:ok, conn, [_status, _headers | responses]} ->
+      {:ok, conn, [_status, {:headers, ^ref, headers} | responses]} ->
         error = responses |> collect_body(ref) |> IO.iodata_to_binary()
-        {:error, Error.exception(error), conn}
+        exception = Error.exception(error)
+
+        code =
+          if kv = List.keyfind(headers, "x-clickhouse-exception-code", 0) do
+            String.to_integer(elem(kv, 1))
+          end
+
+        exception = %{exception | code: code}
+        {:error, exception, conn}
 
       {:error, _conn, _error, _responses} = error ->
         disconnect(error)

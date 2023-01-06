@@ -32,7 +32,7 @@ defmodule Ch do
   end
 
   defp decode("RowBinary", data, opts) do
-    types = opts[:types] || raise ArgumentError, "missing :types"
+    types = opts[:types] || raise ArgumentError, "missing :types for decoding RowBinary format"
     decode_row_binary(data, types)
   end
 
