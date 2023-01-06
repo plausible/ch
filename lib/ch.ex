@@ -1,5 +1,5 @@
 defmodule Ch do
-  @moduledoc File.read!("README.md")
+  @moduledoc "Minimal HTTP ClickHouse client."
 
   def start_link(opts \\ []) do
     DBConnection.start_link(Ch.Connection, opts)
@@ -24,13 +24,7 @@ defmodule Ch do
   end
 
   @doc """
-  Helper function that is equivalent to
-
-      with {:ok, data} <- query(conn, [statement | "SELECT 1 + 1 FORMAT RowBinaryWithNamesAndTypes"]) do
-        rows = Ch.decode_rows(data)
-        {:ok, %{num_rows: length(rows), rows: rows}}
-      end
-
+  Helper function that uses `FORMAT RowBinaryWithNamesAndTypes` and automatically decodes the response
   """
   def query_rows(conn, statement, params \\ [], opts \\ []) do
     # TODO
