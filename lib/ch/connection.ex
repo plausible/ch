@@ -90,9 +90,10 @@ defmodule Ch.Connection do
     # TODO ok to POST for everything, does it make the query not a readonly?
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), statement),
          {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
-      [_status, _headers | responses] = responses
+      [_status, {:headers, ^ref, headers} | responses] = responses
       data = responses |> collect_body(ref) |> IO.iodata_to_binary()
-      {:ok, query, data, conn}
+      # TODO
+      {:ok, query, %{headers: headers, data: data}, conn}
     end
   end
 

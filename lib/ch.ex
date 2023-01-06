@@ -23,21 +23,25 @@ defmodule Ch do
     result
   end
 
-  @doc """
-  Helper function that uses `FORMAT RowBinaryWithNamesAndTypes` and automatically decodes the response
-  """
-  def query_rows(conn, statement, params \\ [], opts \\ []) do
-    # TODO
-    query =
-      Ch.Query.build(
-        [statement | " FORMAT RowBinaryWithNamesAndTypes"],
-        opts[:command] || Ch.Query.extract_command(statement)
-      )
-
-    with {:ok, _query, result} <- DBConnection.prepare_execute(conn, query, params, opts) do
-      rows = Ch.Protocol.decode_rows(result)
-      {:ok, %{num_rows: length(rows), rows: rows}}
+  def query_decode(conn, statement, params \\ [], opts \\ []) do
+    with {:ok, result} <- query(conn, statement, params, opts) do
+      %{data: data, headers: headers} = result
+      {"x-clickhouse-format", format} = List.keyfind!(headers, "x-clickhouse-format", 0)
+      {:ok, decode(format, data, opts)}
     end
+  end
+
+  defp decode("RowBinary", data, opts) do
+    types = opts[:types] || raise ArgumentError, "missing :types"
+    decode_row_binary(data, types)
+  end
+
+  defp decode("RowBinaryWithNamesAndTypes", data, _opts) do
+    Ch.Protocol.decode_rows(data)
+  end
+
+  defp decode(format, _data, _opts) do
+    raise ArgumentError, "automatic decoding for #{format} is not supported"
   end
 
   @doc """
