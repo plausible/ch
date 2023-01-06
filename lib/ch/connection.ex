@@ -1,7 +1,7 @@
 defmodule Ch.Connection do
   @moduledoc false
   use DBConnection
-  alias Ch.{Error, Protocol}
+  alias Ch.Error
   alias Mint.HTTP1, as: HTTP
 
   @impl true
@@ -63,11 +63,11 @@ defmodule Ch.Connection do
   end
 
   @impl true
-  def handle_execute(%Ch.Query{command: :insert} = query, params, opts, conn) do
+  def handle_execute(%Ch.Query{command: :insert} = query, stream_or_iodata, opts, conn) do
     %Ch.Query{statement: statement} = query
 
     with {:ok, conn, ref} <- request(conn, "POST", "/", headers(conn, opts), :stream),
-         {:ok, conn} <- stream_body(conn, ref, statement, params, opts),
+         {:ok, conn} <- stream_body(conn, ref, statement, stream_or_iodata),
          {:ok, conn, responses} <- receive_stream(conn, ref) do
       [_status, {:headers, _ref, headers} | _responses] = responses
       # TODO or lists:keyfind
@@ -85,30 +85,14 @@ defmodule Ch.Connection do
 
   def handle_execute(query, params, opts, conn) do
     %Ch.Query{statement: statement} = query
-    # TODO names are useless, but there is no RowBinaryWithTypes
-    body = [statement, " FORMAT RowBinaryWithNamesAndTypes"]
     path = "/?" <> encode_params_qs(params)
 
     # TODO ok to POST for everything, does it make the query not a readonly?
-    with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), body),
+    with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), statement),
          {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
       [_status, _headers | responses] = responses
-
-      rows =
-        responses
-        |> collect_body(ref)
-        |> IO.iodata_to_binary()
-        # TODO decode as data comes in?
-        |> Protocol.decode_rows()
-
-      # TODO
-      # num_rows =
-      #   if raw_summary do
-      #     %{"read_rows" => read_rows} = Jason.decode!(raw_summary) |> IO.inspect()
-      #     String.to_integer(read_rows)
-      #   end || length(rows)
-
-      {:ok, query, %{num_rows: length(rows), rows: rows}, conn}
+      data = responses |> collect_body(ref) |> IO.iodata_to_binary()
+      {:ok, query, data, conn}
     end
   end
 
@@ -163,18 +147,9 @@ defmodule Ch.Connection do
     end
   end
 
-  def stream_body(conn, ref, statement, rows, opts) when is_list(rows) do
-    types = opts[:types] || raise "missing :types for #{inspect(statement)}"
-    stream = Stream.map(rows, fn row -> Protocol.encode_row(row, types) end)
-    opts = [{:format, "RowBinary"} | opts]
-    stream_body(conn, ref, statement, stream, opts)
-  end
-
-  def stream_body(conn, ref, statement, enumerable, opts) do
-    format = opts[:format] || raise "missing :format for #{inspect(enumerable)}"
-
-    # TODO HTTP.stream_request_body(conn, ref, [statement, " FORMAT ", format, "\r\n"])?
-    stream = Stream.concat([[statement, " FORMAT ", format, "\r\n"]], enumerable)
+  def stream_body(conn, ref, statement, data) do
+    # TODO HTTP.stream_request_body(conn, ref, [statement, ?\n])?
+    stream = Stream.concat([[statement, ?\n]], data)
 
     # TODO bench vs manual
     reduced =
