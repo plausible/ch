@@ -32,7 +32,7 @@ iex> rows = Stream.map(
 
 iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) FORMAT RowBinary", rows)
 
-Ch.query_rows(conn, "SELECT * FROM helloworld.my_first_table")
+iex> Ch.query_rows(conn, "SELECT * FROM helloworld.my_first_table")
 {:ok,
  %{
    num_rows: 4,
@@ -50,51 +50,65 @@ Ch.query_rows(conn, "SELECT * FROM helloworld.my_first_table")
 #### Custom FORMAT in SELECT
 
 ```elixir
-iex> Ch.query(conn, "SELECT 1 + 1")
-{:ok, "2\n"}
-
-iex> Ch.query(conn, "SELECT 1 + 1 FORMAT RowBinary")
-{:ok, <<2, 0>>}
-
-iex> Ch.query(conn, "SELECT 1 + 1 FORMAT CSVWithNames")
-{:ok, "\"plus(1, 1)\"\n2\n"}
+{:ok, "2\n"} = Ch.query(conn, "SELECT 1 + 1")
+{:ok, <<2, 0>>} =  Ch.query(conn, "SELECT 1 + 1 FORMAT RowBinary")
+{:ok, "\"plus(1, 1)\"\n2\n"} = Ch.query(conn, "SELECT 1 + 1 FORMAT CSVWithNames")
 ```
 
 #### SELECT with params
 
 ```elixir
 # https://clickhouse.com/docs/en/interfaces/http/#cli-queries-with-parameters
-iex> statement = "SELECT {a:Array(UInt8)}, {b:UInt8}, {c:String}, {d:DateTime}"
-iex> params = %{a: [1,2], b: 123, c: "123", d: NaiveDateTime.truncate(NaiveDateTime.utc_now(), :second)}
-iex> Ch.query_rows(conn, statement, params)
-{:ok, %{num_rows: 1, rows: [[[1, 2], 123, "123", ~N[2023-01-06 03:06:32]]]}}
+statement = "SELECT {a:Array(UInt8)}, {b:UInt8}, {c:String}, {d:DateTime}"
+params = %{a: [1,2], b: 123, c: "123", d: ~N[2023-01-06 03:06:32]}
+{:ok, %{num_rows: 1, rows: [row]}} = Ch.query_rows(conn, statement, params)
+[[1, 2], 123, "123", ~N[2023-01-06 03:06:32]] = row
 ```
 
 #### INSERT a RowBinary stream
 
 ```elixir
-iex> Ch.query(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) ENGINE=Memory")
+Ch.query(conn, "CREATE TABLE example(a UInt32, b String) ENGINE=Memory")
 
-iex> rows = [[1, "1", ~N[2022-11-26 09:38:24]], [2, "2", ~N[2022-11-26 09:38:25]], [3, "3", ~N[2022-11-26 09:38:26]]]
-iex> types = [:u32, :string, :datetime]
-iex> stream_or_iodata = rows |> Stream.chunk_every(20) |> Stream.map(fn chunk -> Ch.encode_row_binary_chunk(chunk, types) end)
+rows = [[1, "a"], [2, "b"], [3, "c"]]
+types = [:u32, :string]
+
+stream_or_iodata =
+  rows
+  |> Stream.chunk_every(20)
+  |> Stream.map(fn chunk ->
+    Ch.encode_row_binary_chunk(chunk, types)
+  end)
+
 # `stream_or_iodata` is sent as a chunked request (~ Stream.each(stream_or_iodata, fn chunk -> send_chunk(chunk) end))
-iex> Ch.query(conn, "INSERT INTO example(a, b, c) FORMAT RowBinary", stream_or_iodata)
-{:ok, %{num_rows: 3, rows: []}}
+{:ok, %{num_rows: 3}} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT RowBinary", stream_or_iodata)
 ```
 
 #### INSERT a CSV file stream
 
 ```elixir
-iex> File.write!("example.csv", "1,1,2022-11-26 09:38:24\n2,2,2022-11-26 09:38:25\n3,3,2022-11-26 09:38:26")
-iex> Ch.query(conn, "INSERT INTO example(a, b, c) FORMAT CSV", File.stream!("example.csv"))
-{:ok, %{num_rows: 3, rows: []}}
+csv = """
+1,a
+2,b
+3,c\
+"""
+
+File.write!("example.csv", csv)
+
+{:ok, %{num_rows: 3}} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT CSV", File.stream!("example.csv"))
 ```
 
 #### INSERT a CSVWithNames file stream
 
 ```elixir
-iex> File.write!("example.csv", "a,b,c\n1,1,2022-11-26 09:38:24\n2,2,2022-11-26 09:38:25\n3,3,2022-11-26 09:38:26")
-iex> Ch.query(conn, "INSERT INTO example FORMAT CSVWithNames", File.stream!("example.csv"))
-{:ok, %{num_rows: 3, rows: []}}
+csv = """
+a,b
+1,a
+2,b
+3,c\
+"""
+
+File.write!("example.csv", csv)
+
+{:ok, %{num_rows: 3}} = Ch.query(conn, "INSERT INTO example FORMAT CSVWithNames", File.stream!("example.csv"))
 ```
