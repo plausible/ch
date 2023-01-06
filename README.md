@@ -45,9 +45,9 @@ iex> Ch.query_rows(conn, "SELECT * FROM helloworld.my_first_table")
  }}
 ```
 
-### Use cases
+### Examples
 
-#### Custom FORMAT in SELECT
+- Custom `FORMAT` in `SELECT`
 
 ```elixir
 {:ok, "2\n"} = Ch.query(conn, "SELECT 1 + 1")
@@ -55,7 +55,7 @@ iex> Ch.query_rows(conn, "SELECT * FROM helloworld.my_first_table")
 {:ok, "\"plus(1, 1)\"\n2\n"} = Ch.query(conn, "SELECT 1 + 1 FORMAT CSVWithNames")
 ```
 
-#### SELECT with params
+- `SELECT` with params
 
 ```elixir
 # https://clickhouse.com/docs/en/interfaces/http/#cli-queries-with-parameters
@@ -65,7 +65,7 @@ params = %{a: [1,2], b: 123, c: "123", d: ~N[2023-01-06 03:06:32]}
 [[1, 2], 123, "123", ~N[2023-01-06 03:06:32]] = row
 ```
 
-#### INSERT a RowBinary stream
+- `INSERT` a `RowBinary` stream
 
 ```elixir
 Ch.query(conn, "CREATE TABLE example(a UInt32, b String) ENGINE=Memory")
@@ -84,7 +84,7 @@ stream_or_iodata =
 {:ok, %{num_rows: 3}} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT RowBinary", stream_or_iodata)
 ```
 
-#### INSERT a CSV file stream
+- `INSERT` a `CSV` file stream
 
 ```elixir
 csv = """
@@ -98,7 +98,7 @@ File.write!("example.csv", csv)
 {:ok, %{num_rows: 3}} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT CSV", File.stream!("example.csv"))
 ```
 
-#### INSERT a CSVWithNames file stream
+- `INSERT` a `CSVWithNames` file stream
 
 ```elixir
 csv = """
