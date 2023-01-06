@@ -30,7 +30,7 @@ iex> rows = Stream.map(
   fn row -> Ch.encode_row_binary(row, [:u32, :string, :datetime, :f32]) end
 )
 
-iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) FORMAT RowBinary", rows)
+iex> {:ok, _} = Ch.query(conn, "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) FORMAT RowBinary", rows)
 
 iex> Ch.query_decode(conn, "SELECT * FROM helloworld.my_first_table FORMAT RowBinaryWithNamesAndTypes")
 {:ok,
@@ -47,9 +47,9 @@ iex> Ch.query_decode(conn, "SELECT * FROM helloworld.my_first_table FORMAT RowBi
 - Custom `FORMAT` in `SELECT`
 
 ```elixir
-{:ok, %{data: "2\n"}} = Ch.query(conn, "SELECT 1 + 1")
-{:ok, %{data: <<2, 0>>}} =  Ch.query(conn, "SELECT 1 + 1 FORMAT RowBinary")
-{:ok, %{data: "\"plus(1, 1)\"\n2\n"}} = Ch.query(conn, "SELECT 1 + 1 FORMAT CSVWithNames")
+{:ok, [_status, _headers, "2\n"]} = Ch.query(conn, "SELECT 1 + 1")
+{:ok, [_status, _headers, <<2, 0>>]} =  Ch.query(conn, "SELECT 1 + 1 FORMAT RowBinary")
+{:ok, [_status, _headers, "\"plus(1, 1)\"\n", "2\n"]} = Ch.query(conn, "SELECT 1 + 1 FORMAT CSVWithNames")
 ```
 
 - `SELECT` with params
@@ -71,14 +71,10 @@ rows = [[1, "a"], [2, "b"], [3, "c"]]
 types = [:u32, :string]
 
 stream_or_iodata =
-  rows
-  |> Stream.chunk_every(20)
-  |> Stream.map(fn chunk ->
-    Ch.encode_row_binary_chunk(chunk, types)
-  end)
+  rows |> Stream.chunk_every(20) |> Stream.map(fn chunk -> Ch.encode_row_binary_chunk(chunk, types) end)
 
 # `stream_or_iodata` is sent as a chunked request (~ Stream.each(stream_or_iodata, fn chunk -> send_chunk(chunk) end))
-{:ok, %{num_rows: 3}} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT RowBinary", stream_or_iodata)
+{:ok, _} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT RowBinary", stream_or_iodata)
 ```
 
 - `INSERT` a `CSV` file stream
@@ -92,7 +88,7 @@ csv = """
 
 File.write!("example.csv", csv)
 
-{:ok, %{num_rows: 3}} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT CSV", File.stream!("example.csv"))
+{:ok, _} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT CSV", File.stream!("example.csv"))
 ```
 
 - `INSERT` a `CSVWithNames` file stream
@@ -107,5 +103,5 @@ a,b
 
 File.write!("example.csv", csv)
 
-{:ok, %{num_rows: 3}} = Ch.query(conn, "INSERT INTO example FORMAT CSVWithNames", File.stream!("example.csv"))
+{:ok, _} = Ch.query(conn, "INSERT INTO example FORMAT CSVWithNames", File.stream!("example.csv"))
 ```

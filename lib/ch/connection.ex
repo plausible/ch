@@ -69,17 +69,7 @@ defmodule Ch.Connection do
     with {:ok, conn, ref} <- request(conn, "POST", "/", headers(conn, opts), :stream),
          {:ok, conn} <- stream_body(conn, ref, statement, stream_or_iodata),
          {:ok, conn, responses} <- receive_stream(conn, ref) do
-      [_status, {:headers, _ref, headers} | _responses] = responses
-      # TODO or lists:keyfind
-      raw_summary = :proplists.get_value("x-clickhouse-summary", headers, nil)
-
-      written_rows =
-        if raw_summary do
-          %{"written_rows" => written_rows} = Jason.decode!(raw_summary)
-          String.to_integer(written_rows)
-        end
-
-      {:ok, query, %{num_rows: written_rows, rows: []}, conn}
+      {:ok, query, responses, conn}
     end
   end
 
@@ -90,10 +80,7 @@ defmodule Ch.Connection do
     # TODO ok to POST for everything, does it make the query not a readonly?
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), statement),
          {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
-      [_status, {:headers, ^ref, headers} | responses] = responses
-      data = responses |> collect_body(ref) |> IO.iodata_to_binary()
-      # TODO
-      {:ok, query, %{headers: headers, data: data}, conn}
+      {:ok, query, responses, conn}
     end
   end
 
@@ -173,11 +160,11 @@ defmodule Ch.Connection do
 
   defp receive_stream(conn, ref, opts \\ []) do
     case receive_stream(conn, ref, [], opts) do
-      {:ok, _conn, [{:status, _ref, 200} | _rest]} = ok ->
+      {:ok, _conn, [200 | _rest]} = ok ->
         ok
 
-      {:ok, conn, [_status, {:headers, ^ref, headers} | responses]} ->
-        error = responses |> collect_body(ref) |> IO.iodata_to_binary()
+      {:ok, conn, [_status, headers | data]} ->
+        error = IO.iodata_to_binary(data)
         exception = Error.exception(error)
 
         code =
@@ -193,16 +180,18 @@ defmodule Ch.Connection do
     end
   end
 
-  @spec receive_stream(HTTP.t(), reference, [Mint.Types.response()], Keyword.t()) ::
-          {:ok, HTTP.t(), [Mint.Types.response()]}
-          | {:error, HTTP.t(), Mint.Types.error(), [Mint.Types.response()]}
+  @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
+
+  @spec receive_stream(HTTP.t(), reference, [response], Keyword.t()) ::
+          {:ok, HTTP.t(), [response]}
+          | {:error, HTTP.t(), Mint.Types.error(), [response]}
   defp receive_stream(conn, ref, acc, opts) do
     timeout = opts[:timeout] || HTTP.get_private(conn, :timeout)
 
     case HTTP.recv(conn, 0, timeout) do
       {:ok, conn, responses} ->
         case handle_responses(responses, ref, acc) do
-          {:ok, resp} -> {:ok, conn, resp}
+          {:ok, responses} -> {:ok, conn, responses}
           {:more, acc} -> receive_stream(conn, ref, acc, opts)
         end
 
@@ -212,7 +201,7 @@ defmodule Ch.Connection do
   end
 
   # TODO wrap errors in Ch.Error?
-  @spec disconnect({:error, HTTP.t(), Mint.Types.error(), [Mint.Types.response()]}) ::
+  @spec disconnect({:error, HTTP.t(), Mint.Types.error(), [response]}) ::
           {:disconnect, Mint.Types.error(), HTTP.t()}
   defp disconnect({:error, conn, error, _responses}) do
     {:disconnect, error, conn}
@@ -225,23 +214,16 @@ defmodule Ch.Connection do
   end
 
   # TODO handle rest
-  defp handle_responses([{:done, ref} = done], ref, acc) do
-    {:ok, :lists.reverse([done | acc])}
+  defp handle_responses([{:done, ref}], ref, acc) do
+    {:ok, :lists.reverse(acc)}
   end
 
-  defp handle_responses([{tag, ref, _data} = resp | rest], ref, acc)
+  defp handle_responses([{tag, ref, data} | rest], ref, acc)
        when tag in [:data, :status, :headers] do
-    handle_responses(rest, ref, [resp | acc])
+    handle_responses(rest, ref, [data | acc])
   end
 
   defp handle_responses([], _ref, acc), do: {:more, acc}
-
-  @spec collect_body([{:data, reference, binary} | {:done, reference}], reference) :: iodata
-  defp collect_body([{:data, ref, data} | responses], ref) do
-    [data | collect_body(responses, ref)]
-  end
-
-  defp collect_body([{:done, ref}], ref), do: []
 
   # TODO support just one approach?
   defp encode_params_qs(params) when is_map(params) do

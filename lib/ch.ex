@@ -25,9 +25,9 @@ defmodule Ch do
 
   def query_decode(conn, statement, params \\ [], opts \\ []) do
     with {:ok, result} <- query(conn, statement, params, opts) do
-      %{data: data, headers: headers} = result
+      [_status, headers | data] = result
       {"x-clickhouse-format", format} = List.keyfind!(headers, "x-clickhouse-format", 0)
-      {:ok, decode(format, data, opts)}
+      {:ok, decode(format, IO.iodata_to_binary(data), opts)}
     end
   end
 
