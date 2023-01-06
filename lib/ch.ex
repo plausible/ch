@@ -50,6 +50,15 @@ defmodule Ch do
   def encode_row_binary(row, types), do: Ch.Protocol.encode_row(row, types)
 
   @doc """
+  Encodes `RowBinary`
+
+      iex> encode_row_binary_chunk([[2], [3]], [:u32])
+      _iodata = [<<2, 0, 0, 0>>, <<3, 0, 0, 0>>]
+
+  """
+  def encode_row_binary_chunk(rows, types), do: Ch.Protocol.encode_rows(rows, types)
+
+  @doc """
   Decodes `RowBinary`
 
       iex> decode_row_binary(<<2, 0, 0, 0>>, [:u32])

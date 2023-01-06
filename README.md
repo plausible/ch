@@ -1,14 +1,55 @@
 Minimal HTTP ClickHouse client.
 
-Usage:
+**tl;dr**
 
 ```elixir
 iex> Mix.install([{:ch, github: "ruslandoga/ch"}])
 
-iex> {:ok, conn} = Ch.start_link(scheme: "http", host: "localhost", port: 8123, database: "default")
-{:ok, #PID<0.240.0>}
+# https://clickhouse.com/docs/en/quick-start#step-3-create-a-database-and-table
+iex> {:ok, conn} = Ch.start_link(scheme: "http", host: "localhost", port: 8123)
+iex> {:ok, _} = Ch.query(conn, "CREATE DATABASE IF NOT EXISTS helloworld")
+iex> {:ok, _} = Ch.query(conn, """
+      CREATE TABLE helloworld.my_first_table
+      (
+          user_id UInt32,
+          message String,
+          timestamp DateTime,
+          metric Float32
+      )
+      ENGINE = MergeTree()
+      PRIMARY KEY (user_id, timestamp)
+      """)
 
-# SELECT
+iex> rows = Stream.map(
+  [
+    [101, "Hello, ClickHouse!", ~N[2023-01-06 03:50:38], -1.0],
+    [102, "Insert a lot of rows per batch", ~N[2023-01-05 00:00:00], 1.41421],
+    [102, "Sort your data based on your commonly-used queries", ~N[2023-01-06 00:00:00], 2.718],
+    [101, "Granules are the smallest chunks of data read", ~N[2023-01-06 03:55:38], 3.14159]
+  ],
+  fn row -> Ch.encode_row_binary(row, [:u32, :string, :datetime, :f32]) end
+)
+
+iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) FORMAT RowBinary", rows)
+
+Ch.query_rows(conn, "SELECT * FROM helloworld.my_first_table")
+{:ok,
+ %{
+   num_rows: 4,
+   rows: [
+     [101, "Hello, ClickHouse!", ~N[2023-01-06 03:50:38], -1.0],
+     [101, "Granules are the smallest chunks of data read", ~N[2023-01-06 03:55:38], 3.141590118408203],
+     [102, "Insert a lot of rows per batch", ~N[2023-01-05 00:00:00], 1.4142099618911743],
+     [102, "Sort your data based on your commonly-used queries", ~N[2023-01-06 00:00:00], 2.7179999351501465]
+   ]
+ }}
+```
+
+### Use cases
+
+#### Custom FORMAT in SELECT
+
+```elixir
 iex> Ch.query(conn, "SELECT 1 + 1")
 {:ok, "2\n"}
 
@@ -17,66 +58,43 @@ iex> Ch.query(conn, "SELECT 1 + 1 FORMAT RowBinary")
 
 iex> Ch.query(conn, "SELECT 1 + 1 FORMAT CSVWithNames")
 {:ok, "\"plus(1, 1)\"\n2\n"}
+```
 
-iex> with {:ok, data} <- Ch.query(conn, "SELECT 1 + 1 FORMAT RowBinaryWithNamesAndTypes"), do: Ch.decode_row_binary_with_names_and_types(data)
-[[2]]
+#### SELECT with params
 
-iex> conn |> Ch.query!("SELECT 1 + {$0:Int8} FORMAT RowBinaryWithNamesAndTypes", _params = [2]) |> Ch.decode_row_binary_with_names_and_types()
-[[3]]
-
-# `query_rows` is a helper that uses `FORMAT RowBinaryWithNamesAndTypes` and decodes the response automatically
-iex> Ch.query_rows(conn, "SELECT 1 + 1")
-{:ok, %{num_rows: 1, rows: [[2]]}}
-
+```elixir
 # https://clickhouse.com/docs/en/interfaces/http/#cli-queries-with-parameters
 iex> statement = "SELECT {a:Array(UInt8)}, {b:UInt8}, {c:String}, {d:DateTime}"
 iex> params = %{a: [1,2], b: 123, c: "123", d: NaiveDateTime.truncate(NaiveDateTime.utc_now(), :second)}
 iex> Ch.query_rows(conn, statement, params)
 {:ok, %{num_rows: 1, rows: [[[1, 2], 123, "123", ~N[2023-01-06 03:06:32]]]}}
+```
 
-# CREATE
-iex> Ch.query_rows(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) ENGINE=Memory")
-{:ok, %{num_rows: 0, rows: []}}
+#### INSERT a RowBinary stream
 
-iex> Ch.query_rows(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) ENGINE=Memory")
-{:error, %Ch.Error{message: "Code: 57. DB::Exception: Table default.example already exists. (TABLE_ALREADY_EXISTS) (version 22.10.1.1175 (official build))\n"}}
+```elixir
+iex> Ch.query(conn, "CREATE TABLE example(a UInt32, b String, c DateTime) ENGINE=Memory")
 
-iex> Ch.query_rows(conn, "SHOW TABLES")
-{:ok, %{num_rows: 1, rows: [["example"]]}}
-
-# INSERT
 iex> rows = [[1, "1", ~N[2022-11-26 09:38:24]], [2, "2", ~N[2022-11-26 09:38:25]], [3, "3", ~N[2022-11-26 09:38:26]]]
 iex> types = [:u32, :string, :datetime]
-iex> stream_or_iodata = Stream.map(rows, fn row -> Ch.encode_row_binary(row, types) end)
+iex> stream_or_iodata = rows |> Stream.chunk_every(20) |> Stream.map(fn chunk -> Ch.encode_row_binary_chunk(chunk, types) end)
 # `stream_or_iodata` is sent as a chunked request (~ Stream.each(stream_or_iodata, fn chunk -> send_chunk(chunk) end))
 iex> Ch.query(conn, "INSERT INTO example(a, b, c) FORMAT RowBinary", stream_or_iodata)
 {:ok, %{num_rows: 3, rows: []}}
+```
 
-# for `SELECT` queries `RowBinaryWithNamesAndTypes` format is used (~ "SELECT * FROM example WHERE a > {a:Int8} FORMAT RowBinaryWithNamesAndTypes")
-iex> Ch.query_rows(conn, "SELECT * FROM example WHERE a > {a:Int8}", %{a: 1})
-{:ok, %{num_rows: 2, rows: [[2, "2", ~N[2022-11-26 09:38:25]], [3, "3", ~N[2022-11-26 09:38:26]]]}}
+#### INSERT a CSV file stream
 
-iex> Ch.query_rows(conn, "ALTER TABLE example DELETE WHERE a < {a:Int8}", %{a: 100})
-{:ok, %{num_rows: 0, rows: []}}
-
-iex> Ch.query_rows(conn, "SELECT count() FROM example")
-{:ok, %{num_rows: 1, rows: [[0]]}}
-
+```elixir
 iex> File.write!("example.csv", "1,1,2022-11-26 09:38:24\n2,2,2022-11-26 09:38:25\n3,3,2022-11-26 09:38:26")
 iex> Ch.query(conn, "INSERT INTO example(a, b, c) FORMAT CSV", File.stream!("example.csv"))
 {:ok, %{num_rows: 3, rows: []}}
+```
 
+#### INSERT a CSVWithNames file stream
+
+```elixir
 iex> File.write!("example.csv", "a,b,c\n1,1,2022-11-26 09:38:24\n2,2,2022-11-26 09:38:25\n3,3,2022-11-26 09:38:26")
 iex> Ch.query(conn, "INSERT INTO example FORMAT CSVWithNames", File.stream!("example.csv"))
 {:ok, %{num_rows: 3, rows: []}}
-
-iex> Ch.query_rows(conn, "SELECT count() FROM {table:Identifier}", %{"table" => "example"})
-{:ok, %{num_rows: 1, rows: [[6]]}}
-
-iex> File.rm!("example.csv")
-iex> Ch.query(conn, "DROP TABLE example")
-{:ok, ""}
-
-iex> Ch.query_rows(conn, "SHOW TABLES")
-{:ok, %{num_rows: 0, rows: []}}
 ```
