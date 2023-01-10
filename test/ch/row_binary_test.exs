@@ -1,6 +1,6 @@
-defmodule Ch.ProtocolTest do
+defmodule Ch.RowBinaryTest do
   use ExUnit.Case, async: true
-  import Ch.Protocol
+  import Ch.RowBinary
 
   test "encode -> decode" do
     spec = [
