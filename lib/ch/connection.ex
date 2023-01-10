@@ -87,8 +87,7 @@ defmodule Ch.Connection do
     %Ch.Query{statement: statement} = query
     path = "/?" <> encode_params_qs(params)
     # TODO if format is specified, then don't do automatic decoding?
-    format = opts[:format] || "RowBinaryWithNamesAndTypes"
-    statement = [statement, " FORMAT " | format]
+    statement = [statement | " FORMAT RowBinaryWithNamesAndTypes"]
 
     # TODO ok to POST for everything, does it make the query not a readonly?
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), statement),
