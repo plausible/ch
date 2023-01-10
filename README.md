@@ -57,7 +57,7 @@ params = %{a: [1,2], b: 123, c: "123", d: ~N[2023-01-06 03:06:32]}
 - `INSERT` a `CSV` file stream
 
 ```elixir
-Ch.query(conn, "CREATE TABLE example(a UInt32, b String) ENGINE=Memory")
+{:ok, _} = Ch.query(conn, "CREATE TABLE example(a UInt32, b String) ENGINE=Memory")
 ```
 
 ```elixir
