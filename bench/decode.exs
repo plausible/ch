@@ -1,3 +1,5 @@
+alias Ch.RowBinary
+
 rows = [
   [10000, "1qortoiawuefglads", ~N[2022-11-26 09:38:24], ["here", "goes", "the", "string"]],
   [
@@ -22,8 +24,8 @@ csv =
 row_binary =
   IO.iodata_to_binary([
     4,
-    Ch.Protocol.encode_rows(header, [:string, :string, :string, :string]),
-    Ch.Protocol.encode_rows(rows, [:u32, :string, :datetime, {:array, :string}])
+    RowBinary.encode_rows(header, [:string, :string, :string, :string]),
+    RowBinary.encode_rows(rows, [:u32, :string, :datetime, {:array, :string}])
   ])
 
 Benchee.run(
@@ -34,7 +36,7 @@ Benchee.run(
       |> CSV.decode_rows()
     end,
     "row_binary" => fn ->
-      Ch.Protocol.decode_rows(row_binary)
+      RowBinary.decode_rows(row_binary)
     end
   },
   memory_time: 2

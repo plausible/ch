@@ -15,23 +15,11 @@ defmodule Ch.Query do
   def extract_command("insert" <> _rest), do: :insert
   def extract_command(_other), do: nil
 
-  # TODO since these are executed in the caller, maybe it's better to do encoding / decoding here?
   defimpl DBConnection.Query do
-    def parse(query, _opts) do
-      query
-    end
-
-    def describe(query, _opts) do
-      query
-    end
-
-    def encode(_query, params, _opts) do
-      params
-    end
-
-    def decode(_query, result, _opts) do
-      result
-    end
+    def parse(query, _opts), do: query
+    def describe(query, _opts), do: query
+    def encode(_query, params, _opts), do: params
+    def decode(_query, result, _opts), do: result
   end
 
   defimpl String.Chars do

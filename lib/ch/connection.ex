@@ -1,15 +1,13 @@
 defmodule Ch.Connection do
   @moduledoc false
   use DBConnection
-  alias Ch.Error
+  alias Ch.{Error, RowBinary}
   alias Mint.HTTP1, as: HTTP
 
   @impl true
   def connect(opts) do
     scheme = String.to_existing_atom(opts[:scheme] || "http")
-
-    # TODO or hostname?
-    address = opts[:host] || "localhost"
+    address = opts[:hostname] || "localhost"
     port = opts[:port] || 8123
 
     # TODO active: once, active: false, how to deal with checkout / controlling process?
@@ -17,7 +15,7 @@ defmodule Ch.Connection do
       conn =
         conn
         |> HTTP.put_private(:database, opts[:database] || "default")
-        |> HTTP.put_private(:timeout, opts[:timeout] || :timer.seconds(5))
+        |> HTTP.put_private(:timeout, opts[:timeout] || :timer.seconds(15))
         |> maybe_put_private(:username, opts[:username])
         |> maybe_put_private(:password, opts[:password])
 
@@ -63,25 +61,50 @@ defmodule Ch.Connection do
   end
 
   @impl true
-  def handle_execute(%Ch.Query{command: :insert} = query, stream_or_iodata, opts, conn) do
+  def handle_execute(%Ch.Query{command: :insert} = query, rows, opts, conn) do
     %Ch.Query{statement: statement} = query
+    format = opts[:format] || "RowBinary"
+
+    body =
+      if format == "RowBinary" do
+        chunk_every = opts[:chunk_every]
+        types = opts[:types] || raise "missing :types"
+        encode_rows(rows, types, chunk_every)
+      else
+        rows
+      end
 
     with {:ok, conn, ref} <- request(conn, "POST", "/", headers(conn, opts), :stream),
-         {:ok, conn} <- stream_body(conn, ref, statement, stream_or_iodata),
+         {:ok, conn} <- stream_body(conn, ref, statement, format, body),
          {:ok, conn, responses} <- receive_stream(conn, ref) do
-      {:ok, query, responses, conn}
+      [_status, headers | _data] = responses
+      num_rows = get_summary(headers, "written_rows")
+      {:ok, query, build_response(num_rows, _rows = []), conn}
     end
   end
 
   def handle_execute(query, params, opts, conn) do
     %Ch.Query{statement: statement} = query
     path = "/?" <> encode_params_qs(params)
+    # TODO if format is specified, then don't do automatic decoding?
+    format = opts[:format] || "RowBinaryWithNamesAndTypes"
+    statement = [statement, " FORMAT " | format]
 
     # TODO ok to POST for everything, does it make the query not a readonly?
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), statement),
          {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
-      {:ok, query, responses, conn}
+      [_status, _headers | data] = responses
+      rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
+      {:ok, query, build_response(rows), conn}
     end
+  end
+
+  defp build_response(rows) do
+    build_response(length(rows), rows)
+  end
+
+  defp build_response(num_rows, rows) do
+    %{num_rows: num_rows, rows: rows}
   end
 
   @impl true
@@ -135,9 +158,19 @@ defmodule Ch.Connection do
     end
   end
 
-  def stream_body(conn, ref, statement, data) do
+  defp encode_rows(rows, types, _chunk_every = nil) do
+    Stream.map(rows, fn row -> RowBinary.encode_row(row, types) end)
+  end
+
+  defp encode_rows(rows, types, chunk_every) do
+    rows
+    |> Stream.chunk_every(chunk_every)
+    |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
+  end
+
+  def stream_body(conn, ref, statement, format, data) do
     # TODO HTTP.stream_request_body(conn, ref, [statement, ?\n])?
-    stream = Stream.concat([[statement, ?\n]], data)
+    stream = Stream.concat([[statement, " FORMAT ", format, ?\n]], data)
 
     # TODO bench vs manual
     reduced =
@@ -197,6 +230,22 @@ defmodule Ch.Connection do
 
       {:error, _conn, _reason, responses} = error ->
         put_elem(error, 3, acc ++ responses)
+    end
+  end
+
+  # TODO telemetry?
+  defp get_summary(headers) do
+    case List.keyfind(headers, "x-clickhouse-summary", 0) do
+      {_, value} -> Jason.decode!(value)
+      nil = not_found -> not_found
+    end
+  end
+
+  defp get_summary(headers, key) do
+    if summary = get_summary(headers) do
+      if value = Map.get(summary, key) do
+        String.to_integer(value)
+      end
     end
   end
 

@@ -1,3 +1,5 @@
+alias Ch.RowBinary
+
 rows = [
   [10000, "1qortoiawuefglads", ~N[2022-11-26 09:38:24], ["here", "goes", "the", "string"]],
   [
@@ -31,10 +33,10 @@ Benchee.run(
       rows |> CSV.encode_rows() |> NimbleCSV.RFC4180.dump_to_iodata()
     end,
     "row_binary stream" => fn ->
-      rows |> Stream.map(&Ch.Protocol.encode_row(&1, types)) |> Stream.run()
+      rows |> Stream.map(&RowBinary.encode_row(&1, types)) |> Stream.run()
     end,
     "row_binary" => fn ->
-      Ch.Protocol.encode_rows(rows, types)
+      RowBinary.encode_rows(rows, types)
     end
   },
   memory_time: 2

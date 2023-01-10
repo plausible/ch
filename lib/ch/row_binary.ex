@@ -1,4 +1,4 @@
-defmodule Ch.Protocol do
+defmodule Ch.RowBinary do
   @moduledoc false
   # @compile {:bin_opt_info, true}
   import Bitwise
