@@ -95,8 +95,50 @@ defmodule Ch.RowBinary do
   defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
 
   # TODO proper varint
-  defp skip_names(<<0::1, v::7, _::size(v)-bytes, rest::bytes>>, left, count) do
-    skip_names(rest, left - 1, count)
+  skips = [
+    quote(do: <<0::1, v1::7, _::size(v1)-bytes>>),
+    quote(do: <<1::1, v1::7, 0::1, v2::7, _::size((v2 <<< 7) + v1)-bytes>>),
+    quote(
+      do: <<1::1, v1::7, 1::1, v2::7, 0::1, v3::7, _::size((v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
+    ),
+    quote(
+      do:
+        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 0::1, v4::7,
+          _::size((v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
+    ),
+    quote(
+      do:
+        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 0::1, v5::7,
+          _::size((v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
+    ),
+    quote(
+      do:
+        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 0::1, v6::7,
+          _::size((v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
+    ),
+    quote(
+      do:
+        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 0::1,
+          v7::7,
+          _::size(
+            (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1
+          )-bytes>>
+    ),
+    quote(
+      do:
+        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 1::1,
+          v7::7, 0::1, v8::7,
+          _::size(
+            (v8 <<< 49) + (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) +
+              (v2 <<< 7) + v1
+          )-bytes>>
+    )
+  ]
+
+  for skip <- skips do
+    defp skip_names(<<unquote(skip), rest::bytes>>, left, count) do
+      skip_names(rest, left - 1, count)
+    end
   end
 
   defp decode_types(<<rest::bytes>>, 0, types) do
@@ -145,7 +187,7 @@ defmodule Ch.RowBinary do
 
   no_dump = ["LowCardinality(String)", "LowCardinality(FixedString(2))"]
 
-  for {raw, type} <- Enum.reject(types, fn {raw, _} -> raw in no_dump end) do
+  for {raw, type} <- types, raw not in no_dump do
     def dump_type(unquote(type)), do: unquote(raw)
   end
 
@@ -154,8 +196,14 @@ defmodule Ch.RowBinary do
     {quote(do: <<0::1, v::7, s::size(v)-bytes>>), :string, quote(do: s)},
     {quote(do: <<1::1, v1::7, 0::1, v2::7, s::size((v2 <<< 7) + v1)-bytes>>), :string,
      quote(do: s)},
-    # TODO
-    {quote(do: <<s::2-bytes>>), {:string, 2}, quote(do: s)},
+    {quote(
+       do: <<1::1, v1::7, 1::1, v2::7, 0::1, v3::7, s::size((v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
+     ), :string, quote(do: s)},
+    {quote(
+       do:
+         <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 0::1, v4::7,
+           s::size((v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
+     ), :string, quote(do: s)},
     {quote(do: <<u>>), :u8, quote(do: u)},
     {quote(do: <<u::16-little>>), :u16, quote(do: u)},
     {quote(do: <<u::32-little>>), :u32, quote(do: u)},
@@ -181,6 +229,11 @@ defmodule Ch.RowBinary do
          ) do
       _decode_rows(rest, inner_types, [unquote(value) | inner_acc], outer_acc, types)
     end
+  end
+
+  defp _decode_rows(<<rest::bytes>>, [{:string, size} | inner_types], inner_acc, outer_acc, types) do
+    <<s::size(size)-bytes, rest::bytes>> = rest
+    _decode_rows(rest, inner_types, [s | inner_acc], outer_acc, types)
   end
 
   # TODO proper varint
