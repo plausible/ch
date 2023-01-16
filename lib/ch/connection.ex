@@ -294,6 +294,7 @@ defmodule Ch.Connection do
   defp encode_param(f) when is_float(f), do: Float.to_string(f)
   defp encode_param(%s{} = d) when s in [Date, NaiveDateTime], do: d
 
+  # TODO DateTime64 to include microseconds?
   defp encode_param(%DateTime{time_zone: "Etc/UTC"} = dt) do
     encode_param(DateTime.to_naive(dt))
   end
