@@ -161,6 +161,8 @@ defmodule Ch.RowBinary do
     {"Date", :date},
     {"DateTime", :datetime},
     # TODO
+    {"Nullable(Float64)", {:nullable, :f64}},
+    # TODO
     {"DateTime('UTC')", :datetime},
     # TODO
     {"LowCardinality(String)", :string},
@@ -192,7 +194,8 @@ defmodule Ch.RowBinary do
     "LowCardinality(String)",
     "LowCardinality(FixedString(2))",
     "DateTime('UTC')",
-    "FixedString(2)"
+    "FixedString(2)",
+    "Nullable(Float64)"
   ]
 
   for {raw, type} <- types, raw not in no_dump do
@@ -237,6 +240,27 @@ defmodule Ch.RowBinary do
          ) do
       _decode_rows(rest, inner_types, [unquote(value) | inner_acc], outer_acc, types)
     end
+  end
+
+  # nullables
+  defp _decode_rows(
+         <<1, rest::bytes>>,
+         [{:nullable, _type} | inner_types],
+         inner_acc,
+         outer_acc,
+         types
+       ) do
+    _decode_rows(rest, inner_types, [nil | inner_acc], outer_acc, types)
+  end
+
+  defp _decode_rows(
+         <<0, f::64-little-float, rest::bytes>>,
+         [{:nullable, :f64} | inner_types],
+         inner_acc,
+         outer_acc,
+         types
+       ) do
+    _decode_rows(rest, inner_types, [f | inner_acc], outer_acc, types)
   end
 
   # https://clickhouse.com/docs/en/sql-reference/data-types/float/#nan-and-inf
