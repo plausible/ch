@@ -165,6 +165,7 @@ defmodule Ch.RowBinary do
     # TODO
     {"LowCardinality(String)", :string},
     {"LowCardinality(FixedString(2))", {:string, 2}},
+    {"FixedString(2)", {:string, 2}},
     # TODO
     {"Array(String)", {:array, :string}},
     {"Array(UInt8)", {:array, :u8}},
@@ -187,7 +188,12 @@ defmodule Ch.RowBinary do
     end
   end
 
-  no_dump = ["LowCardinality(String)", "LowCardinality(FixedString(2))", "DateTime('UTC')"]
+  no_dump = [
+    "LowCardinality(String)",
+    "LowCardinality(FixedString(2))",
+    "DateTime('UTC')",
+    "FixedString(2)"
+  ]
 
   for {raw, type} <- types, raw not in no_dump do
     def dump_type(unquote(type)), do: unquote(raw)
@@ -231,11 +237,6 @@ defmodule Ch.RowBinary do
          ) do
       _decode_rows(rest, inner_types, [unquote(value) | inner_acc], outer_acc, types)
     end
-  end
-
-  defp _decode_rows(<<rest::bytes>>, [{:string, size} | inner_types], inner_acc, outer_acc, types) do
-    <<s::size(size)-bytes, rest::bytes>> = rest
-    _decode_rows(rest, inner_types, [s | inner_acc], outer_acc, types)
   end
 
   # https://clickhouse.com/docs/en/sql-reference/data-types/float/#nan-and-inf
@@ -284,6 +285,11 @@ defmodule Ch.RowBinary do
 
   defp _decode_rows(<<>>, types, [], rows, types) do
     :lists.reverse(rows)
+  end
+
+  defp _decode_rows(<<rest::bytes>>, [{:string, size} | inner_types], inner_acc, outer_acc, types) do
+    <<s::size(size)-bytes, rest::bytes>> = rest
+    _decode_rows(rest, inner_types, [s | inner_acc], outer_acc, types)
   end
 
   defp _decode_array(
