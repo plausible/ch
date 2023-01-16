@@ -164,6 +164,7 @@ defmodule Ch.RowBinary do
     {"Nullable(Float64)", {:nullable, :f64}},
     # TODO
     {"DateTime('UTC')", :datetime},
+    {"DateTime('CET')", :datetime},
     # TODO
     {"LowCardinality(String)", :string},
     {"LowCardinality(FixedString(2))", {:string, 2}},
@@ -194,6 +195,7 @@ defmodule Ch.RowBinary do
     "LowCardinality(String)",
     "LowCardinality(FixedString(2))",
     "DateTime('UTC')",
+    "DateTime('CET')",
     "FixedString(2)",
     "Nullable(Float64)"
   ]
