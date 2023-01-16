@@ -292,7 +292,11 @@ defmodule Ch.Connection do
   defp encode_param(n) when is_number(n), do: Integer.to_string(n)
   defp encode_param(b) when is_binary(b), do: b
   defp encode_param(f) when is_float(f), do: Float.to_string(f)
-  defp encode_param(%s{} = d) when s in [Date, DateTime, NaiveDateTime], do: d
+  defp encode_param(%s{} = d) when s in [Date, NaiveDateTime], do: d
+
+  defp encode_param(%DateTime{time_zone: "Etc/UTC"} = dt) do
+    encode_param(DateTime.to_naive(dt))
+  end
 
   defp encode_param(a) when is_list(a) do
     IO.iodata_to_binary([?[, encode_array_param(a), ?]])
