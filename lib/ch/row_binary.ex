@@ -161,6 +161,8 @@ defmodule Ch.RowBinary do
     {"Date", :date},
     {"DateTime", :datetime},
     # TODO
+    {"DateTime('UTC')", :datetime},
+    # TODO
     {"LowCardinality(String)", :string},
     {"LowCardinality(FixedString(2))", {:string, 2}},
     # TODO
@@ -185,7 +187,7 @@ defmodule Ch.RowBinary do
     end
   end
 
-  no_dump = ["LowCardinality(String)", "LowCardinality(FixedString(2))"]
+  no_dump = ["LowCardinality(String)", "LowCardinality(FixedString(2))", "DateTime('UTC')"]
 
   for {raw, type} <- types, raw not in no_dump do
     def dump_type(unquote(type)), do: unquote(raw)
