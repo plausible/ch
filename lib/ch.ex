@@ -12,14 +12,14 @@ defmodule Ch do
   def query(conn, statement, params \\ [], opts \\ []) do
     query = Ch.Query.build(statement, opts)
 
-    with {:ok, _query, result} <- DBConnection.prepare_execute(conn, query, params, opts) do
+    with {:ok, _query, result} <- DBConnection.execute(conn, query, params, opts) do
       {:ok, result}
     end
   end
 
   def query!(conn, statement, params \\ [], opts \\ []) do
     query = Ch.Query.build(statement, opts)
-    {_query, result} = DBConnection.prepare_execute!(conn, query, params, opts)
+    {_query, result} = DBConnection.execute!(conn, query, params, opts)
     result
   end
 end

@@ -84,17 +84,41 @@ defmodule Ch.Connection do
   end
 
   def handle_execute(query, params, opts, conn) do
-    %Ch.Query{statement: statement} = query
-    path = "/?" <> encode_params_qs(params)
-    # TODO if format is specified, then don't do automatic decoding?
-    statement = [statement | " FORMAT RowBinaryWithNamesAndTypes"]
+    types = opts[:types]
+    readonly = opts[:readonly]
+    params = build_params(params)
+    params = if readonly, do: Map.put(params, "readonly", "1"), else: params
+    path = "/?" <> URI.encode_query(params)
 
-    # TODO ok to POST for everything, does it make the query not a readonly?
+    format =
+      cond do
+        format = opts[:format] -> format
+        types -> "RowBinary"
+        true -> "RowBinaryWithNamesAndTypes"
+      end
+
+    %Ch.Query{statement: statement} = query
+    statement = [statement, " FORMAT " | format]
+
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), statement),
          {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
       [_status, _headers | data] = responses
-      rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
-      {:ok, query, build_response(rows), conn}
+
+      response =
+        case format do
+          "RowBinaryWithNamesAndTypes" ->
+            rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
+            build_response(rows)
+
+          "RowBinary" ->
+            rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows(types)
+            build_response(rows)
+
+          _other ->
+            build_response(data)
+        end
+
+      {:ok, query, response, conn}
     end
   end
 
@@ -274,19 +298,18 @@ defmodule Ch.Connection do
   defp handle_responses([], _ref, acc), do: {:more, acc}
 
   # TODO support just one approach?
-  defp encode_params_qs(params) when is_map(params) do
-    params |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end) |> URI.encode_query()
+  defp build_params(params) when is_map(params) do
+    params |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end)
   end
 
-  defp encode_params_qs([{_k, _v} | _] = params) do
-    params |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end) |> URI.encode_query()
+  defp build_params([{_k, _v} | _] = params) do
+    params |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end)
   end
 
-  defp encode_params_qs(params) when is_list(params) do
+  defp build_params(params) when is_list(params) do
     params
     |> Enum.with_index()
     |> Map.new(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
-    |> URI.encode_query()
   end
 
   defp encode_param(n) when is_number(n), do: Integer.to_string(n)
