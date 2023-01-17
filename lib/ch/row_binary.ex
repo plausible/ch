@@ -265,6 +265,7 @@ defmodule Ch.RowBinary do
     _decode_rows(rest, inner_types, [f | inner_acc], outer_acc, types)
   end
 
+  # https://stackoverflow.com/questions/36151158/how-are-nan-and-infinity-of-a-float-or-double-stored-in-memory
   # https://clickhouse.com/docs/en/sql-reference/data-types/float/#nan-and-inf
   # NaN: Ch.query(conn, "SELECT 0 / 0"): <<0, 0, 0, 0, 0, 0, 248, 127>>
   # Inf: Ch.query(conn, "SELECT 0.5 / 0"): <<0, 0, 0, 0, 0, 0, 240, 127>>
@@ -273,12 +274,12 @@ defmodule Ch.RowBinary do
   # Inf: Ch.query(conn, "SELECT CAST(0.5 / 0 AS Float32)"): <<0, 0, 128, 127>>
   # -Inf: Ch.query(conn, "SELECT CAST(-0.5 / 0 AS Float32)"): <<0, 0, 128, 255>>
   nans_and_infs = [
-    {quote(do: <<0, 0, 0, 0, 0, 0, 248, 127>>), :f64},
-    {quote(do: <<0, 0, 0, 0, 0, 0, 240, 127>>), :f64},
-    {quote(do: <<0, 0, 0, 0, 0, 0, 240, 255>>), :f64},
-    {quote(do: <<0, 0, 192, 127>>), :f32},
-    {quote(do: <<0, 0, 128, 127>>), :f32},
-    {quote(do: <<0, 0, 128, 255>>), :f32}
+    {quote(do: <<0xF87F::64>>), :f64},
+    {quote(do: <<0xF07F::64>>), :f64},
+    {quote(do: <<0xF0FF::64>>), :f64},
+    {quote(do: <<0xC07F::32>>), :f32},
+    {quote(do: <<0x807F::32>>), :f32},
+    {quote(do: <<0x80FF::32>>), :f32}
   ]
 
   # TODO right now all these are turned into `nil`
