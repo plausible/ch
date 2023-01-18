@@ -226,7 +226,9 @@ defmodule Ch.RowBinary do
     {quote(do: <<i::32-little-signed>>), :i32, quote(do: i)},
     {quote(do: <<i::64-little-signed>>), :i64, quote(do: i)},
     {quote(do: <<f::32-little-float>>), :f32, quote(do: f)},
+    {quote(do: <<_nan::32>>), :f32, quote(do: nil)},
     {quote(do: <<f::64-little-float>>), :f64, quote(do: f)},
+    {quote(do: <<_nan::64>>), :f64, quote(do: nil)},
     {quote(do: <<d::16-little>>), :date, quote(do: Date.add(@epoch_date, d))},
     {quote(do: <<s::32-little>>), :datetime,
      quote(do: NaiveDateTime.add(@epoch_naive_datetime, s))}
@@ -273,27 +275,27 @@ defmodule Ch.RowBinary do
   # NaN: Ch.query(conn, "SELECT CAST(0 / 0 AS Float32)"): <<0, 0, 192, 127>>
   # Inf: Ch.query(conn, "SELECT CAST(0.5 / 0 AS Float32)"): <<0, 0, 128, 127>>
   # -Inf: Ch.query(conn, "SELECT CAST(-0.5 / 0 AS Float32)"): <<0, 0, 128, 255>>
-  nans_and_infs = [
-    {quote(do: <<0xF87F::64>>), :f64},
-    {quote(do: <<0xF07F::64>>), :f64},
-    {quote(do: <<0xF0FF::64>>), :f64},
-    {quote(do: <<0xC07F::32>>), :f32},
-    {quote(do: <<0x807F::32>>), :f32},
-    {quote(do: <<0x80FF::32>>), :f32}
-  ]
+  # nans_and_infs = [
+  #   {quote(do: <<0xF87F::64>>), :f64},
+  #   {quote(do: <<0xF07F::64>>), :f64},
+  #   {quote(do: <<0xF0FF::64>>), :f64},
+  #   {quote(do: <<0xC07F::32>>), :f32},
+  #   {quote(do: <<0x807F::32>>), :f32},
+  #   {quote(do: <<0x80FF::32>>), :f32}
+  # ]
 
   # TODO right now all these are turned into `nil`
-  for {pattern, type} <- nans_and_infs do
-    defp _decode_rows(
-           <<unquote(pattern), rest::bytes>>,
-           [unquote(type) | inner_types],
-           inner_acc,
-           outer_acc,
-           types
-         ) do
-      _decode_rows(rest, inner_types, [nil | inner_acc], outer_acc, types)
-    end
-  end
+  # for {pattern, type} <- nans_and_infs do
+  #   defp _decode_rows(
+  #          <<unquote(pattern), rest::bytes>>,
+  #          [unquote(type) | inner_types],
+  #          inner_acc,
+  #          outer_acc,
+  #          types
+  #        ) do
+  #     _decode_rows(rest, inner_types, [nil | inner_acc], outer_acc, types)
+  #   end
+  # end
 
   # TODO proper varint
   defp _decode_rows(
