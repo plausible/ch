@@ -64,6 +64,14 @@ defmodule Ch.Connection do
   def handle_execute(%Ch.Query{command: :insert} = query, rows, opts, conn) do
     %Ch.Query{statement: statement} = query
     format = Keyword.get(opts, :format, "RowBinary")
+    settings = Keyword.get(opts, :settings, [])
+    params = Map.new(settings, fn {k, v} -> {to_string(k), to_string(v)} end)
+
+    path =
+      case URI.encode_query(params) do
+        "" -> "/"
+        qs -> "/?" <> qs
+      end
 
     body =
       if format == "RowBinary" do
@@ -74,7 +82,7 @@ defmodule Ch.Connection do
         rows
       end
 
-    with {:ok, conn, ref} <- request(conn, "POST", "/", headers(conn, opts), :stream),
+    with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), :stream),
          {:ok, conn} <- stream_body(conn, ref, statement, format, body),
          {:ok, conn, responses} <- receive_stream(conn, ref) do
       [_status, headers | _data] = responses
@@ -85,12 +93,12 @@ defmodule Ch.Connection do
 
   def handle_execute(query, params, opts, conn) do
     types = Keyword.get(opts, :types)
-    readonly = Keyword.get(opts, :readonly)
+    settings = Keyword.get(opts, :settings, [])
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format, default_format)
 
     params = build_params(params)
-    params = if readonly, do: Map.put(params, "readonly", "1"), else: params
+    params = Map.merge(params, Map.new(settings, fn {k, v} -> {to_string(k), to_string(v)} end))
     path = "/?" <> URI.encode_query(params)
 
     %Ch.Query{statement: statement} = query

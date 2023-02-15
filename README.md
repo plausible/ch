@@ -84,3 +84,10 @@ a,b
 File.write!("example.csv", csv)
 {:ok, _} = Ch.query(conn, "INSERT INTO example", File.stream!("example.csv"), format: "CSVWithNames")
 ```
+
+- custom [settings](https://clickhouse.com/docs/en/operations/settings/)
+
+```elixir
+iex> Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 1])
+{:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "1"]]}}
+```
