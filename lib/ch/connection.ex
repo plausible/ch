@@ -37,22 +37,22 @@ defmodule Ch.Connection do
 
   @impl true
   def handle_begin(_opts, conn) do
-    {:disconnect, Error.exception("transactions are not supported"), conn}
+    {:ok, %{}, conn}
   end
 
   @impl true
   def handle_commit(_opts, conn) do
-    {:disconnect, Error.exception("transactions are not supported"), conn}
+    {:ok, %{}, conn}
   end
 
   @impl true
   def handle_rollback(_opts, conn) do
-    {:disconnect, Error.exception("transactions are not supported"), conn}
+    {:ok, %{}, conn}
   end
 
   @impl true
   def handle_status(_opts, conn) do
-    {:disconnect, Error.exception("transactions are not supported"), conn}
+    {:idle, conn}
   end
 
   @impl true
