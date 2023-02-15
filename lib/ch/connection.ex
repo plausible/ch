@@ -63,12 +63,12 @@ defmodule Ch.Connection do
   @impl true
   def handle_execute(%Ch.Query{command: :insert} = query, rows, opts, conn) do
     %Ch.Query{statement: statement} = query
-    format = opts[:format] || "RowBinary"
+    format = Keyword.get(opts, :format, "RowBinary")
 
     body =
       if format == "RowBinary" do
-        chunk_every = opts[:chunk_every]
-        types = opts[:types] || raise "missing :types"
+        chunk_every = Keyword.get(opts, :chunk_every)
+        types = Keyword.fetch!(opts, :types)
         encode_rows(rows, types, chunk_every)
       else
         rows
@@ -84,21 +84,23 @@ defmodule Ch.Connection do
   end
 
   def handle_execute(query, params, opts, conn) do
-    types = opts[:types]
-    readonly = opts[:readonly]
+    types = Keyword.get(opts, :types)
+    readonly = Keyword.get(opts, :readonly)
+    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
+    format = Keyword.get(opts, :format, default_format)
+
     params = build_params(params)
     params = if readonly, do: Map.put(params, "readonly", "1"), else: params
     path = "/?" <> URI.encode_query(params)
 
-    format =
-      cond do
-        format = opts[:format] -> format
-        types -> "RowBinary"
-        true -> "RowBinaryWithNamesAndTypes"
-      end
-
     %Ch.Query{statement: statement} = query
-    statement = [statement, " FORMAT " | format]
+
+    statement =
+      if format do
+        [statement, " FORMAT " | format]
+      else
+        statement
+      end
 
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), statement),
          {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
