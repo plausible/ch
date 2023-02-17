@@ -63,27 +63,30 @@ defmodule Ch.Connection do
   @impl true
   def handle_execute(%Ch.Query{command: :insert} = query, rows, opts, conn) do
     %Ch.Query{statement: statement} = query
-    format = Keyword.get(opts, :format, "RowBinary")
-    settings = Keyword.get(opts, :settings, [])
-    params = Map.new(settings, fn {k, v} -> {to_string(k), to_string(v)} end)
 
     path =
-      case URI.encode_query(params) do
-        "" -> "/"
-        qs -> "/?" <> qs
+      case Keyword.get(opts, :settings, []) do
+        [] ->
+          "/"
+
+        settings ->
+          qs =
+            settings
+            |> Map.new(fn {k, v} -> {to_string(k), to_string(v)} end)
+            |> URI.encode_query()
+
+          "/?" <> qs
       end
 
-    body =
-      if format == "RowBinary" do
-        chunk_every = Keyword.get(opts, :chunk_every)
-        types = Keyword.fetch!(opts, :types)
-        encode_rows(rows, types, chunk_every)
+    statement =
+      if format = Keyword.get(opts, :format) do
+        [statement, " FORMAT ", format, ?\n]
       else
-        rows
+        [statement, ?\n]
       end
 
     with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), :stream),
-         {:ok, conn} <- stream_body(conn, ref, statement, format, body),
+         {:ok, conn} <- stream_body(conn, ref, statement, rows),
          {:ok, conn, responses} <- receive_stream(conn, ref) do
       [_status, headers | _data] = responses
       num_rows = get_summary(headers, "written_rows")
@@ -92,40 +95,35 @@ defmodule Ch.Connection do
   end
 
   def handle_execute(query, params, opts, conn) do
+    %Ch.Query{statement: statement} = query
+
     types = Keyword.get(opts, :types)
     settings = Keyword.get(opts, :settings, [])
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
-    format = Keyword.get(opts, :format, default_format)
+    format = Keyword.get(opts, :format) || default_format
 
     params = build_params(params)
     params = Map.merge(params, Map.new(settings, fn {k, v} -> {to_string(k), to_string(v)} end))
     path = "/?" <> URI.encode_query(params)
 
-    %Ch.Query{statement: statement} = query
+    headers = [{"x-clickhouse-format", format} | headers(conn, opts)]
 
-    statement =
-      if format do
-        [statement, " FORMAT " | format]
-      else
-        statement
-      end
-
-    with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), statement),
+    with {:ok, conn, ref} <- request(conn, "POST", path, headers, statement),
          {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
-      [_status, _headers | data] = responses
+      [_status, headers | data] = responses
 
       response =
-        case format do
-          "RowBinaryWithNamesAndTypes" ->
-            rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
-            build_response(rows)
-
+        case get_header(headers, "x-clickhouse-format") do
           "RowBinary" ->
             rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows(types)
             build_response(rows)
 
+          "RowBinaryWithNamesAndTypes" ->
+            rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
+            build_response(rows)
+
           _other ->
-            build_response(data)
+            data
         end
 
       {:ok, query, response, conn}
@@ -191,19 +189,9 @@ defmodule Ch.Connection do
     end
   end
 
-  defp encode_rows(rows, types, _chunk_every = nil) do
-    Stream.map(rows, fn row -> RowBinary.encode_row(row, types) end)
-  end
-
-  defp encode_rows(rows, types, chunk_every) do
-    rows
-    |> Stream.chunk_every(chunk_every)
-    |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
-  end
-
-  def stream_body(conn, ref, statement, format, data) do
+  def stream_body(conn, ref, statement, data) do
     # TODO HTTP.stream_request_body(conn, ref, [statement, ?\n])?
-    stream = Stream.concat([[statement, " FORMAT ", format, ?\n]], data)
+    stream = Stream.concat([statement], data)
 
     # TODO bench vs manual
     reduced =
@@ -266,11 +254,17 @@ defmodule Ch.Connection do
     end
   end
 
+  defp get_header(headers, key) do
+    case List.keyfind(headers, key, 0) do
+      {_, value} -> value
+      nil = not_found -> not_found
+    end
+  end
+
   # TODO telemetry?
   defp get_summary(headers) do
-    case List.keyfind(headers, "x-clickhouse-summary", 0) do
-      {_, value} -> Jason.decode!(value)
-      nil = not_found -> not_found
+    if summary = get_header(headers, "x-clickhouse-summary") do
+      Jason.decode!(summary)
     end
   end
 
@@ -322,9 +316,9 @@ defmodule Ch.Connection do
     |> Map.new(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
   end
 
-  defp encode_param(n) when is_number(n), do: Integer.to_string(n)
-  defp encode_param(b) when is_binary(b), do: b
+  defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
   defp encode_param(f) when is_float(f), do: Float.to_string(f)
+  defp encode_param(b) when is_binary(b), do: b
 
   @epoch_date ~D[1970-01-01]
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
@@ -348,6 +342,7 @@ defmodule Ch.Connection do
   # TODO [1, 2] => 1,2, (CH doesn't seem to mind trailing comma, but still...)
   defp encode_array_param([s | rest]) when is_binary(s) do
     # TODO faster escaping
+    # TODO \\\\
     [?', String.replace(s, "'", "\\'"), "'," | encode_array_param(rest)]
   end
 

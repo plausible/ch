@@ -1,6 +1,7 @@
 defmodule Ch.RowBinary do
   @moduledoc false
   # @compile {:bin_opt_info, true}
+  @dialyzer :no_improper_lists
   import Bitwise
   @epoch_date ~D[1970-01-01]
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])

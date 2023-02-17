@@ -20,15 +20,18 @@ ENGINE = MergeTree()
 PRIMARY KEY (user_id, timestamp)
 """)
 
+iex> {:ok, %{num_rows: 1}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table VALUES (0, 'test', now(), -1)")
+iex> {:ok, []} = Ch.query(conn, "DELETE FROM helloworld.my_first_table WHERE user_id = 0", [], settings: [allow_experimental_lightweight_delete: 1])
+
 iex> types = [:u32, :string, :datetime, :f32]
 iex> rows = [
   [101, "Hello, ClickHouse!", ~N[2023-01-06 03:50:38], -1.0],
   [102, "Insert a lot of rows per batch", ~N[2023-01-05 00:00:00], 1.41421],
   [102, "Sort your data based on your commonly-used queries", ~N[2023-01-06 00:00:00], 2.718],
   [101, "Granules are the smallest chunks of data read", ~N[2023-01-06 03:55:38], 3.14159]
-]
+] |> Stream.map(fn row -> Ch.RowBinary.encode_row(row, types) end)
 
-iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table(user_id, message, timestamp, metric)", rows, types: types)
+iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table(user_id, message, timestamp, metric) FORMAT RowBinary", rows)
 
 iex> Ch.query(conn, "SELECT * FROM helloworld.my_first_table")
 {:ok,
@@ -41,11 +44,28 @@ iex> Ch.query(conn, "SELECT * FROM helloworld.my_first_table")
      [102, "Sort your data based on your commonly-used queries", ~N[2023-01-06 00:00:00], 2.7179999351501465]
    ]
  }}
+
+iex> Ch.query(conn, "SELECT * FROM helloworld.my_first_table WHERE user_id = {user_id:Int8}", %{"user_id" => 101})
+{:ok,
+ %{
+   num_rows: 4,
+   rows: [
+     [101, "Hello, ClickHouse!", ~N[2023-01-06 03:50:38], -1.0],
+     [101, "Granules are the smallest chunks of data read", ~N[2023-01-06 03:55:38], 3.141590118408203],
+   ]
+ }}
+
+iex> {:ok, csv} = Ch.query(conn, "SELECT * FROM helloworld.my_first_table", [], format: "CSV")
+iex> IO.puts(csv)
+101,"Hello, ClickHouse!","2023-01-06 03:50:38",-1
+101,"Granules are the smallest chunks of data read","2023-01-06 03:55:38",3.14159
+102,"Insert a lot of rows per batch","2023-01-05 00:00:00",1.41421
+102,"Sort your data based on your commonly-used queries","2023-01-06 00:00:00",2.718
 ```
 
 ### Examples
 
-- `SELECT` with params
+- Queries with parameters
 
 ```elixir
 # https://clickhouse.com/docs/en/interfaces/http/#cli-queries-with-parameters
@@ -54,7 +74,7 @@ params = %{a: [1,2], b: 123, c: "123", d: ~N[2023-01-06 03:06:32]}
 {:ok, %{num_rows: 1, rows: [[[1, 2], 123, "123", ~N[2023-01-06 03:06:32]]]}} = Ch.query(conn, statement, params)
 ```
 
-- `INSERT` a `CSV` file stream
+- CSV inserts
 
 ```elixir
 {:ok, _} = Ch.query(conn, "CREATE TABLE example(a UInt32, b String) ENGINE=Memory")
@@ -71,7 +91,7 @@ File.write!("example.csv", csv)
 {:ok, _} = Ch.query(conn, "INSERT INTO example(a, b)", File.stream!("example.csv"), format: "CSV")
 ```
 
-- `INSERT` a `CSVWithNames` file stream
+- CSV with headers inserts
 
 ```elixir
 csv = """
@@ -85,9 +105,16 @@ File.write!("example.csv", csv)
 {:ok, _} = Ch.query(conn, "INSERT INTO example", File.stream!("example.csv"), format: "CSVWithNames")
 ```
 
-- custom [settings](https://clickhouse.com/docs/en/operations/settings/)
+- Custom [settings](https://clickhouse.com/docs/en/operations/settings/)
 
 ```elixir
-iex> Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 1])
+iex> Ch.query(conn, "SHOW SETTINGS LIKE 'async_insert'", [], settings: [async_insert: 1])
 {:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "1"]]}}
+
+iex> Ch.query(conn, "CREATE TABLE example3(a UInt8) ENGINE=Memory", [], settings: [readonly: 1])
+{:error,
+ %Ch.Error{
+   code: 164,
+   message: "Code: 164. DB::Exception: default: Cannot execute query in readonly mode. (READONLY) (version 22.10.1.1175 (official build))\n"
+ }}
 ```
