@@ -31,7 +31,7 @@ iex> rows = [
   [101, "Granules are the smallest chunks of data read", ~N[2023-01-06 03:55:38], 3.14159]
 ] |> Stream.map(fn row -> Ch.RowBinary.encode_row(row, types) end)
 
-iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table(user_id, message, timestamp, metric) FORMAT RowBinary", rows)
+iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table(user_id, message, timestamp, metric)", rows, format: "RowBinary")
 
 iex> Ch.query(conn, "SELECT * FROM helloworld.my_first_table")
 {:ok,
