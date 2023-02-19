@@ -1,6 +1,6 @@
 defmodule Ch.RowBinaryTest do
   use ExUnit.Case, async: true
-  import Ch.RowBinary
+  import Ch.{RowBinary, Test}
 
   test "encode -> decode" do
     spec = [
@@ -66,26 +66,24 @@ defmodule Ch.RowBinaryTest do
       # {{:array, {:array, :string}}, [["a"], [], ["a", "b"]]}
     ]
 
-    cols = length(spec)
+    num_cols = length(spec)
     {types, row} = Enum.unzip(spec)
 
     header = [
-      Enum.map(1..cols, fn col -> "col#{col}" end),
+      Enum.map(1..num_cols, fn col -> "col#{col}" end),
       Enum.map(types, &dump_type/1)
     ]
 
-    encoded = encode_row(row, types)
-
-    bin =
+    encoded =
       IO.iodata_to_binary([
-        cols,
-        encode_rows(header, List.duplicate(:string, cols)),
-        encoded
+        num_cols,
+        encode_rows(header, List.duplicate(:string, num_cols)),
+        encode_row(row, types)
       ])
 
-    [decoded] = decode_rows(bin)
+    [decoded_row] = decode_rows(encoded)
 
-    for {original, decoded} <- Enum.zip(row, decoded) do
+    for {original, decoded} <- Enum.zip(row, decoded_row) do
       assert original == decoded
     end
   end
@@ -138,5 +136,69 @@ defmodule Ch.RowBinaryTest do
     assert encode({:array, :string}, nil) == 0
     assert encode(:date, nil) == <<0, 0>>
     assert encode(:datetime, nil) == <<0, 0, 0, 0>>
+  end
+
+  test "decode_types/1" do
+    spec = [
+      {"UInt8", :u8},
+      {"UInt16", :u16},
+      {"UInt32", :u32},
+      {"UInt64", :u64},
+      {"UInt128", :u128},
+      {"UInt256", :u256},
+      {"Int8", :i8},
+      {"Int16", :i16},
+      {"Int32", :i32},
+      {"Int64", :i64},
+      {"Int128", :i128},
+      {"Int256", :i256},
+      {"Float32", :f32},
+      {"Float64", :f64},
+      {"Decimal(9, 4)", {:decimal, 9, 4}},
+      {"Decimal(23, 11)", {:decimal, 23, 11}},
+      {"Bool", :boolean},
+      {"String", :string},
+      {"FixedString(2)", {:string, 2}},
+      {"FixedString(22)", {:string, 22}},
+      {"FixedString(222)", {:string, 222}},
+      {"UUID", :uuid},
+      {"Date", :date},
+      {"Date32", :date32},
+      {"DateTime", {:datetime, nil}},
+      {"DateTime('UTC')", {:datetime, "UTC"}},
+      {"DateTime('Asia/Tokyo')", {:datetime, "Asia/Tokyo"}},
+      {"DateTime64(6)", {:datetime64, 1_000_000, nil}},
+      {"DateTime64(3, 'UTC')", {:datetime64, 1000, "UTC"}},
+      {"DateTime64(9, 'Asia/Tokyo')", {:datetime64, 1_000_000_000, "Asia/Tokyo"}},
+      {"Enum8('a' = 1, 'b' = 2)", {:enum8, %{1 => "a", 2 => "b"}}},
+      {"Enum16('hello' = 2, 'world' = 3)", {:enum16, %{2 => "hello", 3 => "world"}}},
+      {"LowCardinality(String)", :string},
+      {"LowCardinality(FixedString(2))", {:string, 2}},
+      {"LowCardinality(Date)", :date},
+      {"LowCardinality(DateTime)", {:datetime, nil}},
+      {"LowCardinality(UInt64)", :u64},
+      {"Array(String)", {:array, :string}},
+      {"Array(Array(String))", {:array, {:array, :string}}},
+      {"Array(FixedString(2))", {:array, {:string, 2}}},
+      {"Array(LowCardinality(String))", {:array, :string}},
+      {"Array(Enum8('hello' = 2, 'world' = 3))",
+       {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
+      {"Array(Nothing)", {:array, :nothing}},
+      # {"JSON", :json},
+      # {"Tuple(UInt8, String)", {:tuple, [:u8, :string]}},
+      # {"Tuple(UInt8, Nullable(Nothing))", {:tuple, [:u8, {:nullable, :nothing}]}},
+      {"Nullable(String)", {:nullable, :string}},
+      {"Nullable(Float64)", {:nullable, :f64}},
+      {"Nothing", :nothing}
+      # {"Map(String, UInt64)", {:map, :string, :u64}}
+    ]
+
+    Enum.each(spec, fn {encoded, decoded} ->
+      assert decode_types([encoded]) == [decoded]
+    end)
+  end
+
+  test "decode_types/1 preserves order" do
+    assert decode_types(["UInt8", "UInt16"]) == [:u8, :u16]
   end
 end

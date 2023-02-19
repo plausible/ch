@@ -10,9 +10,10 @@ defmodule Ch.Query do
     %__MODULE__{statement: statement, command: command}
   end
 
-  # TODO add iolist support [" i" | [["NSE", "RT"]]], etc.
+  # TODO add iolist support [" \t\ni" | [["NSE", "RT"]]], etc.
   def extract_command("INSERT" <> _rest), do: :insert
   def extract_command("insert" <> _rest), do: :insert
+  def extract_command([first | _]), do: extract_command(first)
   def extract_command(_other), do: nil
 
   defimpl DBConnection.Query do

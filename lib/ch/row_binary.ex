@@ -2,7 +2,9 @@ defmodule Ch.RowBinary do
   @moduledoc false
   # @compile {:bin_opt_info, true}
   @dialyzer :no_improper_lists
+
   import Bitwise
+
   @epoch_date ~D[1970-01-01]
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
 
@@ -18,7 +20,6 @@ defmodule Ch.RowBinary do
 
   defp encode_rows([], [], rows, types), do: encode_rows(rows, types)
 
-  # TODO
   def encode(:varint, num) when is_integer(num) and num < 128, do: <<num>>
 
   def encode(:varint, num) when is_integer(num) do
@@ -33,13 +34,18 @@ defmodule Ch.RowBinary do
 
   def encode(:string, nil), do: 0
 
+  def encode({:string, len}, nil), do: <<0::size(len * 8)>>
+
   def encode({:string, len}, str) when byte_size(str) == len do
     str
   end
 
-  def encode({:string, len}, nil), do: <<0::size(len * 8)>>
+  def encode({:string, len}, str) when byte_size(str) < len do
+    to_pad = len - byte_size(str)
+    [str | <<0::size(to_pad * 8)>>]
+  end
 
-  for size <- [8, 16, 32, 64] do
+  for size <- [8, 16, 32, 64, 128, 256] do
     def encode(unquote(:"u#{size}"), i) when is_integer(i) do
       <<i::unquote(size)-little>>
     end
@@ -83,6 +89,9 @@ defmodule Ch.RowBinary do
 
   def encode(:date, nil), do: <<0::16>>
 
+  def encode(:uuid, nil), do: <<0::128>>
+  def encode(:uuid, <<uuid::16>>), do: <<uuid::16-little>>
+
   defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
   defp encode_many([] = done, _type), do: done
 
@@ -90,272 +99,344 @@ defmodule Ch.RowBinary do
   def decode_rows(<<>>), do: []
 
   def decode_rows(<<data::bytes>>, types) do
-    _decode_rows(data, types, [], [], types)
+    decode_rows(types, data, [], [], types)
   end
 
   defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
 
-  # TODO proper varint
-  skips = [
-    quote(do: <<0::1, v1::7, _::size(v1)-bytes>>),
-    quote(do: <<1::1, v1::7, 0::1, v2::7, _::size((v2 <<< 7) + v1)-bytes>>),
-    quote(
-      do: <<1::1, v1::7, 1::1, v2::7, 0::1, v3::7, _::size((v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
-    ),
-    quote(
-      do:
-        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 0::1, v4::7,
-          _::size((v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
-    ),
-    quote(
-      do:
-        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 0::1, v5::7,
-          _::size((v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
-    ),
-    quote(
-      do:
-        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 0::1, v6::7,
-          _::size((v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
-    ),
-    quote(
-      do:
-        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 0::1,
-          v7::7,
-          _::size(
-            (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1
-          )-bytes>>
-    ),
-    quote(
-      do:
-        <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 1::1,
-          v7::7, 0::1, v8::7,
-          _::size(
-            (v8 <<< 49) + (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) +
-              (v2 <<< 7) + v1
-          )-bytes>>
-    )
+  varints = [
+    {_pattern = quote(do: <<0::1, v1::7>>), _value = quote(do: v1)},
+    {quote(do: <<1::1, v1::7, 0::1, v2::7>>), quote(do: (v2 <<< 7) + v1)},
+    {quote(do: <<1::1, v1::7, 1::1, v2::7, 0::1, v3::7>>),
+     quote(do: (v3 <<< 14) + (v2 <<< 7) + v1)},
+    {quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 0::1, v4::7>>),
+     quote(do: (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)},
+    {quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 0::1, v5::7>>),
+     quote(do: (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)},
+    {quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 0::1, v6::7>>),
+     quote(do: (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)},
+    {quote do
+       <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 0::1,
+         v7::7>>
+     end,
+     quote do
+       (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1
+     end},
+    {quote do
+       <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 1::1,
+         v7::7, 0::1, v8::7>>
+     end,
+     quote do
+       (v8 <<< 49) + (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) +
+         (v2 <<< 7) + v1
+     end}
   ]
 
-  for skip <- skips do
-    defp skip_names(<<unquote(skip), rest::bytes>>, left, count) do
+  for {pattern, value} <- varints do
+    defp skip_names(<<unquote(pattern), _::size(unquote(value))-bytes, rest::bytes>>, left, count) do
       skip_names(rest, left - 1, count)
     end
   end
 
   defp decode_types(<<rest::bytes>>, 0, types) do
-    types = :lists.reverse(types)
-    _decode_rows(rest, types, [], [], types)
+    types = types |> decode_types() |> :lists.reverse()
+    decode_rows(types, rest, _row = [], _rows = [], types)
   end
 
-  types = [
+  defp decode_types(<<size, type::size(size)-bytes, rest::bytes>>, count, acc) do
+    decode_types(rest, count - 1, [type | acc])
+  end
+
+  @doc false
+  def decode_types([type | types]) do
+    [decode_type(type) | decode_types(types)]
+  end
+
+  def decode_types([] = done), do: done
+
+  scalar_types = [
     {"String", :string},
+    {"UUID", :uuid},
     {"UInt8", :u8},
     {"UInt16", :u16},
     {"UInt32", :u32},
     {"UInt64", :u64},
+    {"UInt128", :u128},
+    {"UInt256", :u256},
     {"Int8", :i8},
     {"Int16", :i16},
     {"Int32", :i32},
     {"Int64", :i64},
+    {"Int128", :i128},
+    {"Int256", :i256},
     {"Float32", :f32},
     {"Float64", :f64},
-    {"Date", :date},
-    {"DateTime", :datetime},
-    # TODO
-    {"Nullable(Float64)", {:nullable, :f64}},
-    # TODO
-    {"DateTime('UTC')", :datetime},
-    {"DateTime('CET')", :datetime},
-    # TODO
-    {"LowCardinality(String)", :string},
-    {"LowCardinality(FixedString(2))", {:string, 2}},
-    {"FixedString(2)", {:string, 2}},
-    # TODO
-    {"Array(String)", {:array, :string}},
-    {"Array(UInt8)", {:array, :u8}},
-    {"Array(UInt16)", {:array, :u16}},
-    {"Array(UInt32)", {:array, :u32}},
-    {"Array(UInt64)", {:array, :u64}},
-    {"Array(Int8)", {:array, :i8}},
-    {"Array(Int16)", {:array, :i16}},
-    {"Array(Int32)", {:array, :i32}},
-    {"Array(Int64)", {:array, :i64}},
-    {"Array(Float32)", {:array, :f32}},
-    {"Array(Float64)", {:array, :f64}},
-    {"Array(Date)", {:array, :date}},
-    {"Array(DateTime)", {:array, :datetime}}
+    {"Date32", :date32},
+    {"Bool", :boolean},
+    {"Nothing", :nothing}
   ]
 
-  for {raw, type} <- types do
-    defp decode_types(<<unquote(byte_size(raw)), unquote(raw)::bytes, rest::bytes>>, count, acc) do
-      decode_types(rest, count - 1, [unquote(type) | acc])
+  for {encoded, decoded} <- scalar_types do
+    defp decode_type(<<unquote(encoded)::bytes, _rest::bytes>>), do: unquote(decoded)
+  end
+
+  defp decode_type("DateTime('" <> rest) do
+    [timezone] = :binary.split(rest, ["'", ")"], [:global, :trim_all])
+    {:datetime, timezone}
+  end
+
+  defp decode_type("DateTime64(" <> rest) do
+    case :binary.split(rest, [", ", ")", "'"], [:global, :trim_all]) do
+      [precision, timezone] ->
+        time_unit = round(:math.pow(10, String.to_integer(precision)))
+        {:datetime64, time_unit, timezone}
+
+      [precision] ->
+        time_unit = round(:math.pow(10, String.to_integer(precision)))
+        {:datetime64, time_unit, nil}
     end
   end
 
-  no_dump = [
-    "LowCardinality(String)",
-    "LowCardinality(FixedString(2))",
-    "DateTime('UTC')",
-    "DateTime('CET')",
-    "FixedString(2)",
-    "Nullable(Float64)"
-  ]
+  defp decode_type("DateTime" <> _), do: {:datetime, _timezone = nil}
+  defp decode_type("Date" <> _), do: :date
 
-  for {raw, type} <- types, raw not in no_dump do
-    def dump_type(unquote(type)), do: unquote(raw)
+  defp decode_type("FixedString(" <> rest) do
+    [size] = :binary.split(rest, ")", [:global, :trim])
+    {:string, String.to_integer(size)}
   end
 
-  patterns = [
-    # TODO proper varint
-    {quote(do: <<0::1, v::7, s::size(v)-bytes>>), :string, quote(do: s)},
-    {quote(do: <<1::1, v1::7, 0::1, v2::7, s::size((v2 <<< 7) + v1)-bytes>>), :string,
-     quote(do: s)},
-    {quote(
-       do: <<1::1, v1::7, 1::1, v2::7, 0::1, v3::7, s::size((v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
-     ), :string, quote(do: s)},
-    {quote(
-       do:
-         <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 0::1, v4::7,
-           s::size((v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)-bytes>>
-     ), :string, quote(do: s)},
-    {quote(do: <<u>>), :u8, quote(do: u)},
-    {quote(do: <<u::16-little>>), :u16, quote(do: u)},
-    {quote(do: <<u::32-little>>), :u32, quote(do: u)},
-    {quote(do: <<u::64-little>>), :u64, quote(do: u)},
-    {quote(do: <<i::signed>>), :i8, quote(do: i)},
-    {quote(do: <<i::16-little-signed>>), :i16, quote(do: i)},
-    {quote(do: <<i::32-little-signed>>), :i32, quote(do: i)},
-    {quote(do: <<i::64-little-signed>>), :i64, quote(do: i)},
-    {quote(do: <<f::32-little-float>>), :f32, quote(do: f)},
-    {quote(do: <<_nan::32>>), :f32, quote(do: nil)},
-    {quote(do: <<f::64-little-float>>), :f64, quote(do: f)},
-    {quote(do: <<_nan::64>>), :f64, quote(do: nil)},
-    {quote(do: <<d::16-little>>), :date, quote(do: Date.add(@epoch_date, d))},
-    {quote(do: <<s::32-little>>), :datetime,
-     quote(do: NaiveDateTime.add(@epoch_naive_datetime, s))}
-  ]
+  defp decode_type("Decimal(" <> rest) do
+    [precision, scale] = :binary.split(rest, [", ", ")"], [:global, :trim])
+    {scale, _} = Integer.parse(scale)
+    {:decimal, String.to_integer(precision), scale}
+  end
 
-  for {pattern, type, value} <- patterns do
-    defp _decode_rows(
-           <<unquote(pattern), rest::bytes>>,
-           [unquote(type) | inner_types],
-           inner_acc,
-           outer_acc,
+  defp decode_type("LowCardinality(" <> rest) do
+    decode_type(rest)
+  end
+
+  defp decode_type("Array(" <> rest) do
+    {:array, decode_type(rest)}
+  end
+
+  defp decode_type("Nullable(" <> rest) do
+    {:nullable, decode_type(rest)}
+  end
+
+  defp decode_type("Enum8('" <> rest) do
+    mapping =
+      rest
+      |> :binary.split(["' = ", ", '", ")"], [:global, :trim_all])
+      |> Enum.chunk_every(2)
+      |> Map.new(fn [k, v] -> {String.to_integer(v), k} end)
+
+    {:enum8, mapping}
+  end
+
+  defp decode_type("Enum16('" <> rest) do
+    mapping =
+      rest
+      |> :binary.split(["' = ", ", '", ")"], [:global, :trim_all])
+      |> Enum.chunk_every(2)
+      |> Map.new(fn [k, v] -> {String.to_integer(v), k} end)
+
+    {:enum16, mapping}
+  end
+
+  defp decode_type(type) do
+    raise ArgumentError, "#{type} type is not supported"
+  end
+
+  @compile inline: [decode_string_decode_rows: 5]
+
+  for {pattern, size} <- varints do
+    defp decode_string_decode_rows(
+           <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
+           types_rest,
+           row,
+           rows,
            types
          ) do
-      _decode_rows(rest, inner_types, [unquote(value) | inner_acc], outer_acc, types)
+      decode_rows(types_rest, bin, [s | row], rows, types)
     end
   end
 
-  # nullables
-  defp _decode_rows(
-         <<1, rest::bytes>>,
-         [{:nullable, _type} | inner_types],
-         inner_acc,
-         outer_acc,
-         types
-       ) do
-    _decode_rows(rest, inner_types, [nil | inner_acc], outer_acc, types)
+  defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
+    case type do
+      :u8 ->
+        <<u, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [u | row], rows, types)
+
+      :u16 ->
+        <<u::16-little, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [u | row], rows, types)
+
+      :u32 ->
+        <<u::32-little, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [u | row], rows, types)
+
+      :u64 ->
+        <<u::64-little, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [u | row], rows, types)
+
+      :u128 ->
+        <<u::128-little, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [u | row], rows, types)
+
+      :u256 ->
+        <<u::256-little, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [u | row], rows, types)
+
+      :i8 ->
+        <<i::signed, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [i | row], rows, types)
+
+      :i16 ->
+        <<i::16-little-signed, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [i | row], rows, types)
+
+      :i32 ->
+        <<i::32-little-signed, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [i | row], rows, types)
+
+      :i64 ->
+        <<i::64-little-signed, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [i | row], rows, types)
+
+      :i128 ->
+        <<i::128-little-signed, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [i | row], rows, types)
+
+      :i256 ->
+        <<i::256-little-signed, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [i | row], rows, types)
+
+      :f32 ->
+        case bin do
+          <<f::32-little-float, bin::bytes>> ->
+            decode_rows(types_rest, bin, [f | row], rows, types)
+
+          <<_nan_or_inf::32, bin::bytes>> ->
+            decode_rows(types_rest, bin, [nil | row], rows, types)
+        end
+
+      :f64 ->
+        case bin do
+          <<f::64-little-float, bin::bytes>> ->
+            decode_rows(types_rest, bin, [f | row], rows, types)
+
+          <<_nan_or_inf::64, bin::bytes>> ->
+            decode_rows(types_rest, bin, [nil | row], rows, types)
+        end
+
+      :string ->
+        decode_string_decode_rows(bin, types_rest, row, rows, types)
+
+      {:string, size} ->
+        <<s::size(size)-bytes, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [s | row], rows, types)
+
+      :boolean ->
+        case bin do
+          <<0, bin::bytes>> -> decode_rows(types_rest, bin, [false | row], rows, types)
+          <<1, bin::bytes>> -> decode_rows(types_rest, bin, [true | row], rows, types)
+        end
+
+      :uuid ->
+        # TODO
+        <<u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, bin::bytes>> =
+          bin
+
+        uuid = <<u8, u7, u6, u5, u4, u3, u2, u1, u16, u15, u14, u13, u12, u11, u10, u9>>
+        decode_rows(types_rest, bin, [uuid | row], rows, types)
+
+      :date ->
+        <<d::16-little, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
+
+      :date32 ->
+        <<d::32-little-signed, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
+
+      {:datetime, timezone} ->
+        <<s::32-little, bin::bytes>> = bin
+
+        dt =
+          case timezone do
+            nil -> NaiveDateTime.add(@epoch_naive_datetime, s)
+            "UTC" -> DateTime.from_unix!(s)
+            _ -> s |> DateTime.from_unix!() |> DateTime.shift_zone!(timezone)
+          end
+
+        decode_rows(types_rest, bin, [dt | row], rows, types)
+
+      {:decimal, p, s} ->
+        size =
+          cond do
+            p >= 39 -> 256
+            p >= 19 -> 128
+            p >= 10 -> 64
+            true -> 32
+          end
+
+        <<val::size(size)-little, bin::bytes>> = bin
+        sign = if val < 0, do: -1, else: 1
+        d = Decimal.new(sign, abs(val), -s)
+        decode_rows(types_rest, bin, [d | row], rows, types)
+
+      {:nullable, type} ->
+        case bin do
+          <<1, bin::bytes>> -> decode_rows(types_rest, bin, [nil | row], rows, types)
+          <<0, bin::bytes>> -> decode_rows([type | types_rest], bin, row, rows, types)
+        end
+
+      {:array, type} ->
+        # TODO proper varint and remove List.duplicate, do it like in decode_string_decode_row
+        # + pivot like array_over to handle nested arrays
+        # TODO optimise for 0 length arrays
+        <<0::1, l::7, bin::bytes>> = bin
+        array_types = List.duplicate(type, l)
+        types_rest = array_types ++ [{:array_over, row} | types_rest]
+        decode_rows(types_rest, bin, _array = [], rows, types)
+
+      {:array_over, original_row} ->
+        decode_rows(types_rest, bin, [:lists.reverse(row) | original_row], rows, types)
+
+      {:datetime64, time_unit, timezone} ->
+        <<s::64-little-signed, bin::bytes>> = bin
+
+        dt =
+          case timezone do
+            nil ->
+              NaiveDateTime.add(@epoch_naive_datetime, s, time_unit)
+
+            "UTC" ->
+              DateTime.from_unix!(s, time_unit)
+
+            _ ->
+              s
+              |> DateTime.from_unix!(time_unit)
+              |> DateTime.shift_zone!(timezone)
+          end
+
+        decode_rows(types_rest, bin, [dt | row], rows, types)
+
+      {:enum8, mapping} ->
+        <<v, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
+
+      {:enum16, mapping} ->
+        <<v::16-little, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
+    end
   end
 
-  defp _decode_rows(
-         <<0, f::64-little-float, rest::bytes>>,
-         [{:nullable, :f64} | inner_types],
-         inner_acc,
-         outer_acc,
-         types
-       ) do
-    _decode_rows(rest, inner_types, [f | inner_acc], outer_acc, types)
-  end
+  defp decode_rows([], <<bin::bytes>>, row, rows, types) do
+    row = :lists.reverse(row)
 
-  # https://stackoverflow.com/questions/36151158/how-are-nan-and-infinity-of-a-float-or-double-stored-in-memory
-  # https://clickhouse.com/docs/en/sql-reference/data-types/float/#nan-and-inf
-  # NaN: Ch.query(conn, "SELECT 0 / 0"): <<0, 0, 0, 0, 0, 0, 248, 127>>
-  # Inf: Ch.query(conn, "SELECT 0.5 / 0"): <<0, 0, 0, 0, 0, 0, 240, 127>>
-  # -Inf: Ch.query(conn, "SELECT -0.5 / 0"): <<0, 0, 0, 0, 0, 0, 240, 255>>
-  # NaN: Ch.query(conn, "SELECT CAST(0 / 0 AS Float32)"): <<0, 0, 192, 127>>
-  # Inf: Ch.query(conn, "SELECT CAST(0.5 / 0 AS Float32)"): <<0, 0, 128, 127>>
-  # -Inf: Ch.query(conn, "SELECT CAST(-0.5 / 0 AS Float32)"): <<0, 0, 128, 255>>
-  # nans_and_infs = [
-  #   {quote(do: <<0xF87F::64>>), :f64},
-  #   {quote(do: <<0xF07F::64>>), :f64},
-  #   {quote(do: <<0xF0FF::64>>), :f64},
-  #   {quote(do: <<0xC07F::32>>), :f32},
-  #   {quote(do: <<0x807F::32>>), :f32},
-  #   {quote(do: <<0x80FF::32>>), :f32}
-  # ]
-
-  # TODO right now all these are turned into `nil`
-  # for {pattern, type} <- nans_and_infs do
-  #   defp _decode_rows(
-  #          <<unquote(pattern), rest::bytes>>,
-  #          [unquote(type) | inner_types],
-  #          inner_acc,
-  #          outer_acc,
-  #          types
-  #        ) do
-  #     _decode_rows(rest, inner_types, [nil | inner_acc], outer_acc, types)
-  #   end
-  # end
-
-  # TODO proper varint
-  defp _decode_rows(
-         <<0::1, count::7, rest::bytes>>,
-         [{:array, type} | inner_types],
-         inner_acc,
-         outer_acc,
-         types
-       ) do
-    _decode_array(rest, type, count, [], inner_types, inner_acc, outer_acc, types)
-  end
-
-  defp _decode_rows(<<rest::bytes>>, [], row, outer_acc, types) do
-    _decode_rows(rest, types, [], [:lists.reverse(row) | outer_acc], types)
-  end
-
-  defp _decode_rows(<<>>, types, [], rows, types) do
-    :lists.reverse(rows)
-  end
-
-  defp _decode_rows(<<rest::bytes>>, [{:string, size} | inner_types], inner_acc, outer_acc, types) do
-    <<s::size(size)-bytes, rest::bytes>> = rest
-    _decode_rows(rest, inner_types, [s | inner_acc], outer_acc, types)
-  end
-
-  defp _decode_array(
-         <<rest::bytes>>,
-         _type,
-         _count = 0,
-         array,
-         inner_types,
-         inner_acc,
-         outer_acc,
-         types
-       ) do
-    _decode_rows(rest, inner_types, [:lists.reverse(array) | inner_acc], outer_acc, types)
-  end
-
-  for {pattern, type, value} <- patterns do
-    defp _decode_array(
-           <<unquote(pattern), rest::bytes>>,
-           unquote(type),
-           count,
-           array_acc,
-           inner_types,
-           inner_acc,
-           outer_acc,
-           types
-         ) do
-      _decode_array(
-        rest,
-        unquote(type),
-        count - 1,
-        [unquote(value) | array_acc],
-        inner_types,
-        inner_acc,
-        outer_acc,
-        types
-      )
+    case bin do
+      <<>> -> :lists.reverse([row | rows])
+      _ -> decode_rows(types, bin, [], [row | rows], types)
     end
   end
 end
