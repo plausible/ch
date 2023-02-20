@@ -16,7 +16,7 @@ rows = [
   ]
 ]
 
-header = [["a", "b", "c", "d"], ["UInt32", "String", "DateTime", "Array(String)"]]
+header = [["a", "b", "d"], ["UInt32", "String", "Array(String)"]]
 
 csv =
   (header ++ CSV.encode_rows(rows)) |> NimbleCSV.RFC4180.dump_to_iodata() |> IO.iodata_to_binary()
