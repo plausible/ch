@@ -21,6 +21,7 @@ defmodule Ch.MixProject do
 
   # Specifies which paths to compile per environment.
   defp elixirc_paths(:bench), do: ["lib", "bench/support"]
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_env), do: ["lib"]
 
   # Run "mix help deps" to learn about dependencies.
@@ -29,9 +30,11 @@ defmodule Ch.MixProject do
       {:mint, "~> 1.4"},
       {:db_connection, "~> 2.4"},
       {:jason, "~> 1.4"},
+      {:decimal, "~> 2.0"},
       {:benchee, "~> 1.1", only: [:bench]},
       {:nimble_csv, "~> 1.2", only: [:bench]},
-      {:dialyxir, "~> 1.2", only: [:dev], runtime: false}
+      {:dialyxir, "~> 1.2", only: [:dev], runtime: false},
+      {:rexbug, "~> 1.0", only: [:dev, :test]}
     ]
   end
 end
