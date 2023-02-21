@@ -98,6 +98,8 @@ defmodule Ch.RowBinary do
   def decode_rows(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
   def decode_rows(<<>>), do: []
 
+  def decode_rows(<<>>, _types), do: []
+
   def decode_rows(<<data::bytes>>, types) do
     decode_rows(types, data, [], [], types)
   end

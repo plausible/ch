@@ -1,4 +1,5 @@
 defmodule Ch.RowBinaryTest do
+  alias Ch.RowBinary
   use ExUnit.Case, async: true
   import Ch.{RowBinary, Test}
 
@@ -210,5 +211,15 @@ defmodule Ch.RowBinaryTest do
 
   test "decode_types/1 preserves order" do
     assert decode_types(["UInt8", "UInt16"]) == [:u8, :u16]
+  end
+
+  describe "decode_rows/2" do
+    test "empty" do
+      assert RowBinary.decode_rows(<<>>, [:u8, :string]) == []
+    end
+
+    test "non-empty" do
+      assert RowBinary.decode_rows(<<1, 2>>, [:u8, :u8]) == [[1, 2]]
+    end
   end
 end
