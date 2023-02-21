@@ -93,6 +93,21 @@ defmodule Ch.RowBinaryTest do
       assert decode_rows(<<>>) == []
     end
 
+    test "accepts empty rows" do
+      types = [:u8, :string]
+      num_cols = length(types)
+
+      header = [
+        Enum.map(1..num_cols, fn col -> "col#{col}" end),
+        Enum.map(types, &dump_type/1)
+      ]
+
+      encoded =
+        IO.iodata_to_binary([num_cols, encode_rows(header, List.duplicate(:string, num_cols))])
+
+      assert decode_rows(encoded) == []
+    end
+
     test "example response with NaN floats" do
       payload =
         <<3, 164, 1, 114, 111, 117, 110, 100, 40, 100, 105, 118, 105, 100, 101, 40, 109, 117, 108,

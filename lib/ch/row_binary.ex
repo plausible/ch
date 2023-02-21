@@ -140,6 +140,8 @@ defmodule Ch.RowBinary do
     end
   end
 
+  defp decode_types(<<>>, 0, _types), do: []
+
   defp decode_types(<<rest::bytes>>, 0, types) do
     types = types |> decode_types() |> :lists.reverse()
     decode_rows(types, rest, _row = [], _rows = [], types)
