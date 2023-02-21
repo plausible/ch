@@ -61,9 +61,8 @@ defmodule Ch.RowBinaryTest do
        ]},
       {{:array, :date}, [~D[2022-01-01], ~D[2042-01-01], ~D[1970-01-01]]},
       {{:array, :datetime},
-       [~N[1970-01-01 12:23:34], ~N[2022-01-01 22:12:59], ~N[2042-01-01 04:23:01]]}
-      # TODO
-      # {{:array, {:array, :string}}, [["a"], [], ["a", "b"]]}
+       [~N[1970-01-01 12:23:34], ~N[2022-01-01 22:12:59], ~N[2042-01-01 04:23:01]]},
+      {{:array, {:array, :string}}, [["a"], [], ["a", "b"]]}
     ]
 
     num_cols = length(spec)
@@ -136,6 +135,7 @@ defmodule Ch.RowBinaryTest do
     assert encode({:array, :string}, nil) == 0
     assert encode(:date, nil) == <<0, 0>>
     assert encode(:datetime, nil) == <<0, 0, 0, 0>>
+    assert encode(:uuid, nil) == <<0::128>>
   end
 
   test "decode_types/1" do
@@ -184,18 +184,28 @@ defmodule Ch.RowBinaryTest do
       {"Array(Enum8('hello' = 2, 'world' = 3))",
        {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
       {"Array(Nothing)", {:array, :nothing}},
-      # {"JSON", :json},
-      # {"Tuple(UInt8, String)", {:tuple, [:u8, :string]}},
-      # {"Tuple(UInt8, Nullable(Nothing))", {:tuple, [:u8, {:nullable, :nothing}]}},
       {"Nullable(String)", {:nullable, :string}},
       {"Nullable(Float64)", {:nullable, :f64}},
       {"Nothing", :nothing}
-      # {"Map(String, UInt64)", {:map, :string, :u64}}
     ]
 
     Enum.each(spec, fn {encoded, decoded} ->
       assert decode_types([encoded]) == [decoded]
     end)
+  end
+
+  test "decode_types/1 unsupported" do
+    assert_raise ArgumentError, "Tuple(UInt8, String) type is not supported", fn ->
+      decode_types(["Tuple(UInt8, String)"])
+    end
+
+    assert_raise ArgumentError, "Tuple(UInt8, Nullable(Nothing)) type is not supported", fn ->
+      decode_types(["Tuple(UInt8, Nullable(Nothing))"])
+    end
+
+    assert_raise ArgumentError, "Map(String, UInt64) type is not supported", fn ->
+      decode_types(["Map(String, UInt64)"])
+    end
   end
 
   test "decode_types/1 preserves order" do

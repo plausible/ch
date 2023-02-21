@@ -90,7 +90,7 @@ defmodule Ch.RowBinary do
   def encode(:date, nil), do: <<0::16>>
 
   def encode(:uuid, nil), do: <<0::128>>
-  def encode(:uuid, <<uuid::16>>), do: <<uuid::16-little>>
+  def encode(:uuid, <<u1::64, u2::64>>), do: <<u1::64-little, u2::64-little>>
 
   defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
   defp encode_many([] = done, _type), do: done
@@ -261,6 +261,26 @@ defmodule Ch.RowBinary do
     end
   end
 
+  @compile inline: [decode_array_decode_rows: 6]
+  defp decode_array_decode_rows(<<0, bin::bytes>>, _type, types_rest, row, rows, types) do
+    decode_rows(types_rest, bin, [[] | row], rows, types)
+  end
+
+  for {pattern, size} <- varints do
+    defp decode_array_decode_rows(
+           <<unquote(pattern), bin::bytes>>,
+           type,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      array_types = List.duplicate(type, unquote(size))
+      types_rest = array_types ++ [{:array_over, row} | types_rest]
+      decode_rows(types_rest, bin, [], rows, types)
+    end
+  end
+
   defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
     case type do
       :u8 ->
@@ -343,11 +363,8 @@ defmodule Ch.RowBinary do
         end
 
       :uuid ->
-        # TODO
-        <<u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, bin::bytes>> =
-          bin
-
-        uuid = <<u8, u7, u6, u5, u4, u3, u2, u1, u16, u15, u14, u13, u12, u11, u10, u9>>
+        <<u1::64-little, u2::64-little, bin::bytes>> = bin
+        uuid = <<u1::64, u2::64>>
         decode_rows(types_rest, bin, [uuid | row], rows, types)
 
       :date ->
@@ -391,13 +408,7 @@ defmodule Ch.RowBinary do
         end
 
       {:array, type} ->
-        # TODO proper varint and remove List.duplicate, do it like in decode_string_decode_row
-        # + pivot like array_over to handle nested arrays
-        # TODO optimise for 0 length arrays
-        <<0::1, l::7, bin::bytes>> = bin
-        array_types = List.duplicate(type, l)
-        types_rest = array_types ++ [{:array_over, row} | types_rest]
-        decode_rows(types_rest, bin, _array = [], rows, types)
+        decode_array_decode_rows(bin, type, types_rest, row, rows, types)
 
       {:array_over, original_row} ->
         decode_rows(types_rest, bin, [:lists.reverse(row) | original_row], rows, types)
@@ -431,12 +442,12 @@ defmodule Ch.RowBinary do
     end
   end
 
+  defp decode_rows([], <<>>, row, rows, _types) do
+    :lists.reverse([:lists.reverse(row) | rows])
+  end
+
   defp decode_rows([], <<bin::bytes>>, row, rows, types) do
     row = :lists.reverse(row)
-
-    case bin do
-      <<>> -> :lists.reverse([row | rows])
-      _ -> decode_rows(types, bin, [], [row | rows], types)
-    end
+    decode_rows(types, bin, [], [row | rows], types)
   end
 end

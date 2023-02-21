@@ -29,4 +29,23 @@ defmodule Ch.Test do
   def dump_type({:datetime64, precision, timezone}), do: "DateTime64(#{precision}, '#{timezone}')"
 
   def dump_type({:array, type}), do: "Array(#{dump_type(type)})"
+
+  # makes an http request to clickhouse bypassing dbconnection
+  def sql_exec(sql, opts \\ []) do
+    with {:ok, conn} <- Ch.Connection.connect(opts) do
+      try do
+        case Ch.Connection.handle_execute(Ch.Query.build(sql, opts), [], opts, conn) do
+          {:ok, _query, result, _conn} -> {:ok, result}
+          {:error, reason, _conn} -> {:error, reason}
+          {:disconnect, reason, _conn} -> {:error, reason}
+        end
+      after
+        :ok = Ch.Connection.disconnect(:normal, conn)
+      end
+    end
+  end
+
+  def drop_table(table) do
+    sql_exec("drop table `#{table}`")
+  end
 end
