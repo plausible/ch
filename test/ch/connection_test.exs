@@ -2,19 +2,142 @@ defmodule Ch.ConnectionTest do
   use ExUnit.Case
 
   setup_all do
-    conn = start_supervised!(Ch)
     Application.put_env(:elixir, :time_zone_database, Ch.Tzdb)
     on_exit(fn -> Application.delete_env(:elixir, :time_zone_database) end)
-    {:ok, conn: conn}
   end
 
-  test "select 1", %{conn: conn} do
-    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1")
+  setup do
+    {:ok, conn: start_supervised!(Ch)}
   end
 
-  test "select param", %{conn: conn} do
-    assert {:ok, %{num_rows: 1, rows: [["a"]]}} =
-             Ch.query(conn, "select {a:String}", %{"a" => "a"})
+  describe "query" do
+    test "select without params", %{conn: conn} do
+      assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1")
+    end
+
+    test "select with params", %{conn: conn} do
+      assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {a:UInt8}", %{"a" => 1})
+
+      assert {:ok, %{num_rows: 1, rows: [[1.0]]}} =
+               Ch.query(conn, "select {a:Float32}", %{"a" => 1.0})
+
+      assert {:ok, %{num_rows: 1, rows: [["a&b=c"]]}} =
+               Ch.query(conn, "select {a:String}", %{"a" => "a&b=c"})
+
+      assert {:ok, %{num_rows: 1, rows: [[Decimal.new("2000.3330")]]}} ==
+               Ch.query(conn, "select {a:Decimal(9,4)}", %{"a" => Decimal.new("2000.333")})
+
+      assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} ==
+               Ch.query(conn, "select {a:Date}", %{"a" => ~D[2022-01-01]})
+
+      assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} ==
+               Ch.query(conn, "select {a:Date32}", %{"a" => ~D[2022-01-01]})
+
+      assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00]]]}} ==
+               Ch.query(conn, "select {a:DateTime}", %{"a" => ~N[2022-01-01 12:00:00]})
+
+      assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00.123000]]]}} ==
+               Ch.query(conn, "select {a:DateTime64(3)}", %{"a" => ~N[2022-01-01 12:00:00.123]})
+
+      assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00Z]]]}} ==
+               Ch.query(conn, "select {a:DateTime('UTC')}", %{"a" => ~U[2022-01-01 12:00:00Z]})
+
+      assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} ==
+               Ch.query(conn, "select {a:Array(String)}", %{"a" => ["a", "b'", "\\'c"]})
+
+      assert {:ok, %{num_rows: 1, rows: [[[1, 2, 3]]]}} ==
+               Ch.query(conn, "select {a:Array(UInt8)}", %{"a" => [1, 2, 3]})
+
+      uuid = "9B29BD20-924C-4DE5-BDB3-8C2AA1FCE1FC"
+      uuid_bin = uuid |> String.replace("-", "") |> Base.decode16!()
+
+      assert {:ok, %{num_rows: 1, rows: [[^uuid_bin]]}} =
+               Ch.query(conn, "select {a:UUID}", %{"a" => uuid})
+
+      # TODO
+      # assert {:ok, %{num_rows: 1, rows: [[^uuid_bin]]}} =
+      #          Ch.query(conn, "select {a:UUID}", %{"a" => uuid_bin})
+
+      # pseudo-positional bind
+      assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {$0:UInt8}", [1])
+    end
+
+    test "select with options", %{conn: conn} do
+      assert {:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "1"]]}} =
+               Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 1])
+
+      assert {:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "0"]]}} =
+               Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 0])
+    end
+
+    test "create", %{conn: conn} do
+      assert {:ok, %{num_rows: 0, rows: []}} =
+               Ch.query(conn, "create table create_example(a UInt8) engine = Memory")
+
+      on_exit(fn -> Ch.Test.drop_table("create_example") end)
+    end
+
+    test "create with options", %{conn: conn} do
+      assert {:error, %Ch.Error{code: 164, message: message}} =
+               Ch.query(conn, "create table create_example(a UInt8) engine = Memory", [],
+                 settings: [readonly: 1]
+               )
+
+      assert message =~ ~r/Cannot execute query in readonly mode/
+    end
+
+    test "insert", %{conn: conn} do
+      assert {:ok, %{num_rows: 0, rows: []}} =
+               Ch.query(conn, "create table insert_t(a UInt8, b String) engine = Memory")
+
+      on_exit(fn -> Ch.Test.drop_table("insert_t") end)
+
+      # values
+      assert {:ok, %{num_rows: 2, rows: []}} =
+               Ch.query(conn, "insert into insert_t values (1,'a'), (2,'b')")
+
+      # readonly
+      assert {:error, %Ch.Error{code: 164}} =
+               Ch.query(conn, "insert into insert_t values (1,'a'), (2,'b')", [],
+                 settings: [readonly: 1]
+               )
+
+      # chunked rowbinary stream
+      stream =
+        Stream.map([[3, "c"], [4, "d"]], fn row ->
+          Ch.RowBinary.encode_row(row, [:u8, :string])
+        end)
+
+      assert {:ok, %{num_rows: 2, rows: []}} =
+               Ch.query(conn, ["insert into ", "insert_t(a, b)"], stream, format: "RowBinary")
+
+      assert {:ok, %{num_rows: 4, rows: [[1, "a"], [2, "b"], [3, "c"], [4, "d"]]}} =
+               Ch.query(conn, "select * from insert_t order by a")
+    end
+
+    test "delete", %{conn: conn} do
+      assert {:ok, %{num_rows: 0, rows: []}} =
+               Ch.query(
+                 conn,
+                 "create table delete_t(a UInt8, b String) engine = MergeTree order by tuple()"
+               )
+
+      on_exit(fn -> Ch.Test.drop_table("delete_t") end)
+
+      assert {:ok, %{num_rows: 2, rows: []}} =
+               Ch.query(conn, "insert into delete_t values (1,'a'), (2,'b')")
+
+      assert {:ok, %{num_rows: 0, rows: []}} =
+               Ch.query(conn, "delete from delete_t where 1", [],
+                 settings: [allow_experimental_lightweight_delete: 1]
+               )
+    end
+  end
+
+  describe "query!" do
+    test "select without params", %{conn: conn} do
+      assert %{num_rows: 1, rows: [[1]]} = Ch.query!(conn, "select 1")
+    end
   end
 
   describe "types" do
@@ -62,6 +185,21 @@ defmodule Ch.ConnectionTest do
 
       assert {:ok, %{num_rows: 1, rows: [["aaaaa"]]}} =
                Ch.query(conn, "select {a:FixedString(5)}", %{"a" => "aaaaa"})
+
+      Ch.query!(conn, "create table fixed_string_t(a FixedString(3)) engine = Memory")
+      on_exit(fn -> Ch.Test.drop_table("fixed_string_t") end)
+
+      stream =
+        Stream.map([[""], ["a"], ["aa"], ["aaa"]], fn row ->
+          Ch.RowBinary.encode_row(row, [{:string, 3}])
+        end)
+
+      assert {:ok, %{num_rows: 4}} =
+               Ch.query(conn, "insert into fixed_string_t(a)", stream, format: "RowBinary")
+
+      assert {:ok,
+              %{num_rows: 4, rows: [[<<0, 0, 0>>], ["a" <> <<0, 0>>], ["aa" <> <<0>>], ["aaa"]]}} =
+               Ch.query(conn, "select * from fixed_string_t")
     end
 
     test "decimal", %{conn: conn} do
@@ -103,14 +241,23 @@ defmodule Ch.ConnectionTest do
 
       assert {:ok, %{num_rows: 1, rows: [[true, false]]}} = Ch.query(conn, "select true, false")
 
-      # TODO query!
-      Ch.query(conn, "create table test_bool(A Int64, B Bool) engine = Memory")
-      on_exit(fn -> Ch.query(conn, "drop table test_bool") end)
+      Ch.query!(conn, "create table test_bool(A Int64, B Bool) engine = Memory")
+      on_exit(fn -> Ch.Test.drop_table("test_bool") end)
 
-      Ch.query(conn, "INSERT INTO test_bool VALUES (1, true),(2,0)")
+      Ch.query!(conn, "INSERT INTO test_bool VALUES (1, true),(2,0)")
 
-      assert {:ok, %{num_rows: 2, rows: [[1, true], [2, false]]}} =
-               Ch.query(conn, "SELECT * FROM test_bool")
+      Ch.query!(
+        conn,
+        "insert into test_bool(A, B)",
+        Stream.map([[3, true], [4, false], [5, nil]], fn row ->
+          Ch.RowBinary.encode_row(row, [:i64, :boolean])
+        end),
+        format: "RowBinary"
+      )
+
+      assert {:ok,
+              %{num_rows: 5, rows: [[1, true], [2, false], [3, true], [4, false], [5, false]]}} =
+               Ch.query(conn, "SELECT * FROM test_bool ORDER BY A")
     end
 
     test "uuid", %{conn: conn} do
@@ -127,29 +274,42 @@ defmodule Ch.ConnectionTest do
                |> String.replace("-", "")
                |> Base.decode16!(case: :lower)
 
-      Ch.query(conn, " CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog")
-      on_exit(fn -> Ch.query(conn, "drop table t_uuid") end)
+      Ch.query!(conn, " CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog")
+      on_exit(fn -> Ch.Test.drop_table("t_uuid") end)
 
-      Ch.query(conn, "INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'")
+      Ch.query!(conn, "INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'")
 
       assert {:ok, %{num_rows: 1, rows: [[<<_::16-bytes>>, "Example 1"]]}} =
                Ch.query(conn, "SELECT * FROM t_uuid")
 
-      Ch.query(conn, "INSERT INTO t_uuid (y) VALUES ('Example 2')")
+      Ch.query!(conn, "INSERT INTO t_uuid (y) VALUES ('Example 2')")
+
+      Ch.query!(
+        conn,
+        "insert into t_uuid(x,y)",
+        Stream.map([[uuid, "Example 3"]], fn row ->
+          Ch.RowBinary.encode_row(row, [:uuid, :string])
+        end),
+        format: "RowBinary"
+      )
 
       assert {:ok,
               %{
-                num_rows: 2,
-                rows: [[<<_::16-bytes>>, "Example 1"], [<<0::128>>, "Example 2"]]
+                num_rows: 3,
+                rows: [
+                  [<<_::16-bytes>>, "Example 1"],
+                  [<<0::128>>, "Example 2"],
+                  [^uuid, "Example 3"]
+                ]
               }} = Ch.query(conn, "SELECT * FROM t_uuid")
     end
 
     @tag skip: true
     test "json", %{conn: conn} do
-      Ch.query(conn, "CREATE TABLE json(o JSON) ENGINE = Memory")
-      on_exit(fn -> Ch.query(conn, "drop table json") end)
+      Ch.query!(conn, "CREATE TABLE json(o JSON) ENGINE = Memory")
+      on_exit(fn -> Ch.Test.drop_table("json") end)
 
-      Ch.query(conn, ~s|INSERT INTO json VALUES ('{"a": 1, "b": { "c": 2, "d": [1, 2, 3] }}')|)
+      Ch.query!(conn, ~s|INSERT INTO json VALUES ('{"a": 1, "b": { "c": 2, "d": [1, 2, 3] }}')|)
 
       assert {:ok, %{num_rows: 1, rows: [[1, 2, 3]]}} =
                Ch.query(conn, "SELECT o.a, o.b.c, o.b.d[3] FROM json")
@@ -159,10 +319,10 @@ defmodule Ch.ConnectionTest do
     end
 
     test "enum", %{conn: conn} do
-      Ch.query(conn, "CREATE TABLE t_enum(x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog")
-      on_exit(fn -> Ch.query(conn, "drop table t_enum") end)
+      Ch.query!(conn, "CREATE TABLE t_enum(x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog")
+      on_exit(fn -> Ch.Test.drop_table("t_enum") end)
 
-      Ch.query(conn, "INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')")
+      Ch.query!(conn, "INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')")
 
       assert {:error,
               %Ch.Error{
@@ -193,10 +353,10 @@ defmodule Ch.ConnectionTest do
 
     @tag skip: true
     test "map", %{conn: conn} do
-      Ch.query(conn, "CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory")
-      on_exit(fn -> Ch.query(conn, "drop table table_map") end)
+      Ch.query!(conn, "CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory")
+      on_exit(fn -> Ch.Test.drop_table("table_map") end)
 
-      Ch.query(
+      Ch.query!(
         conn,
         "INSERT INTO table_map VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30})"
       )
@@ -210,14 +370,14 @@ defmodule Ch.ConnectionTest do
     end
 
     test "datetime", %{conn: conn} do
-      Ch.query(
+      Ch.query!(
         conn,
         "CREATE TABLE dt(`timestamp` DateTime('Asia/Istanbul'), `event_id` UInt8) ENGINE = TinyLog"
       )
 
-      on_exit(fn -> Ch.query(conn, "drop table dt") end)
+      on_exit(fn -> Ch.Test.drop_table("dt") end)
 
-      Ch.query(conn, "INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2)")
+      Ch.query!(conn, "INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2)")
 
       assert {:ok,
               %{
@@ -245,10 +405,10 @@ defmodule Ch.ConnectionTest do
     end
 
     test "date32", %{conn: conn} do
-      Ch.query(conn, "CREATE TABLE new(`timestamp` Date32, `event_id` UInt8) ENGINE = TinyLog;")
-      on_exit(fn -> Ch.query(conn, "drop table new") end)
+      Ch.query!(conn, "CREATE TABLE new(`timestamp` Date32, `event_id` UInt8) ENGINE = TinyLog;")
+      on_exit(fn -> Ch.Test.drop_table("new") end)
 
-      Ch.query(conn, "INSERT INTO new VALUES (4102444800, 1), ('2100-01-01', 2)")
+      Ch.query!(conn, "INSERT INTO new VALUES (4102444800, 1), ('2100-01-01', 2)")
 
       assert {:ok, %{num_rows: 2, rows: [[~D[2100-01-01], 1], [~D[2100-01-01], 2]]}} =
                Ch.query(conn, "SELECT * FROM new")
@@ -262,14 +422,14 @@ defmodule Ch.ConnectionTest do
     end
 
     test "datetime64", %{conn: conn} do
-      Ch.query(
+      Ch.query!(
         conn,
         "CREATE TABLE dt(`timestamp` DateTime64(3, 'Asia/Istanbul'), `event_id` UInt8) ENGINE = TinyLog"
       )
 
-      on_exit(fn -> Ch.query(conn, "drop table dt") end)
+      on_exit(fn -> Ch.Test.drop_table("dt") end)
 
-      Ch.query(
+      Ch.query!(
         conn,
         "INSERT INTO dt Values (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3)"
       )
@@ -314,24 +474,51 @@ defmodule Ch.ConnectionTest do
                  "dt" => ~N[2022-01-01 12:00:00.123]
                })
     end
+
+    test "nullable", %{conn: conn} do
+      Ch.query!(
+        conn,
+        "CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple()"
+      )
+
+      on_exit(fn -> Ch.Test.drop_table("nullable") end)
+
+      Ch.query!(conn, "INSERT INTO nullable VALUES (1) (NULL) (2) (NULL)")
+
+      assert {:ok, %{num_rows: 4, rows: [[0], [1], [0], [1]]}} =
+               Ch.query(conn, "SELECT n.null FROM nullable")
+
+      assert {:ok, %{num_rows: 4, rows: [[1], [nil], [2], [nil]]}} =
+               Ch.query(conn, "SELECT n FROM nullable")
+    end
   end
 
-  test "nullable", %{conn: conn} do
-    Ch.query(
-      conn,
-      "CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple()"
-    )
+  describe "options" do
+    @tag capture_log: true
+    test "can provide custom timeout", %{conn: conn} do
+      assert {:error, %Mint.TransportError{reason: :timeout} = error} =
+               Ch.query(conn, "select sleep(1)", _params = [], timeout: 100)
 
-    on_exit(fn -> Ch.query(conn, "drop table nullable") end)
+      assert Exception.message(error) == "timeout"
+    end
 
-    Ch.query(conn, "INSERT INTO nullable VALUES (1) (NULL) (2) (NULL)")
+    test "can provide custom creds", %{conn: conn} do
+      assert {:error, %Ch.Error{code: 516} = error} =
+               Ch.query(conn, "select 1 + 1", _params = [],
+                 username: "no-exists",
+                 password: "wrong"
+               )
 
-    assert {:ok, %{num_rows: 4, rows: [[0], [1], [0], [1]]}} =
-             Ch.query(conn, "SELECT n.null FROM nullable")
+      assert Exception.message(error) =~
+               "Code: 516. DB::Exception: no-exists: Authentication failed: password is incorrect or there is no user with such name. (AUTHENTICATION_FAILED)"
+    end
 
-    assert {:ok, %{num_rows: 4, rows: [[1], [nil], [2], [nil]]}} =
-             Ch.query(conn, "SELECT n FROM nullable")
+    test "can provide custom database", %{conn: conn} do
+      assert {:error, %Ch.Error{code: 81} = error} =
+               Ch.query(conn, "select 1 + 1", _params = [], database: "no-db")
 
-    # TODO nullable array, map, tuple, decimal, fixed string
+      assert Exception.message(error) =~
+               "Code: 81. DB::Exception: Database `no-db` doesn't exist. (UNKNOWN_DATABASE)"
+    end
   end
 end

@@ -10,7 +10,6 @@ defmodule Ch.Connection do
     address = opts[:hostname] || "localhost"
     port = opts[:port] || 8123
 
-    # TODO active: once, active: false, how to deal with checkout / controlling process?
     with {:ok, conn} <- HTTP.connect(scheme, address, port, mode: :passive) do
       conn =
         conn
@@ -61,6 +60,7 @@ defmodule Ch.Connection do
   end
 
   @impl true
+  # TODO instead of command == :insert, do rows is stream check
   def handle_execute(%Ch.Query{command: :insert} = query, rows, opts, conn) do
     %Ch.Query{statement: statement} = query
 
@@ -123,7 +123,7 @@ defmodule Ch.Connection do
             build_response(rows)
 
           _other ->
-            data
+            build_response(data)
         end
 
       {:ok, query, response, conn}
@@ -301,12 +301,7 @@ defmodule Ch.Connection do
 
   defp handle_responses([], _ref, acc), do: {:more, acc}
 
-  # TODO support just one approach?
   defp build_params(params) when is_map(params) do
-    params |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end)
-  end
-
-  defp build_params([{_k, _v} | _] = params) do
     params |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end)
   end
 
@@ -319,7 +314,7 @@ defmodule Ch.Connection do
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
   defp encode_param(f) when is_float(f), do: Float.to_string(f)
   defp encode_param(b) when is_binary(b), do: b
-  defp encode_param(%Decimal{} = d), do: Decimal.to_string(d)
+  defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
 
   defp encode_param(%Date{} = date), do: date
 
@@ -329,7 +324,7 @@ defmodule Ch.Connection do
 
   # TODO support non-GMT timezones?
   defp encode_param(%DateTime{time_zone: "Etc/UTC"} = dt) do
-    DateTime.to_iso8601(dt)
+    dt |> DateTime.to_naive() |> NaiveDateTime.to_iso8601()
   end
 
   defp encode_param(a) when is_list(a) do
@@ -339,12 +334,12 @@ defmodule Ch.Connection do
   # TODO [1, 2] => 1,2, (CH doesn't seem to mind trailing comma, but still...)
   defp encode_array_param([s | rest]) when is_binary(s) do
     # TODO faster escaping
-    # TODO \\\\
-    [?', String.replace(s, "'", "\\'"), "'," | encode_array_param(rest)]
+    s = s |> String.replace("\\", "\\\\") |> String.replace("'", "\\'")
+    [?', s, "'," | encode_array_param(rest)]
   end
 
   defp encode_array_param([el | rest]) do
-    [encode_param(el), "," | encode_array_param(rest)]
+    [encode_param(el), ?, | encode_array_param(rest)]
   end
 
   defp encode_array_param([] = done), do: done
