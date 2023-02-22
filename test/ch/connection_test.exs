@@ -48,6 +48,9 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 1, rows: [[[1, 2, 3]]]}} ==
                Ch.query(conn, "select {a:Array(UInt8)}", %{"a" => [1, 2, 3]})
 
+      assert {:ok, %{num_rows: 1, rows: [[[[1], [2, 3], []]]]}} ==
+               Ch.query(conn, "select {a:Array(Array(UInt8))}", %{"a" => [[1], [2, 3], []]})
+
       uuid = "9B29BD20-924C-4DE5-BDB3-8C2AA1FCE1FC"
       uuid_bin = uuid |> String.replace("-", "") |> Base.decode16!()
 
@@ -432,6 +435,7 @@ defmodule Ch.ConnectionTest do
                })
     end
 
+    # TODO are negatives correct? what's the range?
     test "date32", %{conn: conn} do
       Ch.query!(conn, "CREATE TABLE new(`timestamp` Date32, `event_id` UInt8) ENGINE = TinyLog;")
       on_exit(fn -> Ch.Test.drop_table("new") end)
@@ -447,6 +451,25 @@ defmodule Ch.ConnectionTest do
       # TODO strange stuff, one day is lost
       assert {:ok, %{num_rows: 1, rows: [[~D[2299-12-31]]]}} =
                Ch.query(conn, "select {date:Date32}", %{"date" => ~D[2300-01-01]})
+
+      Ch.query!(
+        conn,
+        "insert into new",
+        Ch.RowBinary.encode_rows([[~D[1960-01-01], 3]], [:date32, :u8]),
+        format: "RowBinary"
+      )
+
+      assert %{
+               num_rows: 3,
+               rows: [
+                 [~D[2100-01-01], 1],
+                 [~D[2100-01-01], 2],
+                 [~D[1960-01-01], 3]
+               ]
+             } = Ch.query!(conn, "SELECT * FROM new")
+
+      assert %{num_rows: 1, rows: [[3]]} =
+               Ch.query!(conn, "SELECT event_id FROM new WHERE timestamp = '1960-01-01'")
     end
 
     test "datetime64", %{conn: conn} do
@@ -473,6 +496,27 @@ defmodule Ch.ConnectionTest do
                  ]
                }
              } == Ch.query(conn, "SELECT * FROM dt")
+
+      Ch.query!(
+        conn,
+        "insert into dt(timestamp, event_id)",
+        Ch.RowBinary.encode_rows(
+          [[~N[2021-01-01 12:00:00.123456], 4], [~N[2021-01-01 12:00:00], 5]],
+          [{:datetime64, :millisecond}, :u8]
+        ),
+        format: "RowBinary"
+      )
+
+      assert {
+               :ok,
+               %{
+                 num_rows: 2,
+                 rows: [
+                   [DateTime.new!(~D[2021-01-01], ~T[15:00:00.123], "Asia/Istanbul"), 4],
+                   [DateTime.new!(~D[2021-01-01], ~T[15:00:00.000], "Asia/Istanbul"), 5]
+                 ]
+               }
+             } == Ch.query(conn, "SELECT * FROM dt WHERE timestamp > '2020-01-01'")
 
       for precision <- 0..9 do
         expected = ~N[2022-01-01 12:00:00]

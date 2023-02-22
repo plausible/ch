@@ -141,8 +141,8 @@ defmodule Ch.RowBinaryTest do
   end
 
   test "encode nil" do
-    assert encode(:varint, nil) == 0
-    assert encode(:string, nil) == 0
+    assert encode(:varint, nil) == <<0>>
+    assert encode(:string, nil) == <<0>>
     assert encode({:string, 2}, nil) == <<0, 0>>
     assert encode(:u8, nil) == <<0>>
     assert encode(:u16, nil) == <<0, 0>>
@@ -154,10 +154,12 @@ defmodule Ch.RowBinaryTest do
     assert encode(:i64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
     assert encode(:f32, nil) == <<0, 0, 0, 0>>
     assert encode(:f64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-    assert encode(:boolean, nil) == 0
-    assert encode({:array, :string}, nil) == 0
+    assert encode(:boolean, nil) == <<0>>
+    assert encode({:array, :string}, nil) == <<0>>
     assert encode(:date, nil) == <<0, 0>>
+    assert encode(:date32, nil) == <<0, 0, 0, 0>>
     assert encode(:datetime, nil) == <<0, 0, 0, 0>>
+    assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
     assert encode(:uuid, nil) == <<0::128>>
   end
 

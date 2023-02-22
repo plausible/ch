@@ -7,6 +7,7 @@ defmodule Ch.RowBinary do
 
   @epoch_date ~D[1970-01-01]
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
+  @epoch_utc_datetime DateTime.new!(@epoch_date, ~T[00:00:00])
 
   def encode_row([el | els], [type | types]), do: [encode(type, el) | encode_row(els, types)]
   def encode_row([] = done, []), do: done
@@ -26,13 +27,13 @@ defmodule Ch.RowBinary do
     [<<1::1, num::7>> | encode(:varint, num >>> 7)]
   end
 
-  def encode(:varint, nil), do: 0
+  def encode(:varint, nil), do: <<0>>
 
   def encode(:string, str) when is_binary(str) do
     [encode(:varint, byte_size(str)) | str]
   end
 
-  def encode(:string, nil), do: 0
+  def encode(:string, nil), do: <<0>>
 
   def encode({:string, len}, nil), do: <<0::size(len * 8)>>
 
@@ -81,28 +82,50 @@ defmodule Ch.RowBinary do
     <<0::size(size)-little>>
   end
 
-  def encode(:boolean, true), do: 1
-  def encode(:boolean, false), do: 0
-  def encode(:boolean, nil), do: 0
+  def encode(:boolean, true), do: <<1>>
+  def encode(:boolean, false), do: <<0>>
+  def encode(:boolean, nil), do: <<0>>
 
   def encode({:array, type}, [_ | _] = l) do
     [encode(:varint, length(l)) | encode_many(l, type)]
   end
 
-  def encode({:array, _type}, []), do: 0
-  def encode({:array, _type}, nil), do: 0
+  def encode({:array, _type}, []), do: <<0>>
+  def encode({:array, _type}, nil), do: <<0>>
 
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
   end
 
+  def encode(:datetime, %DateTime{time_zone: "Etc/UTC"} = datetime) do
+    <<DateTime.diff(datetime, @epoch_utc_datetime)::32-little>>
+  end
+
   def encode(:datetime, nil), do: <<0::32>>
+
+  def encode({:datetime64, unit}, %NaiveDateTime{} = datetime) do
+    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, unit)::64-little-signed>>
+  end
+
+  def encode({:datetime64, unit}, %DateTime{time_zone: "Etc/UTC"} = datetime) do
+    <<DateTime.diff(datetime, @epoch_utc_datetime, unit)::64-little-signed>>
+  end
+
+  def encode({:datetime64, _unit}, nil) do
+    <<0::64>>
+  end
 
   def encode(:date, %Date{} = date) do
     <<Date.diff(date, @epoch_date)::16-little>>
   end
 
   def encode(:date, nil), do: <<0::16>>
+
+  def encode(:date32, %Date{} = date) do
+    <<Date.diff(date, @epoch_date)::32-little-signed>>
+  end
+
+  def encode(:date32, nil), do: <<0::32>>
 
   def encode(:uuid, nil), do: <<0::128>>
   def encode(:uuid, <<u1::64, u2::64>>), do: <<u1::64-little, u2::64-little>>
