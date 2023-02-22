@@ -230,6 +230,34 @@ defmodule Ch.ConnectionTest do
                 rows: [[Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(76, 4)"]]
               }} ==
                Ch.query(conn, "SELECT toDecimal256(2, 4) AS x, x / 3, toTypeName(x)")
+
+      Ch.query!(conn, "create table decimal_t(d Decimal(9,4)) engine = Memory")
+      on_exit(fn -> Ch.Test.drop_table("decimal_t") end)
+
+      assert %{num_rows: 3} =
+               Ch.query!(
+                 conn,
+                 "insert into decimal_t(d)",
+                 _rows =
+                   Stream.map(
+                     [
+                       [Decimal.new("2.66")],
+                       [Decimal.new("2.6666")],
+                       [Decimal.new("2.66666")]
+                     ],
+                     fn row -> Ch.RowBinary.encode_row(row, [{:decimal, 9, 4}]) end
+                   ),
+                 format: "RowBinary"
+               )
+
+      assert %{
+               num_rows: 3,
+               rows: [
+                 [Decimal.new("2.6600")],
+                 [Decimal.new("2.6666")],
+                 [Decimal.new("2.6667")]
+               ]
+             } == Ch.query!(conn, "select * from decimal_t")
     end
 
     test "boolean", %{conn: conn} do

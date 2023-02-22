@@ -66,6 +66,21 @@ defmodule Ch.RowBinary do
     def encode(unquote(:"f#{size}"), nil), do: <<0::unquote(size)>>
   end
 
+  def encode({:decimal, p, s}, %Decimal{sign: sign, coef: coef, exp: exp}) when s == abs(exp) do
+    size = decimal_size(p)
+    i = sign * coef
+    <<i::size(size)-little>>
+  end
+
+  def encode({:decimal, _, s} = t, %Decimal{} = d) do
+    encode(t, Decimal.round(d, s))
+  end
+
+  def encode({:decimal, p, _s}, nil) do
+    size = decimal_size(p)
+    <<0::size(size)-little>>
+  end
+
   def encode(:boolean, true), do: 1
   def encode(:boolean, false), do: 0
   def encode(:boolean, nil), do: 0
@@ -392,14 +407,7 @@ defmodule Ch.RowBinary do
         decode_rows(types_rest, bin, [dt | row], rows, types)
 
       {:decimal, p, s} ->
-        size =
-          cond do
-            p >= 39 -> 256
-            p >= 19 -> 128
-            p >= 10 -> 64
-            true -> 32
-          end
-
+        size = decimal_size(p)
         <<val::size(size)-little, bin::bytes>> = bin
         sign = if val < 0, do: -1, else: 1
         d = Decimal.new(sign, abs(val), -s)
@@ -453,5 +461,15 @@ defmodule Ch.RowBinary do
   defp decode_rows([], <<bin::bytes>>, row, rows, types) do
     row = :lists.reverse(row)
     decode_rows(types, bin, [], [row | rows], types)
+  end
+
+  # TODO eval once, at type decoding
+  defp decimal_size(p) do
+    cond do
+      p >= 39 -> 256
+      p >= 19 -> 128
+      p >= 10 -> 64
+      true -> 32
+    end
   end
 end

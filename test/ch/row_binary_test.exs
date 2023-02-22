@@ -88,6 +88,13 @@ defmodule Ch.RowBinaryTest do
     end
   end
 
+  test "encode decimal" do
+    assert encode({:decimal, 9, 4}, nil) == <<0::32>>
+    assert encode({:decimal, 9, 4}, Decimal.new("2.66")) == <<26600::32-little>>
+    assert encode({:decimal, 9, 4}, Decimal.new("2.6666")) == <<26666::32-little>>
+    assert encode({:decimal, 9, 4}, Decimal.new("2.66666")) == <<26667::32-little>>
+  end
+
   describe "decode_rows/1" do
     test "accepts empty bin" do
       assert decode_rows(<<>>) == []
