@@ -13,8 +13,8 @@ defmodule Ch.Connection do
     with {:ok, conn} <- HTTP.connect(scheme, address, port, mode: :passive) do
       conn =
         conn
-        |> HTTP.put_private(:database, opts[:database] || "default")
         |> HTTP.put_private(:timeout, opts[:timeout] || :timer.seconds(15))
+        |> maybe_put_private(:database, opts[:database])
         |> maybe_put_private(:username, opts[:username])
         |> maybe_put_private(:password, opts[:password])
 
@@ -190,26 +190,12 @@ defmodule Ch.Connection do
   end
 
   def stream_body(conn, ref, statement, data) do
-    # TODO HTTP.stream_request_body(conn, ref, [statement, ?\n])?
-    stream = Stream.concat([statement], data)
+    stream = Stream.concat([[statement], data, [:eof]])
 
-    # TODO bench vs manual
-    reduced =
-      Enum.reduce_while(stream, {:ok, conn}, fn
-        chunk, {:ok, conn} -> {:cont, HTTP.stream_request_body(conn, ref, chunk)}
-        _chunk, error -> {:halt, error}
-      end)
-
-    case reduced do
-      {:ok, conn} ->
-        case HTTP.stream_request_body(conn, ref, :eof) do
-          {:ok, _conn} = ok -> ok
-          {:error, _conn, _error} = error -> disconnect(error)
-        end
-
-      {:halt, {:error, _conn, _error} = error} ->
-        disconnect(error)
-    end
+    Enum.reduce_while(stream, {:ok, conn}, fn
+      chunk, {:ok, conn} -> {:cont, HTTP.stream_request_body(conn, ref, chunk)}
+      _chunk, error -> {:halt, error}
+    end)
   end
 
   defp receive_stream(conn, ref, opts \\ []) do
@@ -222,8 +208,8 @@ defmodule Ch.Connection do
         exception = Error.exception(error)
 
         code =
-          if kv = List.keyfind(headers, "x-clickhouse-exception-code", 0) do
-            String.to_integer(elem(kv, 1))
+          if code = get_header(headers, "x-clickhouse-exception-code") do
+            String.to_integer(code)
           end
 
         exception = %{exception | code: code}
@@ -322,25 +308,79 @@ defmodule Ch.Connection do
     NaiveDateTime.to_iso8601(naive)
   end
 
-  # TODO support non-GMT timezones?
-  defp encode_param(%DateTime{time_zone: "Etc/UTC"} = dt) do
+  defp encode_param(%DateTime{} = dt) do
     dt |> DateTime.to_naive() |> NaiveDateTime.to_iso8601()
   end
 
   defp encode_param(a) when is_list(a) do
-    IO.iodata_to_binary([?[, encode_array_param(a), ?]])
+    IO.iodata_to_binary([?[, encode_array_params(a), ?]])
   end
 
-  # TODO [1, 2] => 1,2, (CH doesn't seem to mind trailing comma, but still...)
-  defp encode_array_param([s | rest]) when is_binary(s) do
-    # TODO faster escaping
-    s = s |> String.replace("\\", "\\\\") |> String.replace("'", "\\'")
-    [?', s, "'," | encode_array_param(rest)]
+  defp encode_array_params([last]), do: encode_array_param(last)
+
+  defp encode_array_params([s | rest]) do
+    [encode_array_param(s), ?, | encode_array_params(rest)]
   end
 
-  defp encode_array_param([el | rest]) do
-    [encode_param(el), ?, | encode_array_param(rest)]
+  defp encode_array_params([] = empty), do: empty
+
+  defp encode_array_param(s) when is_binary(s) do
+    [?', to_iodata(s, 0, s, []), ?']
   end
 
-  defp encode_array_param([] = done), do: done
+  defp encode_array_param(v) do
+    encode_param(v)
+  end
+
+  # TODO
+  # escapes = [
+  #   {?_, "\_"},
+  #   {?', "''"},
+  #   {?%, "\%"},
+  #   {?\\, "\\\\"}
+  # ]
+
+  escapes = [
+    {?', "\\'"},
+    {?\\, "\\\\"}
+  ]
+
+  @dialyzer {:no_improper_lists, to_iodata: 4, to_iodata: 5}
+
+  @doc false
+  # based on based on https://github.com/elixir-plug/plug/blob/main/lib/plug/html.ex#L41-L80
+  def to_iodata(binary, skip, original, acc)
+
+  for {match, insert} <- escapes do
+    def to_iodata(<<unquote(match), rest::bits>>, skip, original, acc) do
+      to_iodata(rest, skip + 1, original, [acc | unquote(insert)])
+    end
+  end
+
+  def to_iodata(<<_char, rest::bits>>, skip, original, acc) do
+    to_iodata(rest, skip, original, acc, 1)
+  end
+
+  def to_iodata(<<>>, _skip, _original, acc) do
+    acc
+  end
+
+  for {match, insert} <- escapes do
+    defp to_iodata(<<unquote(match), rest::bits>>, skip, original, acc, len) do
+      part = binary_part(original, skip, len)
+      to_iodata(rest, skip + len + 1, original, [acc, part | unquote(insert)])
+    end
+  end
+
+  defp to_iodata(<<_char, rest::bits>>, skip, original, acc, len) do
+    to_iodata(rest, skip, original, acc, len + 1)
+  end
+
+  defp to_iodata(<<>>, 0, original, _acc, _len) do
+    original
+  end
+
+  defp to_iodata(<<>>, skip, original, acc, len) do
+    [acc | binary_part(original, skip, len)]
+  end
 end
