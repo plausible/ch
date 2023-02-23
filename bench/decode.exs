@@ -18,25 +18,33 @@ rows = [
 
 header = [["a", "b", "c", "d"], ["UInt32", "String", "DateTime", "Array(String)"]]
 
-csv =
-  (header ++ CSV.encode_rows(rows)) |> NimbleCSV.RFC4180.dump_to_iodata() |> IO.iodata_to_binary()
+csv_with_names_and_types =
+  (header ++ CSV.encode_rows(rows))
+  |> NimbleCSV.RFC4180.dump_to_iodata()
+  |> IO.iodata_to_binary()
 
 row_binary =
+  IO.iodata_to_binary(RowBinary.encode_rows(rows, [:u32, :string, :datetime, {:array, :string}]))
+
+row_binary_with_names_and_types =
   IO.iodata_to_binary([
-    4,
+    _cols_count = 4,
     RowBinary.encode_rows(header, [:string, :string, :string, :string]),
-    RowBinary.encode_rows(rows, [:u32, :string, :datetime, {:array, :string}])
+    row_binary
   ])
 
 Benchee.run(
   %{
-    "csv" => fn ->
-      csv
+    "CSVWithNamesAndTypes" => fn ->
+      csv_with_names_and_types
       |> NimbleCSV.RFC4180.parse_string(skip_headers: false)
       |> CSV.decode_rows()
     end,
-    "row_binary" => fn ->
-      RowBinary.decode_rows(row_binary)
+    "RowBinaryWithNamesAndTypes" => fn ->
+      RowBinary.decode_rows(row_binary_with_names_and_types)
+    end,
+    "RowBinary" => fn ->
+      RowBinary.decode_rows(row_binary, [:u32, :string, {:datetime, nil}, {:array, :string}])
     end
   },
   memory_time: 2
