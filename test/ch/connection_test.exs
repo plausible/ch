@@ -1,11 +1,6 @@
 defmodule Ch.ConnectionTest do
   use ExUnit.Case
 
-  setup_all do
-    Application.put_env(:elixir, :time_zone_database, Ch.Tzdb)
-    on_exit(fn -> Application.delete_env(:elixir, :time_zone_database) end)
-  end
-
   setup do
     {:ok, conn: start_supervised!(Ch)}
   end
@@ -13,6 +8,10 @@ defmodule Ch.ConnectionTest do
   describe "query" do
     test "select without params", %{conn: conn} do
       assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1")
+    end
+
+    test "select with types", %{conn: conn} do
+      assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1", [], types: [:u8])
     end
 
     test "select with params", %{conn: conn} do
@@ -574,7 +573,7 @@ defmodule Ch.ConnectionTest do
       assert Exception.message(error) == "timeout"
     end
 
-    test "can provide custom creds", %{conn: conn} do
+    test "errors on invalid creds", %{conn: conn} do
       assert {:error, %Ch.Error{code: 516} = error} =
                Ch.query(conn, "select 1 + 1", _params = [],
                  username: "no-exists",
@@ -585,12 +584,63 @@ defmodule Ch.ConnectionTest do
                "Code: 516. DB::Exception: no-exists: Authentication failed: password is incorrect or there is no user with such name. (AUTHENTICATION_FAILED)"
     end
 
-    test "can provide custom database", %{conn: conn} do
+    test "errors on invalid database", %{conn: conn} do
       assert {:error, %Ch.Error{code: 81} = error} =
                Ch.query(conn, "select 1 + 1", _params = [], database: "no-db")
 
       assert Exception.message(error) =~
                "Code: 81. DB::Exception: Database `no-db` doesn't exist. (UNKNOWN_DATABASE)"
+    end
+
+    test "can provide custom database", %{conn: conn} do
+      assert {:ok, %{num_rows: 1, rows: [[2]]}} =
+               Ch.query(conn, "select 1 + 1", [], database: "default")
+    end
+  end
+
+  # transactions are not supported by clickhouse but
+  # we still allow them for Repo.checkout
+  describe "transactions" do
+    test "commit", %{conn: conn} do
+      assert {:ok, %{num_rows: 1, rows: [[2]]}} =
+               DBConnection.transaction(conn, fn conn ->
+                 Ch.query!(conn, "select 1 + 1")
+               end)
+    end
+
+    test "rollback", %{conn: conn} do
+      assert_raise Ch.Error, ~r/UNKNOWN_TABLE/, fn ->
+        DBConnection.transaction(conn, fn conn ->
+          Ch.query!(conn, "select * from non_table")
+        end)
+      end
+    end
+
+    test "status", %{conn: conn} do
+      assert :idle == DBConnection.status(conn)
+    end
+  end
+
+  # since clickhouse doesn't have prepared statement
+  # we return the query as is from handle_prepare
+  describe "prepare" do
+    test "no-op", %{conn: conn} do
+      query = Ch.Query.build("select 1 + 1", [])
+      assert {:ok, query} == DBConnection.prepare(conn, query)
+    end
+  end
+
+  describe "streams" do
+    test "not supported", %{conn: conn} do
+      assert_raise Ch.Error, "cursors are not supported", fn ->
+        DBConnection.transaction(conn, fn conn ->
+          query = Ch.Query.build("select 1 + 1", [])
+
+          conn
+          |> DBConnection.stream(query, [])
+          |> Stream.run()
+        end)
+      end
     end
   end
 end

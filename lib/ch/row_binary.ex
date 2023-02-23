@@ -97,17 +97,23 @@ defmodule Ch.RowBinary do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
   end
 
-  def encode(:datetime, %DateTime{time_zone: "Etc/UTC"} = datetime) do
+  def encode(:datetime, %DateTime{} = datetime) do
     <<DateTime.diff(datetime, @epoch_utc_datetime)::32-little>>
   end
 
   def encode(:datetime, nil), do: <<0::32>>
 
+  # TODO right now the timezones are ignored during encoding
+  # assuming the user has provided the correct one
+  def encode({:datetime = t, _timezone}, v) do
+    encode(t, v)
+  end
+
   def encode({:datetime64, unit}, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, unit)::64-little-signed>>
   end
 
-  def encode({:datetime64, unit}, %DateTime{time_zone: "Etc/UTC"} = datetime) do
+  def encode({:datetime64, unit}, %DateTime{} = datetime) do
     <<DateTime.diff(datetime, @epoch_utc_datetime, unit)::64-little-signed>>
   end
 
@@ -427,6 +433,7 @@ defmodule Ch.RowBinary do
           case timezone do
             nil -> NaiveDateTime.add(@epoch_naive_datetime, s)
             "UTC" -> DateTime.from_unix!(s)
+            # TODO
             _ -> s |> DateTime.from_unix!() |> DateTime.shift_zone!(timezone)
           end
 
