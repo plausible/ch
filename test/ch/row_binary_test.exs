@@ -63,7 +63,9 @@ defmodule Ch.RowBinaryTest do
       {{:array, :date}, [~D[2022-01-01], ~D[2042-01-01], ~D[1970-01-01]]},
       {{:array, :datetime},
        [~N[1970-01-01 12:23:34], ~N[2022-01-01 22:12:59], ~N[2042-01-01 04:23:01]]},
-      {{:array, {:array, :string}}, [["a"], [], ["a", "b"]]}
+      {{:array, {:array, :string}}, [["a"], [], ["a", "b"]]},
+      {{:nullable, :string}, nil},
+      {{:nullable, :string}, "string"}
     ]
 
     num_cols = length(spec)
@@ -88,19 +90,121 @@ defmodule Ch.RowBinaryTest do
     end
   end
 
-  test "encode decimal" do
-    assert encode({:decimal, 9, 4}, nil) == <<0::32>>
-    assert encode({:decimal, 9, 4}, Decimal.new("2.66")) == <<26600::32-little>>
-    assert encode({:decimal, 9, 4}, Decimal.new("2.6666")) == <<26666::32-little>>
-    assert encode({:decimal, 9, 4}, Decimal.new("2.66666")) == <<26667::32-little>>
+  describe "encode/2" do
+    test "decimal" do
+      assert encode({:decimal, 9, 4}, nil) == <<0::32>>
+      assert encode({:decimal, 9, 4}, Decimal.new("2.66")) == <<26600::32-little>>
+      assert encode({:decimal, 9, 4}, Decimal.new("2.6666")) == <<26666::32-little>>
+      assert encode({:decimal, 9, 4}, Decimal.new("2.66666")) == <<26667::32-little>>
+    end
+
+    test "nil" do
+      assert encode(:varint, nil) == <<0>>
+      assert encode(:string, nil) == <<0>>
+      assert encode({:string, 2}, nil) == <<0, 0>>
+      assert encode(:u8, nil) == <<0>>
+      assert encode(:u16, nil) == <<0, 0>>
+      assert encode(:u32, nil) == <<0, 0, 0, 0>>
+      assert encode(:u64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+      assert encode(:i8, nil) == <<0>>
+      assert encode(:i16, nil) == <<0, 0>>
+      assert encode(:i32, nil) == <<0, 0, 0, 0>>
+      assert encode(:i64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+      assert encode(:f32, nil) == <<0, 0, 0, 0>>
+      assert encode(:f64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+      assert encode(:boolean, nil) == <<0>>
+      assert encode({:array, :string}, nil) == <<0>>
+      assert encode(:date, nil) == <<0, 0>>
+      assert encode(:date32, nil) == <<0, 0, 0, 0>>
+      assert encode(:datetime, nil) == <<0, 0, 0, 0>>
+      assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+      assert encode(:uuid, nil) == <<0::128>>
+      assert encode({:nullable, :string}, nil) == <<1>>
+    end
+  end
+
+  describe "decode_types/1" do
+    test "decodes supported types" do
+      spec = [
+        {"UInt8", :u8},
+        {"UInt16", :u16},
+        {"UInt32", :u32},
+        {"UInt64", :u64},
+        {"UInt128", :u128},
+        {"UInt256", :u256},
+        {"Int8", :i8},
+        {"Int16", :i16},
+        {"Int32", :i32},
+        {"Int64", :i64},
+        {"Int128", :i128},
+        {"Int256", :i256},
+        {"Float32", :f32},
+        {"Float64", :f64},
+        {"Decimal(9, 4)", {:decimal, 9, 4}},
+        {"Decimal(23, 11)", {:decimal, 23, 11}},
+        {"Bool", :boolean},
+        {"String", :string},
+        {"FixedString(2)", {:string, 2}},
+        {"FixedString(22)", {:string, 22}},
+        {"FixedString(222)", {:string, 222}},
+        {"UUID", :uuid},
+        {"Date", :date},
+        {"Date32", :date32},
+        {"DateTime", {:datetime, nil}},
+        {"DateTime('UTC')", {:datetime, "UTC"}},
+        {"DateTime('Asia/Tokyo')", {:datetime, "Asia/Tokyo"}},
+        {"DateTime64(6)", {:datetime64, 1_000_000, nil}},
+        {"DateTime64(3, 'UTC')", {:datetime64, 1000, "UTC"}},
+        {"DateTime64(9, 'Asia/Tokyo')", {:datetime64, 1_000_000_000, "Asia/Tokyo"}},
+        {"Enum8('a' = 1, 'b' = 2)", {:enum8, %{1 => "a", 2 => "b"}}},
+        {"Enum16('hello' = 2, 'world' = 3)", {:enum16, %{2 => "hello", 3 => "world"}}},
+        {"LowCardinality(String)", :string},
+        {"LowCardinality(FixedString(2))", {:string, 2}},
+        {"LowCardinality(Date)", :date},
+        {"LowCardinality(DateTime)", {:datetime, nil}},
+        {"LowCardinality(UInt64)", :u64},
+        {"Array(String)", {:array, :string}},
+        {"Array(Array(String))", {:array, {:array, :string}}},
+        {"Array(FixedString(2))", {:array, {:string, 2}}},
+        {"Array(LowCardinality(String))", {:array, :string}},
+        {"Array(Enum8('hello' = 2, 'world' = 3))",
+         {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
+        {"Array(Nothing)", {:array, :nothing}},
+        {"Nullable(String)", {:nullable, :string}},
+        {"Nullable(Float64)", {:nullable, :f64}},
+        {"Nothing", :nothing}
+      ]
+
+      Enum.each(spec, fn {encoded, decoded} ->
+        assert decode_types([encoded]) == [decoded]
+      end)
+    end
+
+    test "raises on unsupported types" do
+      assert_raise ArgumentError, "Tuple(UInt8, String) type is not supported", fn ->
+        decode_types(["Tuple(UInt8, String)"])
+      end
+
+      assert_raise ArgumentError, "Tuple(UInt8, Nullable(Nothing)) type is not supported", fn ->
+        decode_types(["Tuple(UInt8, Nullable(Nothing))"])
+      end
+
+      assert_raise ArgumentError, "Map(String, UInt64) type is not supported", fn ->
+        decode_types(["Map(String, UInt64)"])
+      end
+    end
+
+    test "preserves order" do
+      assert decode_types(["UInt8", "UInt16"]) == [:u8, :u16]
+    end
   end
 
   describe "decode_rows/1" do
-    test "accepts empty bin" do
+    test "empty" do
       assert decode_rows(<<>>) == []
     end
 
-    test "accepts empty rows" do
+    test "empty rows" do
       types = [:u8, :string]
       num_cols = length(types)
 
@@ -115,7 +219,7 @@ defmodule Ch.RowBinaryTest do
       assert decode_rows(encoded) == []
     end
 
-    test "example response with NaN floats" do
+    test "nan floats" do
       payload =
         <<3, 164, 1, 114, 111, 117, 110, 100, 40, 100, 105, 118, 105, 100, 101, 40, 109, 117, 108,
           116, 105, 112, 108, 121, 40, 49, 48, 48, 44, 32, 112, 108, 117, 115, 40, 99, 111, 97,
@@ -138,103 +242,6 @@ defmodule Ch.RowBinaryTest do
 
       assert decode_rows(payload) == [[nil, nil, 100.0]]
     end
-  end
-
-  test "encode nil" do
-    assert encode(:varint, nil) == <<0>>
-    assert encode(:string, nil) == <<0>>
-    assert encode({:string, 2}, nil) == <<0, 0>>
-    assert encode(:u8, nil) == <<0>>
-    assert encode(:u16, nil) == <<0, 0>>
-    assert encode(:u32, nil) == <<0, 0, 0, 0>>
-    assert encode(:u64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-    assert encode(:i8, nil) == <<0>>
-    assert encode(:i16, nil) == <<0, 0>>
-    assert encode(:i32, nil) == <<0, 0, 0, 0>>
-    assert encode(:i64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-    assert encode(:f32, nil) == <<0, 0, 0, 0>>
-    assert encode(:f64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-    assert encode(:boolean, nil) == <<0>>
-    assert encode({:array, :string}, nil) == <<0>>
-    assert encode(:date, nil) == <<0, 0>>
-    assert encode(:date32, nil) == <<0, 0, 0, 0>>
-    assert encode(:datetime, nil) == <<0, 0, 0, 0>>
-    assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-    assert encode(:uuid, nil) == <<0::128>>
-  end
-
-  test "decode_types/1" do
-    spec = [
-      {"UInt8", :u8},
-      {"UInt16", :u16},
-      {"UInt32", :u32},
-      {"UInt64", :u64},
-      {"UInt128", :u128},
-      {"UInt256", :u256},
-      {"Int8", :i8},
-      {"Int16", :i16},
-      {"Int32", :i32},
-      {"Int64", :i64},
-      {"Int128", :i128},
-      {"Int256", :i256},
-      {"Float32", :f32},
-      {"Float64", :f64},
-      {"Decimal(9, 4)", {:decimal, 9, 4}},
-      {"Decimal(23, 11)", {:decimal, 23, 11}},
-      {"Bool", :boolean},
-      {"String", :string},
-      {"FixedString(2)", {:string, 2}},
-      {"FixedString(22)", {:string, 22}},
-      {"FixedString(222)", {:string, 222}},
-      {"UUID", :uuid},
-      {"Date", :date},
-      {"Date32", :date32},
-      {"DateTime", {:datetime, nil}},
-      {"DateTime('UTC')", {:datetime, "UTC"}},
-      {"DateTime('Asia/Tokyo')", {:datetime, "Asia/Tokyo"}},
-      {"DateTime64(6)", {:datetime64, 1_000_000, nil}},
-      {"DateTime64(3, 'UTC')", {:datetime64, 1000, "UTC"}},
-      {"DateTime64(9, 'Asia/Tokyo')", {:datetime64, 1_000_000_000, "Asia/Tokyo"}},
-      {"Enum8('a' = 1, 'b' = 2)", {:enum8, %{1 => "a", 2 => "b"}}},
-      {"Enum16('hello' = 2, 'world' = 3)", {:enum16, %{2 => "hello", 3 => "world"}}},
-      {"LowCardinality(String)", :string},
-      {"LowCardinality(FixedString(2))", {:string, 2}},
-      {"LowCardinality(Date)", :date},
-      {"LowCardinality(DateTime)", {:datetime, nil}},
-      {"LowCardinality(UInt64)", :u64},
-      {"Array(String)", {:array, :string}},
-      {"Array(Array(String))", {:array, {:array, :string}}},
-      {"Array(FixedString(2))", {:array, {:string, 2}}},
-      {"Array(LowCardinality(String))", {:array, :string}},
-      {"Array(Enum8('hello' = 2, 'world' = 3))",
-       {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
-      {"Array(Nothing)", {:array, :nothing}},
-      {"Nullable(String)", {:nullable, :string}},
-      {"Nullable(Float64)", {:nullable, :f64}},
-      {"Nothing", :nothing}
-    ]
-
-    Enum.each(spec, fn {encoded, decoded} ->
-      assert decode_types([encoded]) == [decoded]
-    end)
-  end
-
-  test "decode_types/1 unsupported" do
-    assert_raise ArgumentError, "Tuple(UInt8, String) type is not supported", fn ->
-      decode_types(["Tuple(UInt8, String)"])
-    end
-
-    assert_raise ArgumentError, "Tuple(UInt8, Nullable(Nothing)) type is not supported", fn ->
-      decode_types(["Tuple(UInt8, Nullable(Nothing))"])
-    end
-
-    assert_raise ArgumentError, "Map(String, UInt64) type is not supported", fn ->
-      decode_types(["Map(String, UInt64)"])
-    end
-  end
-
-  test "decode_types/1 preserves order" do
-    assert decode_types(["UInt8", "UInt16"]) == [:u8, :u16]
   end
 
   describe "decode_rows/2" do

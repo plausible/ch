@@ -130,6 +130,9 @@ defmodule Ch.RowBinary do
   def encode(:uuid, nil), do: <<0::128>>
   def encode(:uuid, <<u1::64, u2::64>>), do: <<u1::64-little, u2::64-little>>
 
+  def encode({:nullable, _type}, nil), do: <<1>>
+  def encode({:nullable, type}, value), do: [0 | encode(type, value)]
+
   defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
   defp encode_many([] = done, _type), do: done
 

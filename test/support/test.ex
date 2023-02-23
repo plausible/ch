@@ -30,6 +30,8 @@ defmodule Ch.Test do
 
   def dump_type({:array, type}), do: "Array(#{dump_type(type)})"
 
+  def dump_type({:nullable, type}), do: "Nullable(#{dump_type(type)})"
+
   # makes an http request to clickhouse bypassing dbconnection
   def sql_exec(sql, opts \\ []) do
     with {:ok, conn} <- Ch.Connection.connect(opts) do
