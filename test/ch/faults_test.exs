@@ -28,15 +28,34 @@ defmodule Ch.FaultsTest do
   end
 
   describe "connect/1" do
-    test "timeouts and errors on unreachable port", %{listen: listen, port: port} do
+    test "reconnects to eventually reachable server", ctx do
+      %{listen: listen, port: port, clickhouse: clickhouse} = ctx
+
+      # make the server unreachable
       :ok = :gen_tcp.close(listen)
+      test = self()
+
+      {:ok, conn} = Ch.start_link(port: port, queue_interval: 100)
 
       log =
         capture_async_log(fn ->
-          assert {:ok, conn} = Ch.start_link(port: port, queue_interval: 100)
-
           assert {:error, %DBConnection.ConnectionError{reason: :queue_timeout}} =
                    Ch.query(conn, "select 1 + 1")
+
+          # make the server reachable
+          {:ok, listen} = :gen_tcp.listen(port, @socket_opts)
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          spawn_link(fn ->
+            assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
+            send(test, :done)
+          end)
+
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          assert_receive :done
+          refute_receive _anything
         end)
 
       assert log =~ "failed to connect: ** (Mint.TransportError) connection refused"
