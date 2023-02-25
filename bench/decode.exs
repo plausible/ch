@@ -16,7 +16,7 @@ rows = [
   ]
 ]
 
-header = [["a", "b", "c", "d"], ["UInt32", "String", "DateTime", "Array(String)"]]
+header = [["a", "b", "d"], ["UInt32", "String", "Array(String)"]]
 
 csv_with_names_and_types =
   (header ++ CSV.encode_rows(rows))
