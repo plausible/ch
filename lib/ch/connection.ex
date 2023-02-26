@@ -194,7 +194,7 @@ defmodule Ch.Connection do
 
     Enum.reduce_while(stream, {:ok, conn}, fn
       chunk, {:ok, conn} -> {:cont, HTTP.stream_request_body(conn, ref, chunk)}
-      _chunk, error -> {:halt, error}
+      _chunk, error -> {:halt, disconnect(error)}
     end)
   end
 

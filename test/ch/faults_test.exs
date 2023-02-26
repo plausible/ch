@@ -156,6 +156,42 @@ defmodule Ch.FaultsTest do
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
     end
 
+    test "reconects after closed before streaming request", ctx do
+      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+
+      test = self()
+      data = Ch.RowBinary.encode_rows([[1, 2], [3, 4]], [:u8, :u8])
+
+      log =
+        capture_async_log(fn ->
+          {:ok, conn} = Ch.start_link(port: port)
+          {:ok, mint} = :gen_tcp.accept(listen)
+          :ok = :gen_tcp.close(mint)
+
+          spawn_link(fn ->
+            assert {:error, %Mint.TransportError{reason: :closed}} =
+                     Ch.query(conn, "insert into example(a,b)", data, format: "RowBinary")
+          end)
+
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          spawn_link(fn ->
+            assert {:error, %Ch.Error{code: 60, message: message}} =
+                     Ch.query(conn, "insert into example(a,b)", data, format: "RowBinary")
+
+            assert message =~ ~r/UNKNOWN_TABLE/
+
+            send(test, :done)
+          end)
+
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+          assert_receive :done
+        end)
+
+      assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
+    end
+
     test "reconnects after closed while streaming request", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse} = ctx
 
