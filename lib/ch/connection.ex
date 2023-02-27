@@ -17,6 +17,7 @@ defmodule Ch.Connection do
         |> maybe_put_private(:database, opts[:database])
         |> maybe_put_private(:username, opts[:username])
         |> maybe_put_private(:password, opts[:password])
+        |> maybe_put_private(:settings, opts[:settings])
 
       {:ok, conn}
     end
@@ -63,20 +64,7 @@ defmodule Ch.Connection do
   # TODO instead of command == :insert, do rows is stream check
   def handle_execute(%Ch.Query{command: :insert} = query, rows, opts, conn) do
     %Ch.Query{statement: statement} = query
-
-    path =
-      case Keyword.get(opts, :settings, []) do
-        [] ->
-          "/"
-
-        settings ->
-          qs =
-            settings
-            |> Map.new(fn {k, v} -> {to_string(k), to_string(v)} end)
-            |> URI.encode_query()
-
-          "/?" <> qs
-      end
+    path = "/?" <> URI.encode_query(get_settings(conn, opts))
 
     statement =
       if format = Keyword.get(opts, :format) do
@@ -98,12 +86,10 @@ defmodule Ch.Connection do
     %Ch.Query{statement: statement} = query
 
     types = Keyword.get(opts, :types)
-    settings = Keyword.get(opts, :settings, [])
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
 
-    params = build_params(params)
-    params = Map.merge(params, Map.new(settings, fn {k, v} -> {to_string(k), to_string(v)} end))
+    params = build_params(params) ++ get_settings(conn, opts)
     path = "/?" <> URI.encode_query(params)
 
     headers = [{"x-clickhouse-format", format} | headers(conn, opts)]
@@ -169,6 +155,12 @@ defmodule Ch.Connection do
 
   defp get_opts_or_private(conn, opts, key) do
     opts[key] || HTTP.get_private(conn, key)
+  end
+
+  defp get_settings(conn, opts) do
+    default_settings = HTTP.get_private(conn, :settings, [])
+    opts_settings = Keyword.get(opts, :settings, [])
+    Keyword.merge(default_settings, opts_settings)
   end
 
   defp headers(conn, opts) do
@@ -288,13 +280,13 @@ defmodule Ch.Connection do
   defp handle_responses([], _ref, acc), do: {:more, acc}
 
   defp build_params(params) when is_map(params) do
-    params |> Map.new(fn {k, v} -> {"param_#{k}", encode_param(v)} end)
+    Enum.map(params, fn {k, v} -> {"param_#{k}", encode_param(v)} end)
   end
 
   defp build_params(params) when is_list(params) do
     params
     |> Enum.with_index()
-    |> Map.new(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
+    |> Enum.map(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
   end
 
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
