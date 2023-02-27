@@ -294,8 +294,8 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 1, rows: [[<<_::16-bytes>>]]}} =
                Ch.query(conn, "select generateUUIDv4()")
 
-      assert {:ok, %{num_rows: 1, rows: [[uuid]]}} =
-               Ch.query(conn, "select {uuid:UUID}", %{
+      assert {:ok, %{num_rows: 1, rows: [[uuid, "417ddc5d-e556-4d27-95dd-a34d84e46a50"]]}} =
+               Ch.query(conn, "select {uuid:UUID} as u, toString(u)", %{
                  "uuid" => "417ddc5d-e556-4d27-95dd-a34d84e46a50"
                })
 
@@ -379,6 +379,9 @@ defmodule Ch.ConnectionTest do
 
       assert {:ok, %{num_rows: 1, rows: [["b"]]}} =
                Ch.query(conn, "select {enum:Enum('a' = 1, 'b' = 2)}", %{"enum" => 2})
+
+      assert {:ok, %{num_rows: 1, rows: [["b"]]}} =
+               Ch.query(conn, "select {enum:Enum16('a' = 1, 'b' = 2)}", %{"enum" => 2})
     end
 
     @tag skip: true
@@ -413,25 +416,49 @@ defmodule Ch.ConnectionTest do
               %{
                 num_rows: 2,
                 rows: [
-                  [DateTime.new!(~D[2019-01-01], ~T[03:00:00], "Asia/Istanbul"), 1],
-                  [DateTime.new!(~D[2019-01-01], ~T[00:00:00], "Asia/Istanbul"), 2]
+                  [
+                    DateTime.new!(~D[2019-01-01], ~T[03:00:00], "Asia/Istanbul"),
+                    1,
+                    "2019-01-01 03:00:00"
+                  ],
+                  [
+                    DateTime.new!(~D[2019-01-01], ~T[00:00:00], "Asia/Istanbul"),
+                    2,
+                    "2019-01-01 00:00:00"
+                  ]
                 ]
-              }} == Ch.query(conn, "SELECT * FROM dt")
+              }} == Ch.query(conn, "SELECT *, toString(timestamp) FROM dt")
 
-      assert {:ok, %{num_rows: 1, rows: [[~N[2022-12-12 12:00:00]]]}} =
-               Ch.query(conn, "select {dt:DateTime}", %{"dt" => ~N[2022-12-12 12:00:00]})
+      assert {:ok, %{num_rows: 1, rows: [[~N[2022-12-12 12:00:00], "2022-12-12 12:00:00"]]}} =
+               Ch.query(conn, "select {dt:DateTime} as d, toString(d)", %{
+                 "dt" => ~N[2022-12-12 12:00:00]
+               })
 
-      assert {:ok, %{num_rows: 1, rows: [[~U[2022-12-12 12:00:00Z]]]}} =
-               Ch.query(conn, "select {dt:DateTime('UTC')}", %{"dt" => ~N[2022-12-12 12:00:00]})
+      assert {:ok, %{num_rows: 1, rows: [[~U[2022-12-12 12:00:00Z], "2022-12-12 12:00:00"]]}} =
+               Ch.query(conn, "select {dt:DateTime('UTC')} as d, toString(d)", %{
+                 "dt" => ~N[2022-12-12 12:00:00]
+               })
 
       assert {:ok,
               %{
                 num_rows: 1,
-                rows: [[DateTime.new!(~D[2022-12-12], ~T[12:00:00], "Asia/Bangkok")]]
+                rows: [
+                  [
+                    DateTime.new!(~D[2022-12-12], ~T[12:00:00], "Asia/Bangkok"),
+                    "2022-12-12 12:00:00"
+                  ]
+                ]
               }} ==
-               Ch.query(conn, "select {dt:DateTime('Asia/Bangkok')}", %{
+               Ch.query(conn, "select {dt:DateTime('Asia/Bangkok')} as d, toString(d)", %{
                  "dt" => ~N[2022-12-12 12:00:00]
                })
+
+      # unknown timezone
+      assert_raise ArgumentError, ~r/:time_zone_not_found/, fn ->
+        Ch.query(conn, "select {dt:DateTime('Asia/Hong_Kong')}", %{
+          "dt" => ~N[2022-12-12 12:00:00]
+        })
+      end
     end
 
     # TODO are negatives correct? what's the range?
@@ -441,15 +468,22 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(conn, "INSERT INTO new VALUES (4102444800, 1), ('2100-01-01', 2)")
 
-      assert {:ok, %{num_rows: 2, rows: [[~D[2100-01-01], 1], [~D[2100-01-01], 2]]}} =
-               Ch.query(conn, "SELECT * FROM new")
+      assert {:ok,
+              %{
+                num_rows: 2,
+                rows: [[~D[2100-01-01], 1, "2100-01-01"], [~D[2100-01-01], 2, "2100-01-01"]]
+              }} = Ch.query(conn, "SELECT *, toString(timestamp) FROM new")
 
-      assert {:ok, %{num_rows: 1, rows: [[~D[1900-01-01]]]}} =
-               Ch.query(conn, "select {date:Date32}", %{"date" => ~D[1900-01-01]})
+      assert {:ok, %{num_rows: 1, rows: [[~D[1900-01-01], "1900-01-01"]]}} =
+               Ch.query(conn, "select {date:Date32} as d, toString(d)", %{
+                 "date" => ~D[1900-01-01]
+               })
 
       # TODO strange stuff, one day is lost
-      assert {:ok, %{num_rows: 1, rows: [[~D[2299-12-31]]]}} =
-               Ch.query(conn, "select {date:Date32}", %{"date" => ~D[2300-01-01]})
+      assert {:ok, %{num_rows: 1, rows: [[~D[2299-12-31], "2299-12-31"]]}} =
+               Ch.query(conn, "select {date:Date32} as d, toString(d)", %{
+                 "date" => ~D[2300-01-01]
+               })
 
       Ch.query!(
         conn,
@@ -461,11 +495,11 @@ defmodule Ch.ConnectionTest do
       assert %{
                num_rows: 3,
                rows: [
-                 [~D[2100-01-01], 1],
-                 [~D[2100-01-01], 2],
-                 [~D[1960-01-01], 3]
+                 [~D[2100-01-01], 1, "2100-01-01"],
+                 [~D[2100-01-01], 2, "2100-01-01"],
+                 [~D[1960-01-01], 3, "1960-01-01"]
                ]
-             } = Ch.query!(conn, "SELECT * FROM new")
+             } = Ch.query!(conn, "SELECT *, toString(timestamp) FROM new")
 
       assert %{num_rows: 1, rows: [[3]]} =
                Ch.query!(conn, "SELECT event_id FROM new WHERE timestamp = '1960-01-01'")
@@ -489,12 +523,24 @@ defmodule Ch.ConnectionTest do
                %{
                  num_rows: 3,
                  rows: [
-                   [DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"), 1],
-                   [DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"), 2],
-                   [DateTime.new!(~D[2019-01-01], ~T[00:00:00.000], "Asia/Istanbul"), 3]
+                   [
+                     DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"),
+                     1,
+                     "2019-01-01 03:00:00.123"
+                   ],
+                   [
+                     DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"),
+                     2,
+                     "2019-01-01 03:00:00.123"
+                   ],
+                   [
+                     DateTime.new!(~D[2019-01-01], ~T[00:00:00.000], "Asia/Istanbul"),
+                     3,
+                     "2019-01-01 00:00:00.000"
+                   ]
                  ]
                }
-             } == Ch.query(conn, "SELECT * FROM dt")
+             } == Ch.query(conn, "SELECT *, toString(timestamp) FROM dt")
 
       Ch.query!(
         conn,
@@ -511,11 +557,23 @@ defmodule Ch.ConnectionTest do
                %{
                  num_rows: 2,
                  rows: [
-                   [DateTime.new!(~D[2021-01-01], ~T[15:00:00.123], "Asia/Istanbul"), 4],
-                   [DateTime.new!(~D[2021-01-01], ~T[15:00:00.000], "Asia/Istanbul"), 5]
+                   [
+                     DateTime.new!(~D[2021-01-01], ~T[15:00:00.123], "Asia/Istanbul"),
+                     4,
+                     "2021-01-01 15:00:00.123"
+                   ],
+                   [
+                     DateTime.new!(~D[2021-01-01], ~T[15:00:00.000], "Asia/Istanbul"),
+                     5,
+                     "2021-01-01 15:00:00.000"
+                   ]
                  ]
                }
-             } == Ch.query(conn, "SELECT * FROM dt WHERE timestamp > '2020-01-01'")
+             } ==
+               Ch.query(
+                 conn,
+                 "SELECT *, toString(timestamp)  FROM dt WHERE timestamp > '2020-01-01'"
+               )
 
       for precision <- 0..9 do
         expected = ~N[2022-01-01 12:00:00]
@@ -526,22 +584,29 @@ defmodule Ch.ConnectionTest do
         assert NaiveDateTime.compare(datetime, ~N[2022-01-01 12:00:00]) == :eq
       end
 
-      assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00.123Z]]]}} =
-               Ch.query(conn, "select {dt:DateTime64(3,'UTC')}", %{
+      assert {:ok,
+              %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00.123Z], "2022-01-01 12:00:00.123"]]}} =
+               Ch.query(conn, "select {dt:DateTime64(3,'UTC')} as d, toString(d)", %{
                  "dt" => ~N[2022-01-01 12:00:00.123]
                })
 
-      assert {:ok, %{num_rows: 1, rows: [[~U[1900-01-01 12:00:00.123Z]]]}} =
-               Ch.query(conn, "select {dt:DateTime64(3,'UTC')}", %{
+      assert {:ok,
+              %{num_rows: 1, rows: [[~U[1900-01-01 12:00:00.123Z], "1900-01-01 12:00:00.123"]]}} =
+               Ch.query(conn, "select {dt:DateTime64(3,'UTC')} as d, toString(d)", %{
                  "dt" => ~N[1900-01-01 12:00:00.123]
                })
 
       assert {:ok,
               %{
                 num_rows: 1,
-                rows: [[DateTime.new!(~D[2022-01-01], ~T[12:00:00.123], "Asia/Bangkok")]]
+                rows: [
+                  [
+                    DateTime.new!(~D[2022-01-01], ~T[12:00:00.123], "Asia/Bangkok"),
+                    "2022-01-01 12:00:00.123"
+                  ]
+                ]
               }} ==
-               Ch.query(conn, "select {dt:DateTime64(3,'Asia/Bangkok')}", %{
+               Ch.query(conn, "select {dt:DateTime64(3,'Asia/Bangkok')} as d, toString(d)", %{
                  "dt" => ~N[2022-01-01 12:00:00.123]
                })
     end
@@ -641,6 +706,21 @@ defmodule Ch.ConnectionTest do
           |> Stream.run()
         end)
       end
+    end
+  end
+
+  describe "start_link/1" do
+    test "can pass options to start_link/1" do
+      {:ok, conn} = Ch.start_link(database: "no_db")
+
+      assert {:error, %Ch.Error{code: 81, message: message}} = Ch.query(conn, "select 1 + 1")
+
+      assert message =~ "UNKNOWN_DATABASE"
+    end
+
+    test "can start without options" do
+      {:ok, conn} = Ch.start_link()
+      assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
     end
   end
 end
