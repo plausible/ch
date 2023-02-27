@@ -581,7 +581,7 @@ defmodule Ch.ConnectionTest do
         assert {:ok, %{num_rows: 1, rows: [[datetime]]}} =
                  Ch.query(conn, "select {dt:DateTime64(#{precision})}", %{"dt" => expected})
 
-        assert NaiveDateTime.compare(datetime, ~N[2022-01-01 12:00:00]) == :eq
+        assert NaiveDateTime.compare(datetime, expected) == :eq
       end
 
       assert {:ok,
