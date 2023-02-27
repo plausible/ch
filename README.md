@@ -55,7 +55,7 @@ iex> Ch.query(conn, "SELECT * FROM helloworld.my_first_table WHERE user_id = {us
    ]
  }}
 
-iex> {:ok, csv} = Ch.query(conn, "SELECT * FROM helloworld.my_first_table", [], format: "CSV")
+iex> {:ok, %{rows: csv}} = Ch.query(conn, "SELECT * FROM helloworld.my_first_table", [], format: "CSV")
 iex> IO.puts(csv)
 101,"Hello, ClickHouse!","2023-01-06 03:50:38",-1
 101,"Granules are the smallest chunks of data read","2023-01-06 03:55:38",3.14159
