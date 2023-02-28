@@ -51,6 +51,7 @@ defmodule Ch.Test do
     sql_exec("drop table `#{table}`")
   end
 
+  # TODO packet: :http?
   def intercept_packets(socket, buffer \\ <<>>) do
     receive do
       {:tcp, ^socket, packet} ->
