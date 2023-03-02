@@ -1,10 +1,13 @@
 defmodule Ch.Connection do
   @moduledoc false
   use DBConnection
-  alias Ch.{Error, RowBinary}
+  alias Ch.{Error, RowBinary, Result}
   alias Mint.HTTP1, as: HTTP
 
+  @typep conn :: HTTP.t()
+
   @impl true
+  @spec connect(Keyword.t()) :: {:ok, conn} | {:error, Mint.Types.error()}
   def connect(opts) do
     scheme = String.to_existing_atom(opts[:scheme] || "http")
     address = opts[:hostname] || "localhost"
@@ -24,109 +27,49 @@ defmodule Ch.Connection do
   end
 
   @impl true
+  @spec ping(conn) :: {:ok, conn} | {:disconnect, Mint.Types.error() | Error.t(), conn}
   def ping(conn) do
     with {:ok, conn, ref} <- request(conn, "GET", "/ping", _headers = [], _body = ""),
-         {:ok, conn, _responses} <- receive_stream(conn, ref),
-         do: {:ok, conn}
+         {:ok, conn, _responses} <- receive_stream(conn, ref, timeout(conn)) do
+      {:ok, conn}
+    else
+      {:error, error, conn} -> {:disconnect, error, conn}
+      {:disconnect, _error, _conn} = disconnect -> disconnect
+    end
   end
 
   @impl true
-  def checkout(conn) do
-    {:ok, conn}
-  end
+  @spec checkout(conn) :: {:ok, conn}
+  def checkout(conn), do: {:ok, conn}
 
   @impl true
   def handle_begin(_opts, conn) do
-    {:ok, %{}, conn}
+    {:disconnect, Error.exception("transaction are not supported"), conn}
   end
 
   @impl true
   def handle_commit(_opts, conn) do
-    {:ok, %{}, conn}
+    {:disconnect, Error.exception("transaction are not supported"), conn}
   end
 
   @impl true
   def handle_rollback(_opts, conn) do
-    {:ok, %{}, conn}
+    {:disconnect, Error.exception("transaction are not supported"), conn}
   end
 
   @impl true
   def handle_status(_opts, conn) do
-    {:idle, conn}
+    {:disconnect, Error.exception("transaction are not supported"), conn}
   end
 
   @impl true
-  def handle_prepare(query, _opts, conn) do
-    {:ok, query, conn}
-  end
-
-  @impl true
-  # TODO instead of command == :insert, do rows is stream check
-  def handle_execute(%Ch.Query{command: :insert} = query, rows, opts, conn) do
-    %Ch.Query{statement: statement} = query
-    path = "/?" <> URI.encode_query(get_settings(conn, opts))
-
-    statement =
-      if format = Keyword.get(opts, :format) do
-        [statement, " FORMAT ", format, ?\n]
-      else
-        [statement, ?\n]
-      end
-
-    with {:ok, conn, ref} <- request(conn, "POST", path, headers(conn, opts), :stream),
-         {:ok, conn} <- stream_body(conn, ref, statement, rows),
-         {:ok, conn, responses} <- receive_stream(conn, ref) do
-      [_status, headers | _data] = responses
-      num_rows = get_summary(headers, "written_rows")
-      {:ok, query, build_response(num_rows, _rows = []), conn}
-    end
-  end
-
-  def handle_execute(query, params, opts, conn) do
-    %Ch.Query{statement: statement} = query
-
-    types = Keyword.get(opts, :types)
-    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
-    format = Keyword.get(opts, :format) || default_format
-
-    params = build_params(params) ++ get_settings(conn, opts)
-    path = "/?" <> URI.encode_query(params)
-
-    headers = [{"x-clickhouse-format", format} | headers(conn, opts)]
-
-    with {:ok, conn, ref} <- request(conn, "POST", path, headers, statement),
-         {:ok, conn, responses} <- receive_stream(conn, ref, opts) do
-      [_status, headers | data] = responses
-
-      response =
-        case get_header(headers, "x-clickhouse-format") do
-          "RowBinary" ->
-            rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows(types)
-            build_response(rows)
-
-          "RowBinaryWithNamesAndTypes" ->
-            rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
-            build_response(rows)
-
-          _other ->
-            build_response(data)
-        end
-
-      {:ok, query, response, conn}
-    end
-  end
-
-  defp build_response(rows) do
-    build_response(length(rows), rows)
-  end
-
-  defp build_response(num_rows, rows) do
-    %{num_rows: num_rows, rows: rows}
+  def handle_prepare(_query, _opts, conn) do
+    {:error, Error.exception("prepared statements are not supported"), conn}
   end
 
   @impl true
   def handle_close(_query, _opts, conn) do
-    {:ok, _result = nil, conn}
+    {:error, Error.exception("prepared statements are not supported"), conn}
   end
 
   @impl true
@@ -145,19 +88,161 @@ defmodule Ch.Connection do
   end
 
   @impl true
+  def handle_execute(%Ch.Query{command: :insert} = query, %s{} = stream, opts, conn)
+      when s in [Stream, IO.Stream, File.Stream] do
+    path = path(settings(conn, opts))
+    headers = headers(conn, opts)
+    stream = Stream.concat([[query.statement, ?\n]], stream)
+
+    with {:ok, conn, ref} <- request(conn, "POST", path, headers, :stream),
+         {:ok, conn} <- stream_body(conn, ref, stream),
+         {:ok, conn, responses} <- receive_stream(conn, ref, timeout(conn, opts)) do
+      {:ok, query, insert_result(responses), conn}
+    end
+  end
+
+  def handle_execute(%Ch.Query{command: :insert} = query, data, opts, conn)
+      when is_list(data) or is_binary(data) do
+    path = path(settings(conn, opts))
+    headers = headers(conn, opts)
+    body = [query.statement, ?\n | data]
+
+    with {:ok, conn, ref} <- request(conn, "POST", path, headers, body),
+         {:ok, conn, responses} <- receive_stream(conn, ref, timeout(conn, opts)) do
+      {:ok, query, insert_result(responses), conn}
+    end
+  end
+
+  def handle_execute(%Ch.Query{command: :insert_select} = query, params, opts, conn) do
+    path = path(settings(conn, opts) ++ params(params))
+    headers = headers(conn, opts)
+
+    with {:ok, conn, ref} <- request(conn, "POST", path, headers, query.statement),
+         {:ok, conn, responses} <- receive_stream(conn, ref, timeout(conn, opts)) do
+      {:ok, query, insert_result(responses), conn}
+    end
+  end
+
+  def handle_execute(query, params, opts, conn) do
+    %Ch.Query{command: command, statement: statement} = query
+
+    types = Keyword.get(opts, :types)
+    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
+    format = Keyword.get(opts, :format) || default_format
+    path = path(settings(conn, opts) ++ params(params))
+    headers = [{"x-clickhouse-format", format} | headers(conn, opts)]
+
+    with {:ok, conn, ref} <- request(conn, "POST", path, headers, statement),
+         {:ok, conn, responses} <- receive_stream(conn, ref, timeout(conn, opts)) do
+      {:ok, query, result(command, responses, types), conn}
+    end
+  end
+
+  @impl true
   def disconnect(_error, conn) do
     {:ok = ok, _conn} = HTTP.close(conn)
     ok
+  end
+
+  defp insert_result(responses) do
+    [_status, headers | _data] = responses
+    meta = meta(headers)
+
+    num_rows =
+      if written_rows = get_in(meta, ["summary", "written_rows"]) do
+        String.to_integer(written_rows)
+      end
+
+    %Result{num_rows: num_rows, rows: nil, meta: meta, command: :insert}
+  end
+
+  defp result(command, responses, types) do
+    [_status, headers | data] = responses
+    meta = meta(headers)
+
+    rows =
+      case Map.get(meta, "format") do
+        "RowBinary" ->
+          data |> IO.iodata_to_binary() |> RowBinary.decode_rows(types)
+
+        "RowBinaryWithNamesAndTypes" ->
+          data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
+
+        _other ->
+          data
+      end
+
+    %Result{num_rows: length(rows), rows: rows, meta: meta, command: command}
+  end
+
+  @spec request(conn, String.t(), String.t(), Mint.Types.headers(), iodata | nil | :stream) ::
+          {:ok, conn, Mint.Types.request_ref()} | {:disconnect, Mint.Types.error(), conn}
+  defp request(conn, method, path, headers, body) do
+    case HTTP.request(conn, method, path, headers, body) do
+      {:ok, _conn, _ref} = ok -> ok
+      {:error, conn, reason} -> {:disconnect, reason, conn}
+    end
+  end
+
+  @spec stream_body(conn, Mint.Types.request_ref(), Enumerable.t()) ::
+          {:ok, conn} | {:disconnect, Mint.Types.error(), conn}
+  defp stream_body(conn, ref, stream) do
+    stream
+    |> Stream.concat([:eof])
+    |> Enum.reduce_while({:ok, conn}, fn
+      chunk, {:ok, conn} -> {:cont, HTTP.stream_request_body(conn, ref, chunk)}
+      _chunk, {:error, conn, reason} -> {:halt, {:disconnect, reason, conn}}
+    end)
+  end
+
+  @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
+
+  @spec receive_stream(conn, Mint.Types.request_ref(), timeout) ::
+          {:ok, conn, [response]}
+          | {:error, Error.t(), conn}
+          | {:disconnect, Mint.Types.error(), conn}
+  defp receive_stream(conn, ref, timeout) do
+    with {:ok, conn, responses} = ok <- receive_stream(conn, ref, [], timeout) do
+      case responses do
+        [200 | _rest] ->
+          ok
+
+        [_status, headers | data] ->
+          message = IO.iodata_to_binary(data)
+
+          code =
+            if code = get_header(headers, "x-clickhouse-exception-code") do
+              String.to_integer(code)
+            end
+
+          {:error, Error.exception(code, message), conn}
+      end
+    end
+  end
+
+  @spec receive_stream(conn, Mint.Types.request_ref(), [response], timeout()) ::
+          {:ok, conn, [response]} | {:disconnect, Mint.Types.error(), conn}
+  defp receive_stream(conn, ref, acc, timeout) do
+    case HTTP.recv(conn, 0, timeout) do
+      {:ok, conn, responses} ->
+        case handle_responses(responses, ref, acc) do
+          {:ok, responses} -> {:ok, conn, responses}
+          {:more, acc} -> receive_stream(conn, ref, acc, timeout)
+        end
+
+      {:error, conn, reason, _responses} ->
+        {:disconnect, reason, conn}
+    end
   end
 
   defp maybe_put_private(conn, _k, nil), do: conn
   defp maybe_put_private(conn, k, v), do: HTTP.put_private(conn, k, v)
 
   defp get_opts_or_private(conn, opts, key) do
-    opts[key] || HTTP.get_private(conn, key)
+    Keyword.get(opts, key) || HTTP.get_private(conn, key)
   end
 
-  defp get_settings(conn, opts) do
+  defp settings(conn, opts) do
     default_settings = HTTP.get_private(conn, :settings, [])
     opts_settings = Keyword.get(opts, :settings, [])
     Keyword.merge(default_settings, opts_settings)
@@ -173,63 +258,12 @@ defmodule Ch.Connection do
   defp maybe_put_header(headers, _k, nil), do: headers
   defp maybe_put_header(headers, k, v), do: [{k, v} | headers]
 
-  # @compile inline: [request: 5]
-  defp request(conn, method, path, headers, body) do
-    case HTTP.request(conn, method, path, headers, body) do
-      {:ok, _conn, _ref} = ok -> ok
-      {:error, _conn, _reason} = error -> disconnect(error)
-    end
+  defp timeout(conn) do
+    HTTP.get_private(conn, :timeout)
   end
 
-  def stream_body(conn, ref, statement, data) do
-    stream = Stream.concat([[statement], data, [:eof]])
-
-    Enum.reduce_while(stream, {:ok, conn}, fn
-      chunk, {:ok, conn} -> {:cont, HTTP.stream_request_body(conn, ref, chunk)}
-      _chunk, error -> {:halt, disconnect(error)}
-    end)
-  end
-
-  defp receive_stream(conn, ref, opts \\ []) do
-    case receive_stream(conn, ref, [], opts) do
-      {:ok, _conn, [200 | _rest]} = ok ->
-        ok
-
-      {:ok, conn, [_status, headers | data]} ->
-        error = IO.iodata_to_binary(data)
-        exception = Error.exception(error)
-
-        code =
-          if code = get_header(headers, "x-clickhouse-exception-code") do
-            String.to_integer(code)
-          end
-
-        exception = %{exception | code: code}
-        {:error, exception, conn}
-
-      {:error, _conn, _error, _responses} = error ->
-        disconnect(error)
-    end
-  end
-
-  @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
-
-  @spec receive_stream(HTTP.t(), reference, [response], Keyword.t()) ::
-          {:ok, HTTP.t(), [response]}
-          | {:error, HTTP.t(), Mint.Types.error(), [response]}
-  defp receive_stream(conn, ref, acc, opts) do
-    timeout = opts[:timeout] || HTTP.get_private(conn, :timeout)
-
-    case HTTP.recv(conn, 0, timeout) do
-      {:ok, conn, responses} ->
-        case handle_responses(responses, ref, acc) do
-          {:ok, responses} -> {:ok, conn, responses}
-          {:more, acc} -> receive_stream(conn, ref, acc, opts)
-        end
-
-      {:error, _conn, _reason, responses} = error ->
-        put_elem(error, 3, acc ++ responses)
-    end
+  defp timeout(conn, opts) do
+    Keyword.get(opts, :timeout) || timeout(conn)
   end
 
   defp get_header(headers, key) do
@@ -239,35 +273,19 @@ defmodule Ch.Connection do
     end
   end
 
-  # TODO telemetry?
-  defp get_summary(headers) do
-    if summary = get_header(headers, "x-clickhouse-summary") do
-      Jason.decode!(summary)
-    end
+  defp meta(headers) do
+    Map.new(_meta(headers))
   end
 
-  defp get_summary(headers, key) do
-    if summary = get_summary(headers) do
-      if value = Map.get(summary, key) do
-        String.to_integer(value)
-      end
-    end
+  defp _meta([{"x-clickhouse-summary" = k, summary} | headers]) do
+    "x-clickhouse-" <> k = k
+    [{k, Jason.decode!(summary)} | _meta(headers)]
   end
 
-  # TODO wrap errors in Ch.Error?
-  @spec disconnect({:error, HTTP.t(), Mint.Types.error(), [response]}) ::
-          {:disconnect, Mint.Types.error(), HTTP.t()}
-  defp disconnect({:error, conn, error, _responses}) do
-    {:disconnect, error, conn}
-  end
+  defp _meta([{"x-clickhouse-" <> k, v} | headers]), do: [{k, v} | _meta(headers)]
+  defp _meta([{_k, _v} | headers]), do: _meta(headers)
+  defp _meta([]), do: []
 
-  @spec disconnect({:error, HTTP.t(), Mint.Types.error()}) ::
-          {:disconnect, Mint.Types.error(), HTTP.t()}
-  defp disconnect({:error, conn, error}) do
-    {:disconnect, error, conn}
-  end
-
-  # TODO handle rest
   defp handle_responses([{:done, ref}], ref, acc) do
     {:ok, :lists.reverse(acc)}
   end
@@ -279,11 +297,15 @@ defmodule Ch.Connection do
 
   defp handle_responses([], _ref, acc), do: {:more, acc}
 
-  defp build_params(params) when is_map(params) do
+  defp path(kv) do
+    "/?" <> URI.encode_query(kv)
+  end
+
+  defp params(params) when is_map(params) do
     Enum.map(params, fn {k, v} -> {"param_#{k}", encode_param(v)} end)
   end
 
-  defp build_params(params) when is_list(params) do
+  defp params(params) when is_list(params) do
     params
     |> Enum.with_index()
     |> Enum.map(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)

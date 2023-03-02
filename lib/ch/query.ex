@@ -1,18 +1,51 @@
 defmodule Ch.Query do
   @moduledoc false
+  @enforce_keys [:statement, :command]
   defstruct [:statement, :command]
 
-  def build(statement, opts) when is_list(opts) do
-    build(statement, opts[:command] || extract_command(statement))
+  @type t :: %__MODULE__{statement: iodata, command: atom}
+
+  @doc false
+  @spec build(iodata, atom) :: t
+  def build(statement, command \\ nil) when is_atom(command) do
+    %__MODULE__{statement: statement, command: command || extract_command(statement)}
   end
 
-  def build(statement, command) when is_atom(command) do
-    %__MODULE__{statement: statement, command: command}
+  statements = [
+    {"SELECT", :select},
+    {"INSERT", :insert},
+    {"CREATE", :create},
+    {"ALTER", :alter},
+    {"DELETE", :delete},
+    {"SYSTEM", :system},
+    {"SHOW", :show},
+    {"GRANT", :grant},
+    {"EXPLAIN", :explain},
+    {"REVOKE", :revoke},
+    {"ATTACH", :attach},
+    {"CHECK", :check},
+    {"DESCRIBE", :describe},
+    {"DETACH", :detach},
+    {"DROP", :drop},
+    {"EXISTS", :exists},
+    {"KILL", :kill},
+    {"OPTIMIZE", :optimize},
+    {"RENAME", :rename},
+    {"EXCHANGE", :exchange},
+    {"SET", :set},
+    {"TRUNCATE", :truncate},
+    {"USE", :use},
+    {"WATCH", :watch}
+  ]
+
+  @doc false
+  def extract_command(statement)
+
+  for {statement, command} <- statements do
+    def extract_command(unquote(statement) <> _), do: unquote(command)
+    def extract_command(unquote(String.downcase(statement)) <> _), do: unquote(command)
   end
 
-  # TODO add iolist support [" \t\ni" | [["NSE", "RT"]]], etc.
-  def extract_command("INSERT" <> _rest), do: :insert
-  def extract_command("insert" <> _rest), do: :insert
   def extract_command([first | _]), do: extract_command(first)
   def extract_command(_other), do: nil
 

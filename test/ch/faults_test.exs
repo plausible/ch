@@ -156,11 +156,14 @@ defmodule Ch.FaultsTest do
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
     end
 
+    # TODO non-chunked request
+
     test "reconects after closed before streaming request", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse} = ctx
 
       test = self()
-      data = Ch.RowBinary.encode_rows([[1, 2], [3, 4]], [:u8, :u8])
+      rows = [[1, 2], [3, 4]]
+      stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
 
       log =
         capture_async_log(fn ->
@@ -170,14 +173,14 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(conn, "insert into example(a,b)", data, format: "RowBinary")
+                     Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
           end)
 
           {:ok, mint} = :gen_tcp.accept(listen)
 
           spawn_link(fn ->
             assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(conn, "insert into example(a,b)", data, format: "RowBinary")
+                     Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
 
             assert message =~ ~r/UNKNOWN_TABLE/
 
@@ -196,7 +199,8 @@ defmodule Ch.FaultsTest do
       %{port: port, listen: listen, clickhouse: clickhouse} = ctx
 
       test = self()
-      data = Ch.RowBinary.encode_rows([[1, 2], [3, 4]], [:u8, :u8])
+      rows = [[1, 2], [3, 4]]
+      stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
 
       log =
         capture_async_log(fn ->
@@ -205,7 +209,7 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(conn, "insert into example(a,b)", data, format: "RowBinary")
+                     Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
           end)
 
           assert_receive {:tcp, ^mint, _packet}
@@ -215,7 +219,7 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(conn, "insert into example(a,b)", data, format: "RowBinary")
+                     Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
 
             assert message =~ ~r/UNKNOWN_TABLE/
 

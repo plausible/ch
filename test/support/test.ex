@@ -36,7 +36,7 @@ defmodule Ch.Test do
   def sql_exec(sql, opts \\ []) do
     with {:ok, conn} <- Ch.Connection.connect(opts) do
       try do
-        case Ch.Connection.handle_execute(Ch.Query.build(sql, opts), [], opts, conn) do
+        case Ch.Connection.handle_execute(Ch.Query.build(sql, opts[:command]), [], opts, conn) do
           {:ok, _query, result, _conn} -> {:ok, result}
           {:error, reason, _conn} -> {:error, reason}
           {:disconnect, reason, _conn} -> {:error, reason}
