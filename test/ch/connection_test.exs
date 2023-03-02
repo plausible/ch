@@ -268,9 +268,19 @@ defmodule Ch.ConnectionTest do
         end)
       )
 
-      assert {:ok,
-              %{num_rows: 5, rows: [[1, true], [2, false], [3, true], [4, false], [5, false]]}} =
-               Ch.query(conn, "SELECT * FROM test_bool ORDER BY A")
+      # anything > 0 is `true`, here `2` is `true`
+      Ch.query!(conn, "insert into test_bool(A, B) values (6, 2)")
+
+      assert %{
+               rows: [
+                 [1, true, 1],
+                 [2, false, 0],
+                 [3, true, 3],
+                 [4, false, 0],
+                 [5, false, 0],
+                 [6, true, 6]
+               ]
+             } = Ch.query!(conn, "SELECT *, A * B FROM test_bool ORDER BY A")
     end
 
     test "uuid", %{conn: conn} do
