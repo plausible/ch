@@ -23,31 +23,33 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 1, rows: [["a&b=c"]]}} =
                Ch.query(conn, "select {a:String}", %{"a" => "a&b=c"})
 
-      assert {:ok, %{num_rows: 1, rows: [[Decimal.new("2000.3330")]]}} ==
+      assert {:ok, %{num_rows: 1, rows: [row]}} =
                Ch.query(conn, "select {a:Decimal(9,4)}", %{"a" => Decimal.new("2000.333")})
 
-      assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} ==
+      assert row == [Decimal.new("2000.3330")]
+
+      assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} =
                Ch.query(conn, "select {a:Date}", %{"a" => ~D[2022-01-01]})
 
-      assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} ==
+      assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} =
                Ch.query(conn, "select {a:Date32}", %{"a" => ~D[2022-01-01]})
 
-      assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00]]]}} ==
+      assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00]]]}} =
                Ch.query(conn, "select {a:DateTime}", %{"a" => ~N[2022-01-01 12:00:00]})
 
-      assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00.123000]]]}} ==
+      assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00.123000]]]}} =
                Ch.query(conn, "select {a:DateTime64(3)}", %{"a" => ~N[2022-01-01 12:00:00.123]})
 
-      assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00Z]]]}} ==
+      assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00Z]]]}} =
                Ch.query(conn, "select {a:DateTime('UTC')}", %{"a" => ~U[2022-01-01 12:00:00Z]})
 
-      assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} ==
+      assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} =
                Ch.query(conn, "select {a:Array(String)}", %{"a" => ["a", "b'", "\\'c"]})
 
-      assert {:ok, %{num_rows: 1, rows: [[[1, 2, 3]]]}} ==
+      assert {:ok, %{num_rows: 1, rows: [[[1, 2, 3]]]}} =
                Ch.query(conn, "select {a:Array(UInt8)}", %{"a" => [1, 2, 3]})
 
-      assert {:ok, %{num_rows: 1, rows: [[[[1], [2, 3], []]]]}} ==
+      assert {:ok, %{num_rows: 1, rows: [[[[1], [2, 3], []]]]}} =
                Ch.query(conn, "select {a:Array(Array(UInt8))}", %{"a" => [[1], [2, 3], []]})
 
       uuid = "9B29BD20-924C-4DE5-BDB3-8C2AA1FCE1FC"
@@ -89,13 +91,13 @@ defmodule Ch.ConnectionTest do
     end
 
     test "insert", %{conn: conn} do
-      assert {:ok, %{num_rows: 0, rows: []}} =
+      assert {:ok, %{num_rows: 0}} =
                Ch.query(conn, "create table insert_t(a UInt8, b String) engine = Memory")
 
       on_exit(fn -> Ch.Test.drop_table("insert_t") end)
 
       # values
-      assert {:ok, %{num_rows: 2, rows: []}} =
+      assert {:ok, %{num_rows: 2}} =
                Ch.query(conn, "insert into insert_t values (1,'a'), (2,'b')")
 
       # readonly
@@ -104,17 +106,25 @@ defmodule Ch.ConnectionTest do
                  settings: [readonly: 1]
                )
 
-      # chunked rowbinary stream
+      # iodata
+      data = Ch.RowBinary.encode_rows([[3, "c"], [4, "d"]], [:u8, :string])
+
+      assert {:ok, %{num_rows: 2}} =
+               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", data)
+
+      # chunked
       stream =
-        Stream.map([[3, "c"], [4, "d"]], fn row ->
+        Stream.map([[5, "e"], [6, "f"]], fn row ->
           Ch.RowBinary.encode_row(row, [:u8, :string])
         end)
 
-      assert {:ok, %{num_rows: 2, rows: []}} =
-               Ch.query(conn, ["insert into ", "insert_t(a, b)"], stream, format: "RowBinary")
+      assert {:ok, %{num_rows: 2}} =
+               Ch.query(conn, ["insert into ", "insert_t(a, b)", " format RowBinary"], stream)
 
-      assert {:ok, %{num_rows: 4, rows: [[1, "a"], [2, "b"], [3, "c"], [4, "d"]]}} =
+      assert {:ok, %{num_rows: 6, rows: rows}} =
                Ch.query(conn, "select * from insert_t order by a")
+
+      assert rows == [[1, "a"], [2, "b"], [3, "c"], [4, "d"], [5, "e"], [6, "f"]]
     end
 
     test "delete", %{conn: conn} do
@@ -126,10 +136,10 @@ defmodule Ch.ConnectionTest do
 
       on_exit(fn -> Ch.Test.drop_table("delete_t") end)
 
-      assert {:ok, %{num_rows: 2, rows: []}} =
+      assert {:ok, %{num_rows: 2}} =
                Ch.query(conn, "insert into delete_t values (1,'a'), (2,'b')")
 
-      assert {:ok, %{num_rows: 0, rows: []}} =
+      assert {:ok, %{num_rows: 0}} =
                Ch.query(conn, "delete from delete_t where 1", [],
                  settings: [allow_experimental_lightweight_delete: 1]
                )
@@ -197,7 +207,7 @@ defmodule Ch.ConnectionTest do
         end)
 
       assert {:ok, %{num_rows: 4}} =
-               Ch.query(conn, "insert into fixed_string_t(a)", stream, format: "RowBinary")
+               Ch.query(conn, "insert into fixed_string_t(a) format RowBinary", stream)
 
       assert {:ok,
               %{num_rows: 4, rows: [[<<0, 0, 0>>], ["a" <> <<0, 0>>], ["aa" <> <<0>>], ["aaa"]]}} =
@@ -205,61 +215,35 @@ defmodule Ch.ConnectionTest do
     end
 
     test "decimal", %{conn: conn} do
-      assert {:ok,
-              %{
-                num_rows: 1,
-                rows: [[Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(9, 4)"]]
-              }} ==
+      assert {:ok, %{num_rows: 1, rows: [row]}} =
                Ch.query(conn, "SELECT toDecimal32(2, 4) AS x, x / 3, toTypeName(x)")
 
-      assert {:ok,
-              %{
-                num_rows: 1,
-                rows: [[Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(18, 4)"]]
-              }} ==
+      assert row == [Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(9, 4)"]
+
+      assert {:ok, %{num_rows: 1, rows: [row]}} =
                Ch.query(conn, "SELECT toDecimal64(2, 4) AS x, x / 3, toTypeName(x)")
 
-      assert {:ok,
-              %{
-                num_rows: 1,
-                rows: [[Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(38, 4)"]]
-              }} ==
+      assert row == [Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(18, 4)"]
+
+      assert {:ok, %{num_rows: 1, rows: [row]}} =
                Ch.query(conn, "SELECT toDecimal128(2, 4) AS x, x / 3, toTypeName(x)")
 
-      assert {:ok,
-              %{
-                num_rows: 1,
-                rows: [[Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(76, 4)"]]
-              }} ==
+      assert row == [Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(38, 4)"]
+
+      assert {:ok, %{num_rows: 1, rows: [row]}} =
                Ch.query(conn, "SELECT toDecimal256(2, 4) AS x, x / 3, toTypeName(x)")
+
+      assert row == [Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(76, 4)"]
 
       Ch.query!(conn, "create table decimal_t(d Decimal(9,4)) engine = Memory")
       on_exit(fn -> Ch.Test.drop_table("decimal_t") end)
 
-      assert %{num_rows: 3} =
-               Ch.query!(
-                 conn,
-                 "insert into decimal_t(d)",
-                 _rows =
-                   Stream.map(
-                     [
-                       [Decimal.new("2.66")],
-                       [Decimal.new("2.6666")],
-                       [Decimal.new("2.66666")]
-                     ],
-                     fn row -> Ch.RowBinary.encode_row(row, [{:decimal, 9, 4}]) end
-                   ),
-                 format: "RowBinary"
-               )
+      rows = [[Decimal.new("2.66")], [Decimal.new("2.6666")], [Decimal.new("2.66666")]]
+      data = Ch.RowBinary.encode_rows(rows, [{:decimal, 9, 4}])
+      assert %{num_rows: 3} = Ch.query!(conn, "insert into decimal_t(d) format RowBinary", data)
 
-      assert %{
-               num_rows: 3,
-               rows: [
-                 [Decimal.new("2.6600")],
-                 [Decimal.new("2.6666")],
-                 [Decimal.new("2.6667")]
-               ]
-             } == Ch.query!(conn, "select * from decimal_t")
+      assert %{num_rows: 3, rows: rows} = Ch.query!(conn, "select * from decimal_t")
+      assert rows == [[Decimal.new("2.6600")], [Decimal.new("2.6666")], [Decimal.new("2.6667")]]
     end
 
     test "boolean", %{conn: conn} do
@@ -278,11 +262,10 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "insert into test_bool(A, B)",
+        "insert into test_bool(A, B) format RowBinary",
         Stream.map([[3, true], [4, false], [5, nil]], fn row ->
           Ch.RowBinary.encode_row(row, [:i64, :boolean])
-        end),
-        format: "RowBinary"
+        end)
       )
 
       assert {:ok,
@@ -316,11 +299,10 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "insert into t_uuid(x,y)",
+        "insert into t_uuid(x,y) format RowBinary",
         Stream.map([[uuid, "Example 3"]], fn row ->
           Ch.RowBinary.encode_row(row, [:uuid, :string])
-        end),
-        format: "RowBinary"
+        end)
       )
 
       assert {:ok,
@@ -412,22 +394,21 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(conn, "INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2)")
 
-      assert {:ok,
-              %{
-                num_rows: 2,
-                rows: [
-                  [
-                    DateTime.new!(~D[2019-01-01], ~T[03:00:00], "Asia/Istanbul"),
-                    1,
-                    "2019-01-01 03:00:00"
-                  ],
-                  [
-                    DateTime.new!(~D[2019-01-01], ~T[00:00:00], "Asia/Istanbul"),
-                    2,
-                    "2019-01-01 00:00:00"
-                  ]
-                ]
-              }} == Ch.query(conn, "SELECT *, toString(timestamp) FROM dt")
+      assert {:ok, %{num_rows: 2, rows: rows}} =
+               Ch.query(conn, "SELECT *, toString(timestamp) FROM dt")
+
+      assert rows == [
+               [
+                 DateTime.new!(~D[2019-01-01], ~T[03:00:00], "Asia/Istanbul"),
+                 1,
+                 "2019-01-01 03:00:00"
+               ],
+               [
+                 DateTime.new!(~D[2019-01-01], ~T[00:00:00], "Asia/Istanbul"),
+                 2,
+                 "2019-01-01 00:00:00"
+               ]
+             ]
 
       assert {:ok, %{num_rows: 1, rows: [[~N[2022-12-12 12:00:00], "2022-12-12 12:00:00"]]}} =
                Ch.query(conn, "select {dt:DateTime} as d, toString(d)", %{
@@ -439,19 +420,17 @@ defmodule Ch.ConnectionTest do
                  "dt" => ~N[2022-12-12 12:00:00]
                })
 
-      assert {:ok,
-              %{
-                num_rows: 1,
-                rows: [
-                  [
-                    DateTime.new!(~D[2022-12-12], ~T[12:00:00], "Asia/Bangkok"),
-                    "2022-12-12 12:00:00"
-                  ]
-                ]
-              }} ==
+      assert {:ok, %{num_rows: 1, rows: rows}} =
                Ch.query(conn, "select {dt:DateTime('Asia/Bangkok')} as d, toString(d)", %{
                  "dt" => ~N[2022-12-12 12:00:00]
                })
+
+      assert rows == [
+               [
+                 DateTime.new!(~D[2022-12-12], ~T[12:00:00], "Asia/Bangkok"),
+                 "2022-12-12 12:00:00"
+               ]
+             ]
 
       # unknown timezone
       assert_raise ArgumentError, ~r/:time_zone_not_found/, fn ->
@@ -487,9 +466,8 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "insert into new",
-        Ch.RowBinary.encode_rows([[~D[1960-01-01], 3]], [:date32, :u8]),
-        format: "RowBinary"
+        "insert into new(timestamp, event_id) format RowBinary",
+        Ch.RowBinary.encode_rows([[~D[1960-01-01], 3]], [:date32, :u8])
       )
 
       assert %{
@@ -518,62 +496,54 @@ defmodule Ch.ConnectionTest do
         "INSERT INTO dt Values (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3)"
       )
 
-      assert {
-               :ok,
-               %{
-                 num_rows: 3,
-                 rows: [
-                   [
-                     DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"),
-                     1,
-                     "2019-01-01 03:00:00.123"
-                   ],
-                   [
-                     DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"),
-                     2,
-                     "2019-01-01 03:00:00.123"
-                   ],
-                   [
-                     DateTime.new!(~D[2019-01-01], ~T[00:00:00.000], "Asia/Istanbul"),
-                     3,
-                     "2019-01-01 00:00:00.000"
-                   ]
-                 ]
-               }
-             } == Ch.query(conn, "SELECT *, toString(timestamp) FROM dt")
+      assert {:ok, %{num_rows: 3, rows: rows}} =
+               Ch.query(conn, "SELECT *, toString(timestamp) FROM dt")
+
+      assert rows == [
+               [
+                 DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"),
+                 1,
+                 "2019-01-01 03:00:00.123"
+               ],
+               [
+                 DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"),
+                 2,
+                 "2019-01-01 03:00:00.123"
+               ],
+               [
+                 DateTime.new!(~D[2019-01-01], ~T[00:00:00.000], "Asia/Istanbul"),
+                 3,
+                 "2019-01-01 00:00:00.000"
+               ]
+             ]
 
       Ch.query!(
         conn,
-        "insert into dt(timestamp, event_id)",
+        "insert into dt(timestamp, event_id) format RowBinary",
         Ch.RowBinary.encode_rows(
           [[~N[2021-01-01 12:00:00.123456], 4], [~N[2021-01-01 12:00:00], 5]],
           [{:datetime64, :millisecond}, :u8]
-        ),
-        format: "RowBinary"
+        )
       )
 
-      assert {
-               :ok,
-               %{
-                 num_rows: 2,
-                 rows: [
-                   [
-                     DateTime.new!(~D[2021-01-01], ~T[15:00:00.123], "Asia/Istanbul"),
-                     4,
-                     "2021-01-01 15:00:00.123"
-                   ],
-                   [
-                     DateTime.new!(~D[2021-01-01], ~T[15:00:00.000], "Asia/Istanbul"),
-                     5,
-                     "2021-01-01 15:00:00.000"
-                   ]
-                 ]
-               }
-             } ==
+      assert {:ok, %{num_rows: 2, rows: rows}} =
                Ch.query(
                  conn,
                  "SELECT *, toString(timestamp)  FROM dt WHERE timestamp > '2020-01-01'"
                )
+
+      assert rows == [
+               [
+                 DateTime.new!(~D[2021-01-01], ~T[15:00:00.123], "Asia/Istanbul"),
+                 4,
+                 "2021-01-01 15:00:00.123"
+               ],
+               [
+                 DateTime.new!(~D[2021-01-01], ~T[15:00:00.000], "Asia/Istanbul"),
+                 5,
+                 "2021-01-01 15:00:00.000"
+               ]
+             ]
 
       for precision <- 0..9 do
         expected = ~N[2022-01-01 12:00:00]
@@ -596,19 +566,15 @@ defmodule Ch.ConnectionTest do
                  "dt" => ~N[1900-01-01 12:00:00.123]
                })
 
-      assert {:ok,
-              %{
-                num_rows: 1,
-                rows: [
-                  [
-                    DateTime.new!(~D[2022-01-01], ~T[12:00:00.123], "Asia/Bangkok"),
-                    "2022-01-01 12:00:00.123"
-                  ]
-                ]
-              }} ==
+      assert {:ok, %{num_rows: 1, rows: [row]}} =
                Ch.query(conn, "select {dt:DateTime64(3,'Asia/Bangkok')} as d, toString(d)", %{
                  "dt" => ~N[2022-01-01 12:00:00.123]
                })
+
+      assert row == [
+               DateTime.new!(~D[2022-01-01], ~T[12:00:00.123], "Asia/Bangkok"),
+               "2022-01-01 12:00:00.123"
+             ]
     end
 
     test "nullable", %{conn: conn} do
@@ -663,49 +629,27 @@ defmodule Ch.ConnectionTest do
     end
   end
 
-  # transactions are not supported by clickhouse but
-  # we still allow them for Repo.checkout
+  @tag capture_log: true
   describe "transactions" do
     test "commit", %{conn: conn} do
-      assert {:ok, %{num_rows: 1, rows: [[2]]}} =
-               DBConnection.transaction(conn, fn conn ->
-                 Ch.query!(conn, "select 1 + 1")
-               end)
-    end
-
-    test "rollback", %{conn: conn} do
-      assert_raise Ch.Error, ~r/UNKNOWN_TABLE/, fn ->
+      assert_raise Ch.Error, "transaction are not supported", fn ->
         DBConnection.transaction(conn, fn conn ->
-          Ch.query!(conn, "select * from non_table")
+          Ch.query!(conn, "select 1 + 1")
         end)
       end
     end
 
     test "status", %{conn: conn} do
-      assert :idle == DBConnection.status(conn)
+      assert :error == DBConnection.status(conn)
     end
   end
 
-  # since clickhouse doesn't have prepared statement
-  # we return the query as is from handle_prepare
   describe "prepare" do
     test "no-op", %{conn: conn} do
-      query = Ch.Query.build("select 1 + 1", [])
-      assert {:ok, query} == DBConnection.prepare(conn, query)
-    end
-  end
+      query = Ch.Query.build("select 1 + 1")
 
-  describe "streams" do
-    test "not supported", %{conn: conn} do
-      assert_raise Ch.Error, "cursors are not supported", fn ->
-        DBConnection.transaction(conn, fn conn ->
-          query = Ch.Query.build("select 1 + 1", [])
-
-          conn
-          |> DBConnection.stream(query, [])
-          |> Stream.run()
-        end)
-      end
+      assert {:error, %Ch.Error{message: "prepared statements are not supported"}} =
+               DBConnection.prepare(conn, query)
     end
   end
 
