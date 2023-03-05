@@ -113,6 +113,16 @@ defmodule Ch.RowBinaryTest do
       assert encode({:decimal, 9, 4}, Decimal.new("2.66666")) == <<26667::32-little>>
     end
 
+    test "uuid" do
+      uuid = <<210, 189, 94, 201, 253, 197, 165, 63, 50, 181, 232, 82, 246, 58, 95, 9>>
+
+      assert encode(:uuid, uuid) ==
+               <<63, 165, 197, 253, 201, 94, 189, 210, 9, 95, 58, 246, 82, 232, 181, 50>>
+
+      hex = "d2bd5ec9-fdc5-a53f-32b5-e852f63a5f09"
+      assert encode(:uuid, hex) == encode(:uuid, uuid)
+    end
+
     test "nil" do
       assert encode(:varint, nil) == <<0>>
       assert encode(:string, nil) == <<0>>
