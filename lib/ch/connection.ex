@@ -314,6 +314,7 @@ defmodule Ch.Connection do
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
   defp encode_param(f) when is_float(f), do: Float.to_string(f)
   defp encode_param(b) when is_binary(b), do: b
+  defp encode_param(b) when is_boolean(b), do: b
   defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
 
   defp encode_param(%Date{} = date), do: date

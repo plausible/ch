@@ -17,6 +17,12 @@ defmodule Ch.ConnectionTest do
     test "select with params", %{conn: conn} do
       assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {a:UInt8}", %{"a" => 1})
 
+      assert {:ok, %{num_rows: 1, rows: [[true]]}} =
+               Ch.query(conn, "select {b:Bool}", %{"b" => true})
+
+      assert {:ok, %{num_rows: 1, rows: [[false]]}} =
+               Ch.query(conn, "select {b:Bool}", %{"b" => false})
+
       assert {:ok, %{num_rows: 1, rows: [[1.0]]}} =
                Ch.query(conn, "select {a:Float32}", %{"a" => 1.0})
 
