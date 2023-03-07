@@ -4,6 +4,11 @@ defmodule Ch.RowBinary do
   @dialyzer :no_improper_lists
 
   import Bitwise
+  require Record
+
+  Record.defrecord(:string, [:size])
+  Record.defrecord(:decimal, [:size, :scale])
+  Record.defrecord(:datetime64, [:unit])
 
   @epoch_date ~D[1970-01-01]
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
@@ -35,14 +40,14 @@ defmodule Ch.RowBinary do
 
   def encode(:string, nil), do: <<0>>
 
-  def encode({:string, len}, nil), do: <<0::size(len * 8)>>
+  def encode(string(size: size), nil), do: <<0::size(size * 8)>>
 
-  def encode({:string, len}, str) when byte_size(str) == len do
+  def encode(string(size: size), str) when byte_size(str) == size do
     str
   end
 
-  def encode({:string, len}, str) when byte_size(str) < len do
-    to_pad = len - byte_size(str)
+  def encode(string(size: size), str) when byte_size(str) < size do
+    to_pad = size - byte_size(str)
     [str | <<0::size(to_pad * 8)>>]
   end
 
@@ -67,18 +72,17 @@ defmodule Ch.RowBinary do
     def encode(unquote(:"f#{size}"), nil), do: <<0::unquote(size)>>
   end
 
-  def encode({:decimal, p, s}, %Decimal{sign: sign, coef: coef, exp: exp}) when s == abs(exp) do
-    size = decimal_size(p)
+  def encode(decimal(size: size, scale: scale), %Decimal{sign: sign, coef: coef, exp: exp})
+      when scale == abs(exp) do
     i = sign * coef
     <<i::size(size)-little>>
   end
 
-  def encode({:decimal, _, s} = t, %Decimal{} = d) do
-    encode(t, Decimal.round(d, s))
+  def encode(decimal(scale: scale) = t, %Decimal{} = d) do
+    encode(t, Decimal.round(d, scale))
   end
 
-  def encode({:decimal, p, _s}, nil) do
-    size = decimal_size(p)
+  def encode(decimal(size: size), nil) do
     <<0::size(size)-little>>
   end
 
@@ -109,15 +113,15 @@ defmodule Ch.RowBinary do
     encode(t, v)
   end
 
-  def encode({:datetime64, unit}, %NaiveDateTime{} = datetime) do
+  def encode(datetime64(unit: unit), %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, unit)::64-little-signed>>
   end
 
-  def encode({:datetime64, unit}, %DateTime{} = datetime) do
+  def encode(datetime64(unit: unit), %DateTime{} = datetime) do
     <<DateTime.diff(datetime, @epoch_utc_datetime, unit)::64-little-signed>>
   end
 
-  def encode({:datetime64, _unit}, nil) do
+  def encode(datetime64(), nil) do
     <<0::64>>
   end
 
@@ -292,13 +296,14 @@ defmodule Ch.RowBinary do
 
   defp decode_type("FixedString(" <> rest) do
     [size] = :binary.split(rest, ")", [:global, :trim])
-    {:string, String.to_integer(size)}
+    string(size: String.to_integer(size))
   end
 
   defp decode_type("Decimal(" <> rest) do
     [precision, scale] = :binary.split(rest, [", ", ")"], [:global, :trim])
     {scale, _} = Integer.parse(scale)
-    {:decimal, String.to_integer(precision), scale}
+    precision = String.to_integer(precision)
+    decimal(size: decimal_size(precision), scale: scale)
   end
 
   defp decode_type("LowCardinality(" <> rest) do
@@ -442,7 +447,7 @@ defmodule Ch.RowBinary do
       :string ->
         decode_string_decode_rows(bin, types_rest, row, rows, types)
 
-      {:string, size} ->
+      string(size: size) ->
         <<s::size(size)-bytes, bin::bytes>> = bin
         decode_rows(types_rest, bin, [s | row], rows, types)
 
@@ -478,11 +483,10 @@ defmodule Ch.RowBinary do
 
         decode_rows(types_rest, bin, [dt | row], rows, types)
 
-      {:decimal, p, s} ->
-        size = decimal_size(p)
+      decimal(size: size, scale: scale) ->
         <<val::size(size)-little, bin::bytes>> = bin
         sign = if val < 0, do: -1, else: 1
-        d = Decimal.new(sign, abs(val), -s)
+        d = Decimal.new(sign, abs(val), -scale)
         decode_rows(types_rest, bin, [d | row], rows, types)
 
       {:nullable, type} ->
@@ -535,12 +539,12 @@ defmodule Ch.RowBinary do
     decode_rows(types, bin, [], [row | rows], types)
   end
 
-  # TODO eval once, at type decoding
-  defp decimal_size(p) do
+  # https://clickhouse.com/docs/en/sql-reference/data-types/decimal/
+  def decimal_size(precision) when is_integer(precision) do
     cond do
-      p >= 39 -> 256
-      p >= 19 -> 128
-      p >= 10 -> 64
+      precision >= 39 -> 256
+      precision >= 19 -> 128
+      precision >= 10 -> 64
       true -> 32
     end
   end

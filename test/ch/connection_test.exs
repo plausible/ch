@@ -221,6 +221,8 @@ defmodule Ch.ConnectionTest do
     end
 
     test "decimal", %{conn: conn} do
+      import Ch.RowBinary, only: [decimal: 1]
+
       assert {:ok, %{num_rows: 1, rows: [row]}} =
                Ch.query(conn, "SELECT toDecimal32(2, 4) AS x, x / 3, toTypeName(x)")
 
@@ -241,11 +243,11 @@ defmodule Ch.ConnectionTest do
 
       assert row == [Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(76, 4)"]
 
-      Ch.query!(conn, "create table decimal_t(d Decimal(9,4)) engine = Memory")
+      Ch.query!(conn, "create table decimal_t(d Decimal32(4)) engine = Memory")
       on_exit(fn -> Ch.Test.drop_table("decimal_t") end)
 
       rows = [[Decimal.new("2.66")], [Decimal.new("2.6666")], [Decimal.new("2.66666")]]
-      data = Ch.RowBinary.encode_rows(rows, [{:decimal, 9, 4}])
+      data = Ch.RowBinary.encode_rows(rows, [decimal(size: 32, scale: 4)])
       assert %{num_rows: 3} = Ch.query!(conn, "insert into decimal_t(d) format RowBinary", data)
 
       assert %{num_rows: 3, rows: rows} = Ch.query!(conn, "select * from decimal_t")

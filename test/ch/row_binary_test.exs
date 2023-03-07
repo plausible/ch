@@ -107,10 +107,11 @@ defmodule Ch.RowBinaryTest do
 
   describe "encode/2" do
     test "decimal" do
-      assert encode({:decimal, 9, 4}, nil) == <<0::32>>
-      assert encode({:decimal, 9, 4}, Decimal.new("2.66")) == <<26600::32-little>>
-      assert encode({:decimal, 9, 4}, Decimal.new("2.6666")) == <<26666::32-little>>
-      assert encode({:decimal, 9, 4}, Decimal.new("2.66666")) == <<26667::32-little>>
+      type = decimal(size: 32, scale: 4)
+      assert encode(type, nil) == <<0::32>>
+      assert encode(type, Decimal.new("2.66")) == <<26600::32-little>>
+      assert encode(type, Decimal.new("2.6666")) == <<26666::32-little>>
+      assert encode(type, Decimal.new("2.66666")) == <<26667::32-little>>
     end
 
     test "uuid" do
@@ -126,7 +127,7 @@ defmodule Ch.RowBinaryTest do
     test "nil" do
       assert encode(:varint, nil) == <<0>>
       assert encode(:string, nil) == <<0>>
-      assert encode({:string, 2}, nil) == <<0, 0>>
+      assert encode(string(size: 2), nil) == <<0, 0>>
       assert encode(:u8, nil) == <<0>>
       assert encode(:u16, nil) == <<0, 0>>
       assert encode(:u32, nil) == <<0, 0, 0, 0>>
@@ -142,7 +143,7 @@ defmodule Ch.RowBinaryTest do
       assert encode(:date, nil) == <<0, 0>>
       assert encode(:date32, nil) == <<0, 0, 0, 0>>
       assert encode(:datetime, nil) == <<0, 0, 0, 0>>
-      assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+      assert encode(datetime64(unit: :microsecond), nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
       assert encode(:uuid, nil) == <<0::128>>
       assert encode({:nullable, :string}, nil) == <<1>>
     end
@@ -165,13 +166,13 @@ defmodule Ch.RowBinaryTest do
         {"Int256", :i256},
         {"Float32", :f32},
         {"Float64", :f64},
-        {"Decimal(9, 4)", {:decimal, 9, 4}},
-        {"Decimal(23, 11)", {:decimal, 23, 11}},
+        {"Decimal(9, 4)", decimal(size: 32, scale: 4)},
+        {"Decimal(23, 11)", decimal(size: 128, scale: 11)},
         {"Bool", :boolean},
         {"String", :string},
-        {"FixedString(2)", {:string, 2}},
-        {"FixedString(22)", {:string, 22}},
-        {"FixedString(222)", {:string, 222}},
+        {"FixedString(2)", string(size: 2)},
+        {"FixedString(22)", string(size: 22)},
+        {"FixedString(222)", string(size: 222)},
         {"UUID", :uuid},
         {"Date", :date},
         {"Date32", :date32},
@@ -184,13 +185,13 @@ defmodule Ch.RowBinaryTest do
         {"Enum8('a' = 1, 'b' = 2)", {:enum8, %{1 => "a", 2 => "b"}}},
         {"Enum16('hello' = 2, 'world' = 3)", {:enum16, %{2 => "hello", 3 => "world"}}},
         {"LowCardinality(String)", :string},
-        {"LowCardinality(FixedString(2))", {:string, 2}},
+        {"LowCardinality(FixedString(2))", string(size: 2)},
         {"LowCardinality(Date)", :date},
         {"LowCardinality(DateTime)", {:datetime, nil}},
         {"LowCardinality(UInt64)", :u64},
         {"Array(String)", {:array, :string}},
         {"Array(Array(String))", {:array, {:array, :string}}},
-        {"Array(FixedString(2))", {:array, {:string, 2}}},
+        {"Array(FixedString(2))", {:array, string(size: 2)}},
         {"Array(LowCardinality(String))", {:array, :string}},
         {"Array(Enum8('hello' = 2, 'world' = 3))",
          {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
