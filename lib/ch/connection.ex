@@ -42,25 +42,16 @@ defmodule Ch.Connection do
   @spec checkout(conn) :: {:ok, conn}
   def checkout(conn), do: {:ok, conn}
 
-  @impl true
-  def handle_begin(_opts, conn) do
-    {:disconnect, Error.exception("transaction are not supported"), conn}
-  end
+  # "supporting" transactions for Repo.checkout
 
   @impl true
-  def handle_commit(_opts, conn) do
-    {:disconnect, Error.exception("transaction are not supported"), conn}
-  end
-
+  def handle_begin(_opts, conn), do: {:ok, %{}, conn}
   @impl true
-  def handle_rollback(_opts, conn) do
-    {:disconnect, Error.exception("transaction are not supported"), conn}
-  end
-
+  def handle_commit(_opts, conn), do: {:ok, %{}, conn}
   @impl true
-  def handle_status(_opts, conn) do
-    {:disconnect, Error.exception("transaction are not supported"), conn}
-  end
+  def handle_rollback(_opts, conn), do: {:ok, %{}, conn}
+  @impl true
+  def handle_status(_opts, conn), do: {:idle, conn}
 
   @impl true
   def handle_prepare(_query, _opts, conn) do

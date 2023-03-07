@@ -656,18 +656,21 @@ defmodule Ch.ConnectionTest do
     end
   end
 
-  @tag capture_log: true
   describe "transactions" do
     test "commit", %{conn: conn} do
-      assert_raise Ch.Error, "transaction are not supported", fn ->
-        DBConnection.transaction(conn, fn conn ->
-          Ch.query!(conn, "select 1 + 1")
-        end)
-      end
+      DBConnection.transaction(conn, fn conn ->
+        Ch.query!(conn, "select 1 + 1")
+      end)
+    end
+
+    test "rollback", %{conn: conn} do
+      DBConnection.transaction(conn, fn conn ->
+        DBConnection.rollback(conn, :some_reason)
+      end)
     end
 
     test "status", %{conn: conn} do
-      assert :error == DBConnection.status(conn)
+      assert DBConnection.status(conn) == :idle
     end
   end
 
