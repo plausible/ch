@@ -109,6 +109,7 @@ defmodule Ch.RowBinaryTest do
     test "decimal" do
       type = decimal(size: 32, scale: 4)
       assert encode(type, nil) == <<0::32>>
+      assert encode(type, Decimal.new("2")) == <<20000::32-little>>
       assert encode(type, Decimal.new("2.66")) == <<26600::32-little>>
       assert encode(type, Decimal.new("2.6666")) == <<26666::32-little>>
       assert encode(type, Decimal.new("2.66666")) == <<26667::32-little>>

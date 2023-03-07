@@ -73,8 +73,14 @@ defmodule Ch.RowBinary do
   end
 
   def encode(decimal(size: size, scale: scale), %Decimal{sign: sign, coef: coef, exp: exp})
-      when scale == abs(exp) do
+      when scale == -exp do
     i = sign * coef
+    <<i::size(size)-little>>
+  end
+
+  def encode(decimal(size: size, scale: scale), %Decimal{sign: sign, coef: coef, exp: exp})
+      when exp >= 0 do
+    i = sign * coef * round(:math.pow(10, exp + scale))
     <<i::size(size)-little>>
   end
 
@@ -539,8 +545,9 @@ defmodule Ch.RowBinary do
     decode_rows(types, bin, [], [row | rows], types)
   end
 
+  @compile inline: [decimal_size: 1]
   # https://clickhouse.com/docs/en/sql-reference/data-types/decimal/
-  def decimal_size(precision) when is_integer(precision) do
+  defp decimal_size(precision) when is_integer(precision) do
     cond do
       precision >= 39 -> 256
       precision >= 19 -> 128
