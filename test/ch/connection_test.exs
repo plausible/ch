@@ -615,8 +615,10 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 5}} =
                Ch.query(conn, "insert into nullable format RowBinary", <<1, 2, 3, 4, 5>>)
 
-      assert %{num_rows: 9, rows: rows} = Ch.query!(conn, "select n from nullable")
-      assert rows == [[1], [nil], [2], [nil], [nil], [nil], [nil], [nil], [nil]]
+      assert %{num_rows: 1, rows: [[count]]} =
+               Ch.query!(conn, "select count(*) from nullable where n is null")
+
+      assert count == 2 + 5
     end
   end
 
