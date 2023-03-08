@@ -338,24 +338,13 @@ defmodule Ch.Connection do
     encode_param(v)
   end
 
-  # TODO
-  # escapes = [
-  #   {?_, "\_"},
-  #   {?', "''"},
-  #   {?%, "\%"},
-  #   {?\\, "\\\\"}
-  # ]
-
-  escapes = [
-    {?', "\\'"},
-    {?\\, "\\\\"}
-  ]
-
   @dialyzer {:no_improper_lists, to_iodata: 4, to_iodata: 5}
 
   @doc false
   # based on based on https://github.com/elixir-plug/plug/blob/main/lib/plug/html.ex#L41-L80
   def to_iodata(binary, skip, original, acc)
+
+  escapes = [{?', "\\'"}, {?\\, "\\\\"}]
 
   for {match, insert} <- escapes do
     def to_iodata(<<unquote(match), rest::bits>>, skip, original, acc) do
