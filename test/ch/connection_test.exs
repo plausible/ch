@@ -131,6 +131,20 @@ defmodule Ch.ConnectionTest do
                Ch.query(conn, "select * from insert_t order by a")
 
       assert rows == [[1, "a"], [2, "b"], [3, "c"], [4, "d"], [5, "e"], [6, "f"]]
+
+      # insert ... select
+      assert {:ok, %{num_rows: 6}} =
+               Ch.query(conn, "insert into insert_t(a, b) select a, b from insert_t", [],
+                 command: :insert_select
+               )
+
+      assert {:ok, %{num_rows: 4}} =
+               Ch.query(
+                 conn,
+                 "insert into insert_t(a, b) select a, b from insert_t where a <= {$0:UInt8}",
+                 [2],
+                 command: :insert_select
+               )
     end
 
     test "delete", %{conn: conn} do
