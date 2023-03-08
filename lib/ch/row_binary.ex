@@ -483,7 +483,6 @@ defmodule Ch.RowBinary do
           case timezone do
             nil -> NaiveDateTime.add(@epoch_naive_datetime, s)
             "UTC" -> DateTime.from_unix!(s)
-            # TODO
             _ -> s |> DateTime.from_unix!() |> DateTime.shift_zone!(timezone)
           end
 
