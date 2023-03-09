@@ -34,11 +34,16 @@ defmodule Ch.FaultsTest do
           {:ok, listen} = :gen_tcp.listen(port, @socket_opts)
           {:ok, mint} = :gen_tcp.accept(listen)
 
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
           spawn_link(fn ->
             assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
             send(test, :done)
           end)
 
+          # select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
@@ -50,19 +55,148 @@ defmodule Ch.FaultsTest do
     end
   end
 
+  describe "connect/1 handshake" do
+    test "reconnects after timeout", %{port: port, listen: listen, clickhouse: clickhouse} do
+      log =
+        capture_async_log(fn ->
+          Ch.start_link(port: port, timeout: 100)
+
+          # connect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # failed handshake
+          handshake = intercept_packets(mint)
+          assert handshake =~ "select 1"
+          :ok = :gen_tcp.send(clickhouse, handshake)
+          :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
+
+          # reconnect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          handshake = intercept_packets(mint)
+          assert handshake =~ "select 1"
+          :ok = :gen_tcp.send(clickhouse, handshake)
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+        end)
+
+      assert log =~ "failed to connect: ** (Mint.TransportError) timeout"
+    end
+
+    test "reconnects after closed", %{port: port, listen: listen, clickhouse: clickhouse} do
+      log =
+        capture_async_log(fn ->
+          Ch.start_link(port: port)
+
+          # connect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # failed handshake
+          handshake = intercept_packets(mint)
+          assert handshake =~ "select 1"
+          :ok = :gen_tcp.send(clickhouse, handshake)
+          :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
+          :gen_tcp.close(mint)
+
+          # reconnect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          handshake = intercept_packets(mint)
+          assert handshake =~ "select 1"
+          :ok = :gen_tcp.send(clickhouse, handshake)
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+        end)
+
+      assert log =~ "failed to connect: ** (Mint.TransportError) socket closed"
+    end
+
+    test "reconnects after unexpected status code", ctx do
+      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+
+      log =
+        capture_async_log(fn ->
+          Ch.start_link(port: port)
+
+          # connect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # failed handshake
+          handshake = intercept_packets(mint)
+          assert handshake =~ "select 1"
+          altered_handshake = String.replace(handshake, "select 1", "select ;")
+          :ok = :gen_tcp.send(clickhouse, altered_handshake)
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          # reconnect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          handshake = intercept_packets(mint)
+          assert handshake =~ "select 1"
+          :ok = :gen_tcp.send(clickhouse, handshake)
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+        end)
+
+      assert log =~ "failed to connect: ** (Ch.Error) Code: 62. DB::Exception: Syntax error"
+    end
+
+    test "reconnects after incorrect query result", ctx do
+      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+
+      log =
+        capture_async_log(fn ->
+          Ch.start_link(port: port)
+
+          # connect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # failed handshake
+          handshake = intercept_packets(mint)
+          assert handshake =~ "select 1"
+          altered_handshake = String.replace(handshake, "select 1", "select 2")
+          :ok = :gen_tcp.send(clickhouse, altered_handshake)
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          # reconnect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          handshake = intercept_packets(mint)
+          assert handshake =~ "select 1"
+          :ok = :gen_tcp.send(clickhouse, handshake)
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+        end)
+
+      assert log =~ "failed to connect: ** (Ch.Error) unexpected result for 'select 1'"
+    end
+  end
+
   describe "ping/1" do
     test "reconnects after timeout", %{port: port, listen: listen, clickhouse: clickhouse} do
       log =
         capture_async_log(fn ->
           Ch.start_link(port: port, timeout: 100, idle_interval: 20)
 
+          # connect
           {:ok, mint} = :gen_tcp.accept(listen)
 
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          # failed ping
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
 
+          # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
 
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          # ping
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
         end)
@@ -75,14 +209,26 @@ defmodule Ch.FaultsTest do
         capture_async_log(fn ->
           Ch.start_link(port: port, idle_interval: 40)
 
+          # connect
           {:ok, mint} = :gen_tcp.accept(listen)
 
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          # falied ping
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
           :ok = :gen_tcp.close(mint)
 
+          # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
 
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          # ping
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
         end)
@@ -98,25 +244,39 @@ defmodule Ch.FaultsTest do
       log =
         capture_async_log(fn ->
           {:ok, conn} = Ch.start_link(port: port, timeout: 100)
+
+          # connect
           {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :timeout}} =
                      Ch.query(conn, "select 1 + 1")
           end)
 
+          # failed select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
 
+          # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
             assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
             send(test, :done)
           end)
 
+          # select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
           assert_receive :done
         end)
 
@@ -130,24 +290,37 @@ defmodule Ch.FaultsTest do
       log =
         capture_async_log(fn ->
           {:ok, conn} = Ch.start_link(port: port)
+
+          # connect
           {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :closed}} =
                      Ch.query(conn, "select 1 + 1")
           end)
 
+          # failed select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
           :ok = :gen_tcp.close(mint)
 
+          # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
             assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
             send(test, :done)
           end)
 
+          # select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
           assert_receive :done
@@ -168,7 +341,15 @@ defmodule Ch.FaultsTest do
       log =
         capture_async_log(fn ->
           {:ok, conn} = Ch.start_link(port: port)
+
+          # connect
           {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          # disconnect before insert
           :ok = :gen_tcp.close(mint)
 
           spawn_link(fn ->
@@ -176,7 +357,12 @@ defmodule Ch.FaultsTest do
                      Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
           end)
 
+          # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
             assert {:error, %Ch.Error{code: 60, message: message}} =
@@ -187,8 +373,10 @@ defmodule Ch.FaultsTest do
             send(test, :done)
           end)
 
+          # insert
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
           assert_receive :done
         end)
 
@@ -205,17 +393,29 @@ defmodule Ch.FaultsTest do
       log =
         capture_async_log(fn ->
           {:ok, conn} = Ch.start_link(port: port)
+
+          # connect
           {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :closed}} =
                      Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
           end)
 
+          # close after first packet from mint arrives
           assert_receive {:tcp, ^mint, _packet}
           :ok = :gen_tcp.close(mint)
 
+          # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
             assert {:error, %Ch.Error{code: 60, message: message}} =
@@ -226,8 +426,10 @@ defmodule Ch.FaultsTest do
             send(test, :done)
           end)
 
+          # insert
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
           assert_receive :done
         end)
 

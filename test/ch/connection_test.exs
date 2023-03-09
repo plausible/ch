@@ -758,11 +758,12 @@ defmodule Ch.ConnectionTest do
 
   describe "start_link/1" do
     test "can pass options to start_link/1" do
-      {:ok, conn} = Ch.start_link(database: "no_db")
+      {:ok, _} = Ch.Test.sql_exec("CREATE DATABASE another_db")
+      on_exit(fn -> {:ok, _} = Ch.Test.sql_exec("DROP DATABASE another_db") end)
 
-      assert {:error, %Ch.Error{code: 81, message: message}} = Ch.query(conn, "select 1 + 1")
-
-      assert message =~ "UNKNOWN_DATABASE"
+      {:ok, conn} = Ch.start_link(database: "another_db")
+      Ch.query!(conn, "create table example(a UInt8) engine=Memory")
+      assert {:ok, %{rows: [["example"]]}} = Ch.query(conn, "show tables")
     end
 
     test "can start without options" do
