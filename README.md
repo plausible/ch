@@ -20,7 +20,7 @@ ENGINE = MergeTree()
 PRIMARY KEY (user_id, timestamp)
 """)
 
-iex> {:ok, %{num_rows: 1}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table VALUES (0, 'test', now(), -1)")
+iex> {:ok, %{num_rows: 1}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table VALUES (0, {$0:String}, now(), {$1:Float32})", ["test", -1.0])
 iex> {:ok, _} = Ch.query(conn, "DELETE FROM helloworld.my_first_table WHERE user_id = 0", [], settings: [allow_experimental_lightweight_delete: 1])
 
 iex> types = [:u32, :string, :datetime, :f32]

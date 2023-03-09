@@ -116,7 +116,7 @@ defmodule Ch.ConnectionTest do
       data = Ch.RowBinary.encode_rows([[3, "c"], [4, "d"]], [:u8, :string])
 
       assert {:ok, %{num_rows: 2}} =
-               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", data)
+               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", {:raw, data})
 
       # chunked
       stream =
@@ -134,16 +134,21 @@ defmodule Ch.ConnectionTest do
 
       # insert ... select
       assert {:ok, %{num_rows: 6}} =
-               Ch.query(conn, "insert into insert_t(a, b) select a, b from insert_t", [],
-                 command: :insert_select
-               )
+               Ch.query(conn, "insert into insert_t(a, b) select a, b from insert_t")
 
       assert {:ok, %{num_rows: 4}} =
                Ch.query(
                  conn,
                  "insert into insert_t(a, b) select a, b from insert_t where a <= {$0:UInt8}",
-                 [2],
-                 command: :insert_select
+                 [2]
+               )
+
+      # insert param values
+      assert {:ok, %{num_rows: 2}} =
+               Ch.query(
+                 conn,
+                 "insert into insert_t(a, b) values ({$0:UInt8},{$1:String}),({$2:UInt8},{$3:String})",
+                 [0, "1", 2, "3"]
                )
     end
 
@@ -262,7 +267,9 @@ defmodule Ch.ConnectionTest do
 
       rows = [[Decimal.new("2.66")], [Decimal.new("2.6666")], [Decimal.new("2.66666")]]
       data = Ch.RowBinary.encode_rows(rows, [decimal(size: 32, scale: 4)])
-      assert %{num_rows: 3} = Ch.query!(conn, "insert into decimal_t(d) format RowBinary", data)
+
+      assert %{num_rows: 3} =
+               Ch.query!(conn, "insert into decimal_t(d) format RowBinary", {:raw, data})
 
       assert %{num_rows: 3, rows: rows} = Ch.query!(conn, "select * from decimal_t")
       assert rows == [[Decimal.new("2.6600")], [Decimal.new("2.6666")], [Decimal.new("2.6667")]]
@@ -500,7 +507,7 @@ defmodule Ch.ConnectionTest do
       Ch.query!(
         conn,
         "insert into new(timestamp, event_id) format RowBinary",
-        Ch.RowBinary.encode_rows([[~D[1960-01-01], 3]], [:date32, :u8])
+        {:raw, Ch.RowBinary.encode_rows([[~D[1960-01-01], 3]], [:date32, :u8])}
       )
 
       assert %{
@@ -553,10 +560,11 @@ defmodule Ch.ConnectionTest do
       Ch.query!(
         conn,
         "insert into dt(timestamp, event_id) format RowBinary",
-        Ch.RowBinary.encode_rows(
-          [[~N[2021-01-01 12:00:00.123456], 4], [~N[2021-01-01 12:00:00], 5]],
-          [{:datetime64, :millisecond}, :u8]
-        )
+        {:raw,
+         Ch.RowBinary.encode_rows(
+           [[~N[2021-01-01 12:00:00.123456], 4], [~N[2021-01-01 12:00:00], 5]],
+           [{:datetime64, :millisecond}, :u8]
+         )}
       )
 
       assert {:ok, %{num_rows: 2, rows: rows}} =
@@ -628,7 +636,7 @@ defmodule Ch.ConnectionTest do
 
       # weird thing abour nullables is that, similar to bool, in binary format, any byte > 0 is `null`
       assert {:ok, %{num_rows: 5}} =
-               Ch.query(conn, "insert into nullable format RowBinary", <<1, 2, 3, 4, 5>>)
+               Ch.query(conn, "insert into nullable format RowBinary", {:raw, <<1, 2, 3, 4, 5>>})
 
       assert %{num_rows: 1, rows: [[count]]} =
                Ch.query!(conn, "select count(*) from nullable where n is null")

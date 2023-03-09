@@ -10,7 +10,7 @@ defmodule Ch do
     DBConnection.child_spec(Connection, opts)
   end
 
-  @spec query(DBConnection.conn(), iodata, Enumerable.t() | iodata, Keyword.t()) ::
+  @spec query(DBConnection.conn(), iodata, {:raw, iodata} | Enumerable.t(), Keyword.t()) ::
           {:ok, Result.t()} | {:error, Exception.t()}
   def query(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, Keyword.get(opts, :command))
@@ -20,7 +20,8 @@ defmodule Ch do
     end
   end
 
-  @spec query!(DBConnection.conn(), iodata, Enumerable.t() | iodata, Keyword.t()) :: Result.t()
+  @spec query!(DBConnection.conn(), iodata, {:raw, iodata} | Enumerable.t(), Keyword.t()) ::
+          Result.t()
   def query!(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, Keyword.get(opts, :command))
     DBConnection.execute!(conn, query, params, opts)

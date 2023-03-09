@@ -92,7 +92,7 @@ defmodule Ch.Connection do
     end
   end
 
-  def handle_execute(%Ch.Query{command: :insert} = query, data, opts, conn)
+  def handle_execute(%Ch.Query{command: :insert} = query, {:raw, data}, opts, conn)
       when is_list(data) or is_binary(data) do
     path = path(settings(conn, opts))
     headers = headers(conn, opts)
@@ -104,7 +104,7 @@ defmodule Ch.Connection do
     end
   end
 
-  def handle_execute(%Ch.Query{command: :insert_select} = query, params, opts, conn) do
+  def handle_execute(%Ch.Query{command: :insert} = query, params, opts, conn) do
     path = path(settings(conn, opts) ++ params(params))
     headers = headers(conn, opts)
 
