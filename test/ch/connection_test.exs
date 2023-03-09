@@ -490,6 +490,7 @@ defmodule Ch.ConnectionTest do
                  "date" => ~D[1900-01-01]
                })
 
+      # TRY dates not on the edge of the year
       # TODO strange stuff, one day is lost
       assert {:ok, %{num_rows: 1, rows: [[~D[2299-12-31], "2299-12-31"]]}} =
                Ch.query(conn, "select {date:Date32} as d, toString(d)", %{
