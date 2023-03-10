@@ -232,7 +232,7 @@ defmodule Ch.RowBinary do
   for {size, precision} <- [{32, 9}, {64, 18}, {128, 38}, {256, 76}] do
     def encode_type(decimal(size: unquote(size), scale: scale)) do
       [
-        unquote("Decimal(#{precision},"),
+        unquote("Decimal(#{precision}, "),
         String.Chars.Integer.to_string(scale),
         ?)
       ]
