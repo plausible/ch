@@ -292,13 +292,13 @@ defmodule Ch.ConnectionTest do
       Ch.query!(
         conn,
         "insert into test_bool(A, B) format RowBinary",
-        Stream.map([[3, true], [4, false], [5, nil]], fn row ->
+        Stream.map([[3, true], [4, false]], fn row ->
           Ch.RowBinary.encode_row(row, [:i64, :boolean])
         end)
       )
 
       # anything > 0 is `true`, here `2` is `true`
-      Ch.query!(conn, "insert into test_bool(A, B) values (6, 2)")
+      Ch.query!(conn, "insert into test_bool(A, B) values (5, 2)")
 
       assert %{
                rows: [
@@ -306,8 +306,7 @@ defmodule Ch.ConnectionTest do
                  [2, false, 0],
                  [3, true, 3],
                  [4, false, 0],
-                 [5, false, 0],
-                 [6, true, 6]
+                 [5, true, 5]
                ]
              } = Ch.query!(conn, "SELECT *, A * B FROM test_bool ORDER BY A")
     end

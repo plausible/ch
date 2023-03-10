@@ -1,7 +1,6 @@
 defmodule Ch.RowBinaryTest do
-  alias Ch.RowBinary
   use ExUnit.Case, async: true
-  import Ch.{RowBinary, Test}
+  import Ch.RowBinary
 
   test "encode -> decode" do
     spec = [
@@ -9,6 +8,9 @@ defmodule Ch.RowBinaryTest do
       {:string, "a"},
       {:string, String.duplicate("a", 500)},
       {:string, String.duplicate("a", 15000)},
+      {{:string, 2}, <<0, 0>>},
+      {{:string, 2}, "a" <> <<0>>},
+      {{:string, 2}, "aa"},
       {:u8, 0},
       {:u8, 0xFF},
       {:u16, 0},
@@ -86,19 +88,14 @@ defmodule Ch.RowBinaryTest do
     num_cols = length(spec)
     {types, row} = Enum.unzip(spec)
 
-    header = [
-      Enum.map(1..num_cols, fn col -> "col#{col}" end),
-      Enum.map(types, &dump_type/1)
+    encoded = [
+      num_cols,
+      Enum.map(1..num_cols, fn col -> encode(:string, "col#{col}") end),
+      Enum.map(types, fn type -> encode(:string, encode_type(type)) end),
+      encode_row(row, types)
     ]
 
-    encoded =
-      IO.iodata_to_binary([
-        num_cols,
-        encode_rows(header, List.duplicate(:string, num_cols)),
-        encode_row(row, types)
-      ])
-
-    [decoded_row] = decode_rows(encoded)
+    [decoded_row] = decode_rows(IO.iodata_to_binary(encoded))
 
     for {original, decoded} <- Enum.zip(row, decoded_row) do
       assert original == decoded
@@ -108,7 +105,6 @@ defmodule Ch.RowBinaryTest do
   describe "encode/2" do
     test "decimal" do
       type = decimal(size: 32, scale: 4)
-      assert encode(type, nil) == <<0::32>>
       assert encode(type, Decimal.new("2")) == <<20000::32-little>>
       assert encode(type, Decimal.new("2.66")) == <<26600::32-little>>
       assert encode(type, Decimal.new("2.6666")) == <<26666::32-little>>
@@ -126,27 +122,7 @@ defmodule Ch.RowBinaryTest do
     end
 
     test "nil" do
-      assert encode(:varint, nil) == <<0>>
-      assert encode(:string, nil) == <<0>>
-      assert encode(string(size: 2), nil) == <<0, 0>>
-      assert encode(:u8, nil) == <<0>>
-      assert encode(:u16, nil) == <<0, 0>>
-      assert encode(:u32, nil) == <<0, 0, 0, 0>>
-      assert encode(:u64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-      assert encode(:i8, nil) == <<0>>
-      assert encode(:i16, nil) == <<0, 0>>
-      assert encode(:i32, nil) == <<0, 0, 0, 0>>
-      assert encode(:i64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-      assert encode(:f32, nil) == <<0, 0, 0, 0>>
-      assert encode(:f64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-      assert encode(:boolean, nil) == <<0>>
-      assert encode({:array, :string}, nil) == <<0>>
-      assert encode(:date, nil) == <<0, 0>>
-      assert encode(:date32, nil) == <<0, 0, 0, 0>>
-      assert encode(:datetime, nil) == <<0, 0, 0, 0>>
-      assert encode(datetime64(unit: :microsecond), nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-      assert encode(:uuid, nil) == <<0::128>>
-      assert encode({:nullable, :string}, nil) == <<1>>
+      assert encode({:nullable, :string}, nil) == 1
     end
   end
 
@@ -235,15 +211,13 @@ defmodule Ch.RowBinaryTest do
       types = [:u8, :string]
       num_cols = length(types)
 
-      header = [
-        Enum.map(1..num_cols, fn col -> "col#{col}" end),
-        Enum.map(types, &dump_type/1)
+      encoded = [
+        num_cols,
+        Enum.map(1..num_cols, fn col -> encode(:string, "col#{col}") end),
+        Enum.map(types, fn type -> encode(:string, encode_type(type)) end)
       ]
 
-      encoded =
-        IO.iodata_to_binary([num_cols, encode_rows(header, List.duplicate(:string, num_cols))])
-
-      assert decode_rows(encoded) == []
+      assert decode_rows(IO.iodata_to_binary(encoded)) == []
     end
 
     test "nan floats" do
@@ -273,11 +247,11 @@ defmodule Ch.RowBinaryTest do
 
   describe "decode_rows/2" do
     test "empty" do
-      assert RowBinary.decode_rows(<<>>, [:u8, :string]) == []
+      assert decode_rows(<<>>, [:u8, :string]) == []
     end
 
     test "non-empty" do
-      assert RowBinary.decode_rows(<<1, 2>>, [:u8, :u8]) == [[1, 2]]
+      assert decode_rows(<<1, 2>>, [:u8, :u8]) == [[1, 2]]
     end
   end
 end

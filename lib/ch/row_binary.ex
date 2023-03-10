@@ -32,15 +32,13 @@ defmodule Ch.RowBinary do
     [<<1::1, num::7>> | encode(:varint, num >>> 7)]
   end
 
-  def encode(:varint, nil), do: <<0>>
-
   def encode(:string, str) when is_binary(str) do
     [encode(:varint, byte_size(str)) | str]
   end
 
-  def encode(:string, nil), do: <<0>>
-
-  def encode(string(size: size), nil), do: <<0::size(size * 8)>>
+  def encode(:string, iodata) when is_list(iodata) do
+    [encode(:varint, IO.iodata_length(iodata)) | iodata]
+  end
 
   def encode(string(size: size), str) when byte_size(str) == size do
     str
@@ -59,17 +57,12 @@ defmodule Ch.RowBinary do
     def encode(unquote(:"i#{size}"), i) when is_integer(i) do
       <<i::unquote(size)-little-signed>>
     end
-
-    def encode(unquote(:"u#{size}"), nil), do: <<0::unquote(size)>>
-    def encode(unquote(:"i#{size}"), nil), do: <<0::unquote(size)>>
   end
 
   for size <- [32, 64] do
     def encode(unquote(:"f#{size}"), f) when is_number(f) do
       <<f::unquote(size)-little-signed-float>>
     end
-
-    def encode(unquote(:"f#{size}"), nil), do: <<0::unquote(size)>>
   end
 
   def encode(decimal(size: size, scale: scale), %Decimal{sign: sign, coef: coef, exp: exp})
@@ -88,20 +81,14 @@ defmodule Ch.RowBinary do
     encode(t, Decimal.round(d, scale))
   end
 
-  def encode(decimal(size: size), nil) do
-    <<0::size(size)-little>>
-  end
-
   def encode(:boolean, true), do: <<1>>
   def encode(:boolean, false), do: <<0>>
-  def encode(:boolean, nil), do: <<0>>
 
   def encode({:array, type}, [_ | _] = l) do
     [encode(:varint, length(l)) | encode_many(l, type)]
   end
 
   def encode({:array, _type}, []), do: <<0>>
-  def encode({:array, _type}, nil), do: <<0>>
 
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
@@ -110,8 +97,6 @@ defmodule Ch.RowBinary do
   def encode(:datetime, %DateTime{} = datetime) do
     <<DateTime.diff(datetime, @epoch_utc_datetime)::32-little>>
   end
-
-  def encode(:datetime, nil), do: <<0::32>>
 
   # TODO right now the timezones are ignored during encoding
   # assuming the user has provided the correct one
@@ -127,23 +112,14 @@ defmodule Ch.RowBinary do
     <<DateTime.diff(datetime, @epoch_utc_datetime, unit)::64-little-signed>>
   end
 
-  def encode(datetime64(), nil) do
-    <<0::64>>
-  end
-
   def encode(:date, %Date{} = date) do
     <<Date.diff(date, @epoch_date)::16-little>>
   end
-
-  def encode(:date, nil), do: <<0::16>>
 
   def encode(:date32, %Date{} = date) do
     <<Date.diff(date, @epoch_date)::32-little-signed>>
   end
 
-  def encode(:date32, nil), do: <<0::32>>
-
-  def encode(:uuid, nil), do: <<0::128>>
   def encode(:uuid, <<u1::64, u2::64>>), do: <<u1::64-little, u2::64-little>>
 
   def encode(
@@ -160,7 +136,7 @@ defmodule Ch.RowBinary do
     encode(:uuid, raw)
   end
 
-  def encode({:nullable, _type}, nil), do: <<1>>
+  def encode({:nullable, _type}, nil), do: 1
   def encode({:nullable, type}, value), do: [0 | encode(type, value)]
 
   defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
@@ -190,6 +166,62 @@ defmodule Ch.RowBinary do
   defp d(?d), do: 13
   defp d(?e), do: 14
   defp d(?f), do: 15
+
+  scalar_types = [
+    {"String", :string},
+    {"UUID", :uuid},
+    {"UInt8", :u8},
+    {"UInt16", :u16},
+    {"UInt32", :u32},
+    {"UInt64", :u64},
+    {"UInt128", :u128},
+    {"UInt256", :u256},
+    {"Int8", :i8},
+    {"Int16", :i16},
+    {"Int32", :i32},
+    {"Int64", :i64},
+    {"Int128", :i128},
+    {"Int256", :i256},
+    {"Float32", :f32},
+    {"Float64", :f64},
+    {"Date32", :date32},
+    {"Bool", :boolean},
+    {"Nothing", :nothing}
+  ]
+
+  for {encoded, decoded} <- scalar_types do
+    def encode_type(unquote(decoded)), do: unquote(encoded)
+  end
+
+  def encode_type({:nullable, type}), do: ["Nullable(", encode_type(type), ?)]
+  def encode_type({:array, type}), do: ["Array(", encode_type(type), ?)]
+  def encode_type(:datetime), do: "DateTime"
+
+  def encode_type({:datetime, timezone}) when is_binary(timezone) do
+    ["DateTime('", timezone, "')"]
+  end
+
+  def encode_type({:datetime, nil}), do: "DateTime"
+  def encode_type({:string, size}), do: ["FixedString(", String.Chars.Integer.to_string(size), ?)]
+  def encode_type(:date), do: "Date"
+
+  for size <- [32, 64, 128, 256] do
+    def encode_type({unquote(:"decimal#{size}"), scale}) do
+      [unquote("Decimal#{size}("), String.Chars.Integer.to_string(scale), ?)]
+    end
+  end
+
+  def encode_type({:decimal, precision, scale}) do
+    [
+      "Decimal(",
+      String.Chars.Integer.to_string(precision),
+      ?,,
+      String.Chars.Integer.to_string(scale),
+      ?)
+    ]
+  end
+
+  # TODO datetime64, enum, etc.
 
   def decode_rows(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
   def decode_rows(<<>>), do: []
@@ -253,28 +285,6 @@ defmodule Ch.RowBinary do
   end
 
   def decode_types([] = done), do: done
-
-  scalar_types = [
-    {"String", :string},
-    {"UUID", :uuid},
-    {"UInt8", :u8},
-    {"UInt16", :u16},
-    {"UInt32", :u32},
-    {"UInt64", :u64},
-    {"UInt128", :u128},
-    {"UInt256", :u256},
-    {"Int8", :i8},
-    {"Int16", :i16},
-    {"Int32", :i32},
-    {"Int64", :i64},
-    {"Int128", :i128},
-    {"Int256", :i256},
-    {"Float32", :f32},
-    {"Float64", :f64},
-    {"Date32", :date32},
-    {"Bool", :boolean},
-    {"Nothing", :nothing}
-  ]
 
   for {encoded, decoded} <- scalar_types do
     defp decode_type(<<unquote(encoded)::bytes, _rest::bytes>>), do: unquote(decoded)
