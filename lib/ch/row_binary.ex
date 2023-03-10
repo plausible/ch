@@ -228,14 +228,15 @@ defmodule Ch.RowBinary do
   def encode_type({:string, size}), do: ["FixedString(", String.Chars.Integer.to_string(size), ?)]
   def encode_type(:date), do: "Date"
 
-  def encode_type(decimal(size: size, scale: scale)) do
-    [
-      "Decimal",
-      String.Chars.Integer.to_string(size),
-      ?(,
-      String.Chars.Integer.to_string(scale),
-      ?)
-    ]
+  # TODO verify with custom precision Decimals
+  for {size, precision} <- [{32, 9}, {64, 18}, {128, 38}, {256, 76}] do
+    def encode_type(decimal(size: unquote(size), scale: scale)) do
+      [
+        unquote("Decimal(#{precision},"),
+        String.Chars.Integer.to_string(scale),
+        ?)
+      ]
+    end
   end
 
   # TODO datetime64, enum, etc.
