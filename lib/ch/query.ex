@@ -46,6 +46,10 @@ defmodule Ch.Query do
     def extract_command(unquote(String.downcase(statement)) <> _), do: unquote(command)
   end
 
+  # TODO cover more cases, don't rely on assumed format
+  def extract_command([[] | rest]), do: extract_command(rest)
+  def extract_command([["WITH " <> _] | rest]), do: extract_command(rest)
+  def extract_command([["with " <> _] | rest]), do: extract_command(rest)
   def extract_command([first | _]), do: extract_command(first)
   def extract_command(_other), do: nil
 

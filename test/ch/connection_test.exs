@@ -1,180 +1,231 @@
 defmodule Ch.ConnectionTest do
   use ExUnit.Case
+  alias Ch.RowBinary
 
   setup do
     {:ok, conn: start_supervised!(Ch)}
   end
 
-  describe "query" do
-    test "select without params", %{conn: conn} do
-      assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1")
-    end
+  test "select without params", %{conn: conn} do
+    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1")
+  end
 
-    test "select with types", %{conn: conn} do
-      assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1", [], types: [:u8])
-    end
+  test "select with types", %{conn: conn} do
+    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1", [], types: [:u8])
+  end
 
-    test "select with params", %{conn: conn} do
-      assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {a:UInt8}", %{"a" => 1})
+  test "select with params", %{conn: conn} do
+    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {a:UInt8}", %{"a" => 1})
 
-      assert {:ok, %{num_rows: 1, rows: [[true]]}} =
-               Ch.query(conn, "select {b:Bool}", %{"b" => true})
+    assert {:ok, %{num_rows: 1, rows: [[true]]}} =
+             Ch.query(conn, "select {b:Bool}", %{"b" => true})
 
-      assert {:ok, %{num_rows: 1, rows: [[false]]}} =
-               Ch.query(conn, "select {b:Bool}", %{"b" => false})
+    assert {:ok, %{num_rows: 1, rows: [[false]]}} =
+             Ch.query(conn, "select {b:Bool}", %{"b" => false})
 
-      assert {:ok, %{num_rows: 1, rows: [[1.0]]}} =
-               Ch.query(conn, "select {a:Float32}", %{"a" => 1.0})
+    assert {:ok, %{num_rows: 1, rows: [[1.0]]}} =
+             Ch.query(conn, "select {a:Float32}", %{"a" => 1.0})
 
-      assert {:ok, %{num_rows: 1, rows: [["a&b=c"]]}} =
-               Ch.query(conn, "select {a:String}", %{"a" => "a&b=c"})
+    assert {:ok, %{num_rows: 1, rows: [["a&b=c"]]}} =
+             Ch.query(conn, "select {a:String}", %{"a" => "a&b=c"})
 
-      assert {:ok, %{num_rows: 1, rows: [row]}} =
-               Ch.query(conn, "select {a:Decimal(9,4)}", %{"a" => Decimal.new("2000.333")})
+    assert {:ok, %{num_rows: 1, rows: [row]}} =
+             Ch.query(conn, "select {a:Decimal(9,4)}", %{"a" => Decimal.new("2000.333")})
 
-      assert row == [Decimal.new("2000.3330")]
+    assert row == [Decimal.new("2000.3330")]
 
-      assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} =
-               Ch.query(conn, "select {a:Date}", %{"a" => ~D[2022-01-01]})
+    assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} =
+             Ch.query(conn, "select {a:Date}", %{"a" => ~D[2022-01-01]})
 
-      assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} =
-               Ch.query(conn, "select {a:Date32}", %{"a" => ~D[2022-01-01]})
+    assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} =
+             Ch.query(conn, "select {a:Date32}", %{"a" => ~D[2022-01-01]})
 
-      assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00]]]}} =
-               Ch.query(conn, "select {a:DateTime}", %{"a" => ~N[2022-01-01 12:00:00]})
+    assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00]]]}} =
+             Ch.query(conn, "select {a:DateTime}", %{"a" => ~N[2022-01-01 12:00:00]})
 
-      assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00.123000]]]}} =
-               Ch.query(conn, "select {a:DateTime64(3)}", %{"a" => ~N[2022-01-01 12:00:00.123]})
+    assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00.123000]]]}} =
+             Ch.query(conn, "select {a:DateTime64(3)}", %{"a" => ~N[2022-01-01 12:00:00.123]})
 
-      assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00Z]]]}} =
-               Ch.query(conn, "select {a:DateTime('UTC')}", %{"a" => ~U[2022-01-01 12:00:00Z]})
+    assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00Z]]]}} =
+             Ch.query(conn, "select {a:DateTime('UTC')}", %{"a" => ~U[2022-01-01 12:00:00Z]})
 
-      assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} =
-               Ch.query(conn, "select {a:Array(String)}", %{"a" => ["a", "b'", "\\'c"]})
+    assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} =
+             Ch.query(conn, "select {a:Array(String)}", %{"a" => ["a", "b'", "\\'c"]})
 
-      assert {:ok, %{num_rows: 1, rows: [[[1, 2, 3]]]}} =
-               Ch.query(conn, "select {a:Array(UInt8)}", %{"a" => [1, 2, 3]})
+    assert {:ok, %{num_rows: 1, rows: [[[1, 2, 3]]]}} =
+             Ch.query(conn, "select {a:Array(UInt8)}", %{"a" => [1, 2, 3]})
 
-      assert {:ok, %{num_rows: 1, rows: [[[[1], [2, 3], []]]]}} =
-               Ch.query(conn, "select {a:Array(Array(UInt8))}", %{"a" => [[1], [2, 3], []]})
+    assert {:ok, %{num_rows: 1, rows: [[[[1], [2, 3], []]]]}} =
+             Ch.query(conn, "select {a:Array(Array(UInt8))}", %{"a" => [[1], [2, 3], []]})
 
-      uuid = "9B29BD20-924C-4DE5-BDB3-8C2AA1FCE1FC"
-      uuid_bin = uuid |> String.replace("-", "") |> Base.decode16!()
+    uuid = "9B29BD20-924C-4DE5-BDB3-8C2AA1FCE1FC"
+    uuid_bin = uuid |> String.replace("-", "") |> Base.decode16!()
 
-      assert {:ok, %{num_rows: 1, rows: [[^uuid_bin]]}} =
-               Ch.query(conn, "select {a:UUID}", %{"a" => uuid})
+    assert {:ok, %{num_rows: 1, rows: [[^uuid_bin]]}} =
+             Ch.query(conn, "select {a:UUID}", %{"a" => uuid})
 
-      # TODO
-      # assert {:ok, %{num_rows: 1, rows: [[^uuid_bin]]}} =
-      #          Ch.query(conn, "select {a:UUID}", %{"a" => uuid_bin})
+    # TODO
+    # assert {:ok, %{num_rows: 1, rows: [[^uuid_bin]]}} =
+    #          Ch.query(conn, "select {a:UUID}", %{"a" => uuid_bin})
 
-      # pseudo-positional bind
-      assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {$0:UInt8}", [1])
-    end
+    # pseudo-positional bind
+    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {$0:UInt8}", [1])
+  end
 
-    test "select with options", %{conn: conn} do
-      assert {:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "1"]]}} =
-               Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 1])
+  test "select with options", %{conn: conn} do
+    assert {:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "1"]]}} =
+             Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 1])
 
-      assert {:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "0"]]}} =
-               Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 0])
-    end
+    assert {:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "0"]]}} =
+             Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 0])
+  end
 
-    test "create", %{conn: conn} do
-      assert {:ok, %{num_rows: 0, rows: []}} =
-               Ch.query(conn, "create table create_example(a UInt8) engine = Memory")
+  test "create", %{conn: conn} do
+    assert {:ok, %{num_rows: 0, rows: []}} =
+             Ch.query(conn, "create table create_example(a UInt8) engine = Memory")
 
-      on_exit(fn -> Ch.Test.drop_table("create_example") end)
-    end
+    on_exit(fn -> Ch.Test.drop_table("create_example") end)
+  end
 
-    test "create with options", %{conn: conn} do
-      assert {:error, %Ch.Error{code: 164, message: message}} =
-               Ch.query(conn, "create table create_example(a UInt8) engine = Memory", [],
-                 settings: [readonly: 1]
-               )
+  test "create with options", %{conn: conn} do
+    assert {:error, %Ch.Error{code: 164, message: message}} =
+             Ch.query(conn, "create table create_example(a UInt8) engine = Memory", [],
+               settings: [readonly: 1]
+             )
 
-      assert message =~ ~r/Cannot execute query in readonly mode/
-    end
+    assert message =~ ~r/Cannot execute query in readonly mode/
+  end
 
-    test "insert", %{conn: conn} do
-      assert {:ok, %{num_rows: 0}} =
-               Ch.query(conn, "create table insert_t(a UInt8, b String) engine = Memory")
-
+  describe "insert" do
+    setup %{conn: conn} do
+      Ch.query!(conn, "create table insert_t(a UInt8 default 1, b String) engine = Memory")
       on_exit(fn -> Ch.Test.drop_table("insert_t") end)
+    end
 
-      # values
-      assert {:ok, %{num_rows: 2}} =
-               Ch.query(conn, "insert into insert_t values (1,'a'), (2,'b')")
-
-      # readonly
-      assert {:error, %Ch.Error{code: 164}} =
-               Ch.query(conn, "insert into insert_t values (1,'a'), (2,'b')", [],
-                 settings: [readonly: 1]
-               )
-
-      # iodata
-      data = Ch.RowBinary.encode_rows([[3, "c"], [4, "d"]], [:u8, :string])
-
-      assert {:ok, %{num_rows: 2}} =
-               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", {:raw, data})
-
-      # chunked
-      stream =
-        Stream.map([[5, "e"], [6, "f"]], fn row ->
-          Ch.RowBinary.encode_row(row, [:u8, :string])
-        end)
-
-      assert {:ok, %{num_rows: 2}} =
-               Ch.query(conn, ["insert into ", "insert_t(a, b)", " format RowBinary"], stream)
-
-      assert {:ok, %{num_rows: 6, rows: rows}} =
-               Ch.query(conn, "select * from insert_t order by a")
-
-      assert rows == [[1, "a"], [2, "b"], [3, "c"], [4, "d"], [5, "e"], [6, "f"]]
-
-      # insert ... select
-      assert {:ok, %{num_rows: 6}} =
-               Ch.query(conn, "insert into insert_t(a, b) select a, b from insert_t")
-
-      assert {:ok, %{num_rows: 4}} =
+    test "values", %{conn: conn} do
+      assert {:ok, %{num_rows: 3}} =
                Ch.query(
                  conn,
-                 "insert into insert_t(a, b) select a, b from insert_t where a <= {$0:UInt8}",
-                 [2]
+                 "insert into insert_t values (1, 'a'),(2,'b'),   (null,       null)"
                )
 
-      # insert param values
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert rows == [[1, "a"], [2, "b"], [1, ""]]
+
       assert {:ok, %{num_rows: 2}} =
                Ch.query(
                  conn,
                  "insert into insert_t(a, b) values ({$0:UInt8},{$1:String}),({$2:UInt8},{$3:String})",
-                 [0, "1", 2, "3"]
+                 [4, "d", 5, "e"]
                )
+
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t where a >= 4")
+      assert rows == [[4, "d"], [5, "e"]]
     end
 
-    test "delete", %{conn: conn} do
-      assert {:ok, %{num_rows: 0, rows: []}} =
-               Ch.query(
-                 conn,
-                 "create table delete_t(a UInt8, b String) engine = MergeTree order by tuple()"
-               )
+    test "when readonly", %{conn: conn} do
+      opts = [settings: [readonly: 1]]
 
-      on_exit(fn -> Ch.Test.drop_table("delete_t") end)
+      assert {:error, %Ch.Error{code: 164, message: message}} =
+               Ch.query(conn, "insert into insert_t values (1, 'a'), (2, 'b')", [], opts)
+
+      assert message =~ "Cannot execute query in readonly mode."
+    end
+
+    test "rowbinary", %{conn: conn} do
+      types = [:u8, :string]
+      rows = [[1, "a"], [2, "b"]]
+      data = RowBinary.encode_rows(rows, types)
 
       assert {:ok, %{num_rows: 2}} =
-               Ch.query(conn, "insert into delete_t values (1,'a'), (2,'b')")
+               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", {:raw, data})
 
-      assert {:ok, %{num_rows: 0}} =
-               Ch.query(conn, "delete from delete_t where 1", [],
-                 settings: [allow_experimental_lightweight_delete: 1]
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert rows == [[1, "a"], [2, "b"]]
+    end
+
+    # hmmmmmmmmmmmmmmmm
+    @tag skip: true
+    test "nullable rowbinary", %{conn: conn} do
+      types = [{:nullable, :u8}, {:nullable, :string}]
+      rows = [[1, "a"], [2, "b"], [nil, nil]]
+
+      data = [
+        2,
+        Enum.map(["a", "b"], fn col -> RowBinary.encode(:string, col) end),
+        Enum.map(types, fn type -> RowBinary.encode(:string, RowBinary.encode_type(type)) end),
+        RowBinary.encode_rows(rows, types)
+      ]
+
+      assert {:ok, %{num_rows: 3}} =
+               Ch.query(
+                 conn,
+                 "insert into insert_t format RowBinaryWithNamesAndTypes",
+                 {:raw, data},
+                 settings: [input_format_null_as_default: 1]
                )
+
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert rows == nil
+    end
+
+    test "chunked", %{conn: conn} do
+      types = [:u8, :string]
+      rows = [[1, "a"], [2, "b"], [3, "c"]]
+
+      stream =
+        rows
+        |> Stream.chunk_every(2)
+        |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
+
+      assert {:ok, %{num_rows: 3}} =
+               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", stream)
+
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert rows == [[1, "a"], [2, "b"], [3, "c"]]
+    end
+
+    test "select", %{conn: conn} do
+      assert {:ok, %{num_rows: 3}} =
+               Ch.query(conn, "insert into insert_t values (1, 'a'), (2, 'b'), (null, null)")
+
+      assert {:ok, %{num_rows: 3}} =
+               Ch.query(conn, "insert into insert_t(a, b) select a, b from insert_t")
+
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert rows == [[1, "a"], [2, "b"], [1, ""], [1, "a"], [2, "b"], [1, ""]]
+
+      assert {:ok, %{num_rows: 2}} =
+               Ch.query(
+                 conn,
+                 "insert into insert_t(a, b) select a, b from insert_t where a > {$0:UInt8}",
+                 [1]
+               )
+
+      assert {:ok, %{rows: new_rows}} = Ch.query(conn, "select * from insert_t")
+      assert new_rows -- rows == [[2, "b"], [2, "b"]]
     end
   end
 
-  describe "query!" do
-    test "select without params", %{conn: conn} do
-      assert %{num_rows: 1, rows: [[1]]} = Ch.query!(conn, "select 1")
-    end
+  test "delete", %{conn: conn} do
+    assert {:ok, %{num_rows: 0, rows: []}} =
+             Ch.query(
+               conn,
+               "create table delete_t(a UInt8, b String) engine = MergeTree order by tuple()"
+             )
+
+    on_exit(fn -> Ch.Test.drop_table("delete_t") end)
+
+    assert {:ok, %{num_rows: 2}} = Ch.query(conn, "insert into delete_t values (1,'a'), (2,'b')")
+
+    assert {:ok, %{num_rows: 0}} =
+             Ch.query(conn, "delete from delete_t where 1", [],
+               settings: [allow_experimental_lightweight_delete: 1]
+             )
+  end
+
+  test "query!", %{conn: conn} do
+    assert %{num_rows: 1, rows: [[1]]} = Ch.query!(conn, "select 1")
   end
 
   describe "types" do
@@ -228,7 +279,7 @@ defmodule Ch.ConnectionTest do
 
       stream =
         Stream.map([[""], ["a"], ["aa"], ["aaa"]], fn row ->
-          Ch.RowBinary.encode_row(row, [{:string, 3}])
+          RowBinary.encode_row(row, [{:string, 3}])
         end)
 
       assert {:ok, %{num_rows: 4}} =
@@ -240,7 +291,7 @@ defmodule Ch.ConnectionTest do
     end
 
     test "decimal", %{conn: conn} do
-      import Ch.RowBinary, only: [decimal: 1]
+      import RowBinary, only: [decimal: 1]
 
       assert {:ok, %{num_rows: 1, rows: [row]}} =
                Ch.query(conn, "SELECT toDecimal32(2, 4) AS x, x / 3, toTypeName(x)")
@@ -266,7 +317,7 @@ defmodule Ch.ConnectionTest do
       on_exit(fn -> Ch.Test.drop_table("decimal_t") end)
 
       rows = [[Decimal.new("2.66")], [Decimal.new("2.6666")], [Decimal.new("2.66666")]]
-      data = Ch.RowBinary.encode_rows(rows, [decimal(size: 32, scale: 4)])
+      data = RowBinary.encode_rows(rows, [decimal(size: 32, scale: 4)])
 
       assert %{num_rows: 3} =
                Ch.query!(conn, "insert into decimal_t(d) format RowBinary", {:raw, data})
@@ -293,7 +344,7 @@ defmodule Ch.ConnectionTest do
         conn,
         "insert into test_bool(A, B) format RowBinary",
         Stream.map([[3, true], [4, false]], fn row ->
-          Ch.RowBinary.encode_row(row, [:i64, :boolean])
+          RowBinary.encode_row(row, [:i64, :boolean])
         end)
       )
 
@@ -339,7 +390,7 @@ defmodule Ch.ConnectionTest do
         conn,
         "insert into t_uuid(x,y) format RowBinary",
         Stream.map([[uuid, "Example 3"]], fn row ->
-          Ch.RowBinary.encode_row(row, [:uuid, :string])
+          RowBinary.encode_row(row, [:uuid, :string])
         end)
       )
 
@@ -506,7 +557,7 @@ defmodule Ch.ConnectionTest do
       Ch.query!(
         conn,
         "insert into new(timestamp, event_id) format RowBinary",
-        {:raw, Ch.RowBinary.encode_rows([[~D[1960-01-01], 3]], [:date32, :u8])}
+        {:raw, RowBinary.encode_rows([[~D[1960-01-01], 3]], [:date32, :u8])}
       )
 
       assert %{
@@ -560,7 +611,7 @@ defmodule Ch.ConnectionTest do
         conn,
         "insert into dt(timestamp, event_id) format RowBinary",
         {:raw,
-         Ch.RowBinary.encode_rows(
+         RowBinary.encode_rows(
            [[~N[2021-01-01 12:00:00.123456], 4], [~N[2021-01-01 12:00:00], 5]],
            [{:datetime64, :millisecond}, :u8]
          )}
