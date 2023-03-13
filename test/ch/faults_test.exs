@@ -1,4 +1,5 @@
 defmodule Ch.FaultsTest do
+  alias Ch.Result
   use ExUnit.Case
   import Ch.Test, only: [intercept_packets: 1]
 
@@ -434,6 +435,52 @@ defmodule Ch.FaultsTest do
         end)
 
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
+    end
+
+    test "warns on different server name", ctx do
+      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+      test = self()
+
+      header = "X-ClickHouse-Server-Display-Name"
+
+      {:ok, %Ch.Result{meta: %{"server-display-name" => expected_name}}} =
+        Ch.Test.sql_exec("select 1")
+
+      log =
+        capture_async_log(fn ->
+          {:ok, conn} = Ch.start_link(port: port)
+
+          # connect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          spawn_link(fn ->
+            assert {:ok, %Result{rows: [[1]]}} = Ch.query(conn, "select 1")
+            send(test, :done)
+          end)
+
+          # query
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+
+          response =
+            String.replace(
+              intercept_packets(clickhouse),
+              "#{header}: #{expected_name}",
+              "#{header}: not-#{expected_name}"
+            )
+
+          :ok = :gen_tcp.send(mint, response)
+
+          assert_receive :done
+        end)
+
+      assert log =~
+               "[warning] Server mismatch detected." <>
+                 " Expected \"#{expected_name}\" but got \"not-#{expected_name}\"!" <>
+                 " Connection pooling might be unstable."
     end
   end
 

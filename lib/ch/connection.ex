@@ -1,6 +1,7 @@
 defmodule Ch.Connection do
   @moduledoc false
   use DBConnection
+  require Logger
   alias Ch.{Error, RowBinary, Query, Result}
   alias Mint.HTTP1, as: HTTP
 
@@ -226,10 +227,11 @@ defmodule Ch.Connection do
           | {:error, Error.t(), conn}
           | {:disconnect, Mint.Types.error(), conn}
   defp receive_response(conn, ref, timeout) do
-    with {:ok, conn, responses} = ok <- recv(conn, ref, [], timeout) do
+    with {:ok, conn, responses} <- recv(conn, ref, [], timeout) do
       case responses do
-        [200 | _rest] ->
-          ok
+        [200, headers | _rest] ->
+          conn = ensure_same_server(conn, headers)
+          {:ok, conn, responses}
 
         [_status, headers | data] ->
           message = IO.iodata_to_binary(data)
@@ -309,6 +311,32 @@ defmodule Ch.Connection do
   defp _meta([{"x-clickhouse-" <> k, v} | headers]), do: [{k, v} | _meta(headers)]
   defp _meta([{_k, _v} | headers]), do: _meta(headers)
   defp _meta([]), do: []
+
+  @server_display_name_key :server_display_name
+
+  @spec ensure_same_server(conn, Mint.Types.headers()) :: conn
+  defp ensure_same_server(conn, headers) do
+    expected_name = HTTP.get_private(conn, @server_display_name_key)
+    actual_name = get_header(headers, "x-clickhouse-server-display-name")
+
+    cond do
+      expected_name && actual_name ->
+        unless actual_name == expected_name do
+          Logger.warn(
+            "Server mismatch detected. Expected #{inspect(expected_name)} but got #{inspect(actual_name)}!" <>
+              " Connection pooling might be unstable."
+          )
+        end
+
+        conn
+
+      actual_name ->
+        HTTP.put_private(conn, @server_display_name_key, actual_name)
+
+      true ->
+        conn
+    end
+  end
 
   defp handle_responses([{:done, ref}], ref, acc) do
     {:ok, :lists.reverse(acc)}
