@@ -19,6 +19,9 @@ defmodule Ch.Query do
     {"DELETE", :delete},
     {"SYSTEM", :system},
     {"SHOW", :show},
+    # as of clickhouse 22.8, WITH is only allowed in SELECT
+    # https://clickhouse.com/docs/en/sql-reference/statements/select/with/
+    {"WITH", :select},
     {"GRANT", :grant},
     {"EXPLAIN", :explain},
     {"REVOKE", :revoke},
@@ -46,10 +49,11 @@ defmodule Ch.Query do
     def extract_command(unquote(String.downcase(statement)) <> _), do: unquote(command)
   end
 
+  def extract_command(<<whitespace, rest::bytes>>) when whitespace in [?\s, ?\t, ?\n] do
+    extract_command(rest)
+  end
+
   # TODO cover more cases, don't rely on assumed format
-  def extract_command([[] | rest]), do: extract_command(rest)
-  def extract_command([["WITH " <> _] | rest]), do: extract_command(rest)
-  def extract_command([["with " <> _] | rest]), do: extract_command(rest)
   def extract_command([first | _]), do: extract_command(first)
   def extract_command(_other), do: nil
 
