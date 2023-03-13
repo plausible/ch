@@ -10,7 +10,8 @@ defmodule Ch.Error do
 
   @dialyzer :no_improper_lists
 
-  defp ensure_printable(message) do
+  @doc false
+  def ensure_printable(message) do
     printable(message, 0, 0, message, [])
   end
 

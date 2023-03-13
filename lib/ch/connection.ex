@@ -1,13 +1,13 @@
 defmodule Ch.Connection do
   @moduledoc false
   use DBConnection
-  alias Ch.{Error, RowBinary, Result}
+  alias Ch.{Error, RowBinary, Query, Result}
   alias Mint.HTTP1, as: HTTP
 
   @typep conn :: HTTP.t()
 
   @impl true
-  @spec connect(Keyword.t()) :: {:ok, conn} | {:error, Mint.Types.error()}
+  @spec connect(Keyword.t()) :: {:ok, conn} | {:error, Error.t() | Mint.Types.error()}
   def connect(opts) do
     scheme = String.to_existing_atom(opts[:scheme] || "http")
     address = opts[:hostname] || "localhost"
@@ -22,17 +22,29 @@ defmodule Ch.Connection do
         |> maybe_put_private(:password, opts[:password])
         |> maybe_put_private(:settings, opts[:settings])
 
-      {:ok, conn}
+      handshake = "select 1"
+
+      case handle_execute(Query.build(handshake), [], [], conn) do
+        {:ok, _query, %Result{rows: [[1]]}, conn} ->
+          {:ok, conn}
+
+        {:ok, _query, result, _conn} ->
+          {:error, Error.exception("unexpected result for '#{handshake}': " <> inspect(result))}
+
+        {:error, reason, _conn} ->
+          {:error, reason}
+
+        {:disconnect, reason, _conn} ->
+          {:error, reason}
+      end
     end
   end
 
   @impl true
   @spec ping(conn) :: {:ok, conn} | {:disconnect, Mint.Types.error() | Error.t(), conn}
   def ping(conn) do
-    with {:ok, conn, ref} <- request(conn, "GET", "/ping", _headers = [], _body = ""),
-         {:ok, conn, _responses} <- receive_stream(conn, ref, timeout(conn)) do
-      {:ok, conn}
-    else
+    case request(conn, "GET", "/ping", _headers = [], _body = "", _opts = []) do
+      {:ok, conn, _response} -> {:ok, conn}
       {:error, error, conn} -> {:disconnect, error, conn}
       {:disconnect, _error, _conn} = disconnect -> disconnect
     end
@@ -79,43 +91,39 @@ defmodule Ch.Connection do
   end
 
   @impl true
-  def handle_execute(%Ch.Query{command: :insert} = query, %s{} = stream, opts, conn)
+  def handle_execute(%Query{command: :insert} = query, %s{} = stream, opts, conn)
       when s in [Stream, IO.Stream, File.Stream] do
     path = path(settings(conn, opts))
     headers = headers(conn, opts)
     stream = Stream.concat([[query.statement, ?\n]], stream)
 
-    with {:ok, conn, ref} <- request(conn, "POST", path, headers, :stream),
-         {:ok, conn} <- stream_body(conn, ref, stream),
-         {:ok, conn, responses} <- receive_stream(conn, ref, timeout(conn, opts)) do
+    with {:ok, conn, responses} <- request_chunked(conn, "POST", path, headers, stream, opts) do
       {:ok, query, insert_result(responses), conn}
     end
   end
 
-  def handle_execute(%Ch.Query{command: :insert} = query, {:raw, data}, opts, conn)
+  def handle_execute(%Query{command: :insert} = query, {:raw, data}, opts, conn)
       when is_list(data) or is_binary(data) do
     path = path(settings(conn, opts))
     headers = headers(conn, opts)
     body = [query.statement, ?\n | data]
 
-    with {:ok, conn, ref} <- request(conn, "POST", path, headers, body),
-         {:ok, conn, responses} <- receive_stream(conn, ref, timeout(conn, opts)) do
+    with {:ok, conn, responses} <- request(conn, "POST", path, headers, body, opts) do
       {:ok, query, insert_result(responses), conn}
     end
   end
 
-  def handle_execute(%Ch.Query{command: :insert} = query, params, opts, conn) do
+  def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
     path = path(settings(conn, opts) ++ params(params))
     headers = headers(conn, opts)
 
-    with {:ok, conn, ref} <- request(conn, "POST", path, headers, query.statement),
-         {:ok, conn, responses} <- receive_stream(conn, ref, timeout(conn, opts)) do
+    with {:ok, conn, responses} <- request(conn, "POST", path, headers, query.statement, opts) do
       {:ok, query, insert_result(responses), conn}
     end
   end
 
   def handle_execute(query, params, opts, conn) do
-    %Ch.Query{command: command, statement: statement} = query
+    %Query{command: command, statement: statement} = query
 
     types = Keyword.get(opts, :types)
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
@@ -123,8 +131,7 @@ defmodule Ch.Connection do
     path = path(settings(conn, opts) ++ params(params))
     headers = [{"x-clickhouse-format", format} | headers(conn, opts)]
 
-    with {:ok, conn, ref} <- request(conn, "POST", path, headers, statement),
-         {:ok, conn, responses} <- receive_stream(conn, ref, timeout(conn, opts)) do
+    with {:ok, conn, responses} <- request(conn, "POST", path, headers, statement, opts) do
       {:ok, query, result(command, responses, types), conn}
     end
   end
@@ -166,34 +173,60 @@ defmodule Ch.Connection do
     %Result{num_rows: length(rows), rows: rows, meta: meta, command: command}
   end
 
-  @spec request(conn, String.t(), String.t(), Mint.Types.headers(), iodata | nil | :stream) ::
-          {:ok, conn, Mint.Types.request_ref()} | {:disconnect, Mint.Types.error(), conn}
-  defp request(conn, method, path, headers, body) do
+  @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
+
+  @spec request(conn, binary, binary, Mint.Types.headers(), iodata, Keyword.t()) ::
+          {:ok, conn, [response]}
+          | {:error, Error.t(), conn}
+          | {:disconnect, Mint.Types.error(), conn}
+  defp request(conn, method, path, headers, body, opts) do
+    with {:ok, conn, ref} <- send_request(conn, method, path, headers, body) do
+      receive_response(conn, ref, timeout(conn, opts))
+    end
+  end
+
+  @spec request_chunked(conn, binary, binary, Mint.Types.headers(), Enumerable.t(), Keyword.t()) ::
+          {:ok, conn, [response]}
+          | {:error, Error.t(), conn}
+          | {:disconnect, Mint.Types.error(), conn}
+  def request_chunked(conn, method, path, headers, stream, opts) do
+    with {:ok, conn, ref} <- send_request(conn, method, path, headers, :stream),
+         {:ok, conn} <- stream_body(conn, ref, stream),
+         do: receive_response(conn, ref, timeout(conn, opts))
+  end
+
+  @spec stream_body(conn, Mint.Types.request_ref(), Enumerable.t()) ::
+          {:ok, conn} | {:disconnect, Mint.Types.error(), conn}
+  defp stream_body(conn, ref, stream) do
+    result =
+      stream
+      |> Stream.concat([:eof])
+      |> Enum.reduce_while({:ok, conn}, fn
+        chunk, {:ok, conn} -> {:cont, HTTP.stream_request_body(conn, ref, chunk)}
+        _chunk, {:error, _conn, _reason} = error -> {:halt, error}
+      end)
+
+    case result do
+      {:ok, _conn} = ok -> ok
+      {:error, conn, reason} -> {:disconnect, reason, conn}
+    end
+  end
+
+  # stacktrace is a bit cleaner with this function inlined
+  @compile inline: [send_request: 5]
+  defp send_request(conn, method, path, headers, body) do
     case HTTP.request(conn, method, path, headers, body) do
       {:ok, _conn, _ref} = ok -> ok
       {:error, conn, reason} -> {:disconnect, reason, conn}
     end
   end
 
-  @spec stream_body(conn, Mint.Types.request_ref(), Enumerable.t()) ::
-          {:ok, conn} | {:disconnect, Mint.Types.error(), conn}
-  defp stream_body(conn, ref, stream) do
-    stream
-    |> Stream.concat([:eof])
-    |> Enum.reduce_while({:ok, conn}, fn
-      chunk, {:ok, conn} -> {:cont, HTTP.stream_request_body(conn, ref, chunk)}
-      _chunk, {:error, conn, reason} -> {:halt, {:disconnect, reason, conn}}
-    end)
-  end
-
-  @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
-
-  @spec receive_stream(conn, Mint.Types.request_ref(), timeout) ::
+  @spec receive_response(conn, Mint.Types.request_ref(), timeout) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
           | {:disconnect, Mint.Types.error(), conn}
-  defp receive_stream(conn, ref, timeout) do
-    with {:ok, conn, responses} = ok <- receive_stream(conn, ref, [], timeout) do
+  defp receive_response(conn, ref, timeout) do
+    with {:ok, conn, responses} = ok <- recv(conn, ref, [], timeout) do
       case responses do
         [200 | _rest] ->
           ok
@@ -211,14 +244,14 @@ defmodule Ch.Connection do
     end
   end
 
-  @spec receive_stream(conn, Mint.Types.request_ref(), [response], timeout()) ::
+  @spec recv(conn, Mint.Types.request_ref(), [response], timeout()) ::
           {:ok, conn, [response]} | {:disconnect, Mint.Types.error(), conn}
-  defp receive_stream(conn, ref, acc, timeout) do
+  defp recv(conn, ref, acc, timeout) do
     case HTTP.recv(conn, 0, timeout) do
       {:ok, conn, responses} ->
         case handle_responses(responses, ref, acc) do
           {:ok, responses} -> {:ok, conn, responses}
-          {:more, acc} -> receive_stream(conn, ref, acc, timeout)
+          {:more, acc} -> recv(conn, ref, acc, timeout)
         end
 
       {:error, conn, reason, _responses} ->
