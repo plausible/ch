@@ -14,29 +14,34 @@ defmodule Ch.RowBinary do
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
   @epoch_utc_datetime DateTime.new!(@epoch_date, ~T[00:00:00])
 
-  def encode_row([el | els], [type | types]), do: [encode(type, el) | encode_row(els, types)]
-  def encode_row([] = done, []), do: done
-
-  def encode_rows([row | rows], types), do: encode_rows(row, types, rows, types)
-  def encode_rows([] = done, _types), do: done
-
-  defp encode_rows([el | els], [t | ts], rows, types) do
-    [encode(t, el) | encode_rows(els, ts, rows, types)]
+  def encode_row([el | els], position, types) do
+    [encode(elem(types, position), el) | encode_row(els, position + 1, types)]
   end
 
-  defp encode_rows([], [], rows, types), do: encode_rows(rows, types)
+  def encode_row([] = done, _position, _types), do: done
 
-  def encode(:varint, num) when is_integer(num) and num < 128, do: <<num>>
+  def encode_rows([row | rows], types), do: [encode_row(row, 0, types) | encode_rows(rows, types)]
+  def encode_rows([] = done, _types), do: done
 
-  def encode(:varint, num) when is_integer(num) do
-    [<<1::1, num::7>> | encode(:varint, num >>> 7)]
+  def encode_cols(cols, types), do: encode_cols(cols, 0, types)
+
+  defp encode_cols([col | cols], position, types) do
+    [encode_many(elem(types, position), col) | encode_cols(cols, position + 1, types)]
+  end
+
+  defp encode_cols([] = done, _position, _types), do: done
+
+  defp encode_varint(num) when num <= 0x7F, do: num
+
+  defp encode_varint(num) do
+    [num &&& 0x7F | encode_varint(num >>> 7)]
   end
 
   def encode(type, str) when type in [:string, :binary] do
     case str do
-      _ when is_binary(str) -> [encode(:varint, byte_size(str)) | str]
-      _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
-      nil -> <<0>>
+      _ when is_binary(str) -> [encode_varint(byte_size(str)) | str]
+      _ when is_list(str) -> [encode_varint(IO.iodata_length(str)) | str]
+      nil -> 0
     end
   end
 
@@ -51,7 +56,7 @@ defmodule Ch.RowBinary do
 
   def encode(string(size: size), nil), do: <<0::size(size * 8)>>
 
-  for size <- [8, 16, 32, 64, 128, 256] do
+  for size <- [32, 64, 8, 16, 128, 256] do
     def encode(unquote(:"u#{size}"), i) when is_integer(i) do
       <<i::unquote(size)-little>>
     end
@@ -72,6 +77,44 @@ defmodule Ch.RowBinary do
     def encode(unquote(:"f#{size}"), nil), do: <<0::unquote(size)>>
   end
 
+  def encode(:boolean, bool) do
+    case bool do
+      true -> 1
+      false -> 0
+      nil -> 0
+    end
+  end
+
+  def encode({:array, type}, l) do
+    case l do
+      [_ | _] -> [encode_varint(length(l)) | encode_many(type, l)]
+      [] -> 0
+      nil -> 0
+    end
+  end
+
+  def encode(:date, %Date{} = date) do
+    <<Date.diff(date, @epoch_date)::16-little>>
+  end
+
+  def encode(:date, nil), do: <<0::16>>
+
+  def encode(:datetime, %NaiveDateTime{} = datetime) do
+    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
+  end
+
+  def encode(:datetime, %DateTime{} = datetime) do
+    <<DateTime.diff(datetime, @epoch_utc_datetime)::32-little>>
+  end
+
+  def encode(:datetime, nil), do: <<0::32>>
+
+  # TODO right now the timezones are ignored during encoding
+  # assuming the user has provided the correct one
+  def encode({:datetime = t, _timezone}, v) do
+    encode(t, v)
+  end
+
   def encode(decimal(size: size, scale: scale), %Decimal{sign: sign, coef: coef, exp: exp})
       when scale == -exp do
     i = sign * coef
@@ -90,33 +133,6 @@ defmodule Ch.RowBinary do
 
   def encode(decimal(size: size), nil), do: <<0::size(size)>>
 
-  def encode(:boolean, true), do: <<1>>
-  def encode(:boolean, false), do: <<0>>
-  def encode(:boolean, nil), do: <<0>>
-
-  def encode({:array, type}, [_ | _] = l) do
-    [encode(:varint, length(l)) | encode_many(l, type)]
-  end
-
-  def encode({:array, _type}, []), do: <<0>>
-  def encode({:array, _type}, nil), do: <<0>>
-
-  def encode(:datetime, %NaiveDateTime{} = datetime) do
-    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
-  end
-
-  def encode(:datetime, %DateTime{} = datetime) do
-    <<DateTime.diff(datetime, @epoch_utc_datetime)::32-little>>
-  end
-
-  def encode(:datetime, nil), do: <<0::32>>
-
-  # TODO right now the timezones are ignored during encoding
-  # assuming the user has provided the correct one
-  def encode({:datetime = t, _timezone}, v) do
-    encode(t, v)
-  end
-
   def encode(datetime64(unit: unit), %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, unit)::64-little-signed>>
   end
@@ -126,12 +142,6 @@ defmodule Ch.RowBinary do
   end
 
   def encode(datetime64(), nil), do: <<0::64>>
-
-  def encode(:date, %Date{} = date) do
-    <<Date.diff(date, @epoch_date)::16-little>>
-  end
-
-  def encode(:date, nil), do: <<0::16>>
 
   def encode(:date32, %Date{} = date) do
     <<Date.diff(date, @epoch_date)::32-little-signed>>
@@ -158,10 +168,19 @@ defmodule Ch.RowBinary do
   def encode(:uuid, nil), do: <<0::128>>
 
   def encode({:nullable, _type}, nil), do: 1
-  def encode({:nullable, type}, value), do: [0 | encode(type, value)]
+  def encode({:nullable, type}, value), do: [0 | ensure_iodata(encode(type, value))]
 
-  defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
-  defp encode_many([] = done, _type), do: done
+  defp encode_many(type, values) do
+    case values do
+      [el | rest] -> [encode(type, el) | encode_many(type, rest)]
+      [] = done -> done
+    end
+  end
+
+  @compile inline: [ensure_iodata: 1]
+  defp ensure_iodata(b) when is_binary(b), do: b
+  defp ensure_iodata(l) when is_list(l), do: l
+  defp ensure_iodata(i) when is_integer(i), do: [i]
 
   @compile {:inline, d: 1}
 
@@ -220,6 +239,7 @@ defmodule Ch.RowBinary do
 
   def encode_type({:nullable, type}), do: ["Nullable(", encode_type(type), ?)]
   def encode_type({:array, type}), do: ["Array(", encode_type(type), ?)]
+  def encode_type({:low_cardinality, type}), do: ["LowCardinality(", encode_type(type), ?)]
   def encode_type(:datetime), do: "DateTime"
 
   def encode_type({:datetime, timezone}) when is_binary(timezone) do

@@ -123,7 +123,8 @@ defmodule Ch.RowBinaryTest do
 
     test "nil" do
       assert encode({:nullable, :string}, nil) == 1
-      assert encode(:string, nil) == <<0>>
+      assert encode({:nullable, :string}, "") == [0, 0 | ""]
+      assert encode(:string, nil) == 0
       assert encode(string(size: 2), nil) == <<0, 0>>
       assert encode(:u8, nil) == <<0>>
       assert encode(:u16, nil) == <<0, 0>>
