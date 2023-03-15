@@ -398,11 +398,11 @@ defmodule Ch.RowBinary do
     IO.iodata_to_binary(utf8)
   end
 
-  defp to_utf8(<<_valid::utf8, rest::bytes>>, from, len, original, acc) do
-    to_utf8(rest, from, len + 1, original, acc)
-  end
-
   @dialyzer {:no_improper_lists, to_utf8: 5, to_utf8_escape: 5}
+
+  defp to_utf8(<<valid::utf8, rest::bytes>>, from, len, original, acc) do
+    to_utf8(rest, from, len + utf8_size(valid), original, acc)
+  end
 
   defp to_utf8(<<_invalid, rest::bytes>>, from, len, original, acc) do
     acc = [acc | binary_part(original, from, len)]
@@ -413,9 +413,9 @@ defmodule Ch.RowBinary do
     [acc | binary_part(original, from, len)]
   end
 
-  defp to_utf8_escape(<<_valid::utf8, rest::bytes>>, from, len, original, acc) do
+  defp to_utf8_escape(<<valid::utf8, rest::bytes>>, from, len, original, acc) do
     acc = [acc | "�"]
-    to_utf8(rest, from + len, 1, original, acc)
+    to_utf8(rest, from + len, utf8_size(valid), original, acc)
   end
 
   defp to_utf8_escape(<<_invalid, rest::bytes>>, from, len, original, acc) do
@@ -425,6 +425,13 @@ defmodule Ch.RowBinary do
   defp to_utf8_escape(<<>>, _from, _len, _original, acc) do
     [acc | "�"]
   end
+
+  # UTF-8 encodes code points in one to four bytes
+  @compile inline: [utf8_size: 1]
+  defp utf8_size(codepoint) when codepoint <= 0x7F, do: 1
+  defp utf8_size(codepoint) when codepoint <= 0x7FF, do: 2
+  defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
+  defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
   @compile inline: [decode_binary_decode_rows: 5]
 
