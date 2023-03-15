@@ -32,15 +32,13 @@ defmodule Ch.RowBinary do
     [<<1::1, num::7>> | encode(:varint, num >>> 7)]
   end
 
-  def encode(:string, str) when is_binary(str) do
-    [encode(:varint, byte_size(str)) | str]
+  def encode(type, str) when type in [:string, :binary] do
+    case str do
+      _ when is_binary(str) -> [encode(:varint, byte_size(str)) | str]
+      _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
+      nil -> <<0>>
+    end
   end
-
-  def encode(:string, iodata) when is_list(iodata) do
-    [encode(:varint, IO.iodata_length(iodata)) | iodata]
-  end
-
-  def encode(:string, nil), do: <<0>>
 
   def encode(string(size: size), str) when byte_size(str) == size do
     str
@@ -213,8 +211,12 @@ defmodule Ch.RowBinary do
   ]
 
   for {encoded, decoded} <- scalar_types do
-    def encode_type(unquote(decoded)), do: unquote(encoded)
+    for decoded <- List.wrap(decoded) do
+      def encode_type(unquote(decoded)), do: unquote(encoded)
+    end
   end
+
+  def encode_type(:binary), do: "String"
 
   def encode_type({:nullable, type}), do: ["Nullable(", encode_type(type), ?)]
   def encode_type({:array, type}), do: ["Array(", encode_type(type), ?)]
@@ -386,6 +388,54 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
+      decode_rows(types_rest, bin, [to_utf8(s) | row], rows, types)
+    end
+  end
+
+  @doc false
+  def to_utf8(str) do
+    utf8 = to_utf8(str, 0, 0, str, [])
+    IO.iodata_to_binary(utf8)
+  end
+
+  defp to_utf8(<<_valid::utf8, rest::bytes>>, from, len, original, acc) do
+    to_utf8(rest, from, len + 1, original, acc)
+  end
+
+  @dialyzer {:no_improper_lists, to_utf8: 5, to_utf8_escape: 5}
+
+  defp to_utf8(<<_invalid, rest::bytes>>, from, len, original, acc) do
+    acc = [acc | binary_part(original, from, len)]
+    to_utf8_escape(rest, from + len, 1, original, acc)
+  end
+
+  defp to_utf8(<<>>, from, len, original, acc) do
+    [acc | binary_part(original, from, len)]
+  end
+
+  defp to_utf8_escape(<<_valid::utf8, rest::bytes>>, from, len, original, acc) do
+    acc = [acc | "�"]
+    to_utf8(rest, from + len, 1, original, acc)
+  end
+
+  defp to_utf8_escape(<<_invalid, rest::bytes>>, from, len, original, acc) do
+    to_utf8_escape(rest, from, len + 1, original, acc)
+  end
+
+  defp to_utf8_escape(<<>>, _from, _len, _original, acc) do
+    [acc | "�"]
+  end
+
+  @compile inline: [decode_binary_decode_rows: 5]
+
+  for {pattern, size} <- varints do
+    defp decode_binary_decode_rows(
+           <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
       decode_rows(types_rest, bin, [s | row], rows, types)
     end
   end
@@ -481,6 +531,10 @@ defmodule Ch.RowBinary do
       :string ->
         decode_string_decode_rows(bin, types_rest, row, rows, types)
 
+      :binary ->
+        decode_binary_decode_rows(bin, types_rest, row, rows, types)
+
+      # TODO utf8?
       string(size: size) ->
         <<s::size(size)-bytes, bin::bytes>> = bin
         decode_rows(types_rest, bin, [s | row], rows, types)

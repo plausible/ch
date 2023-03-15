@@ -43,8 +43,11 @@ Benchee.run(
     "RowBinaryWithNamesAndTypes" => fn ->
       RowBinary.decode_rows(row_binary_with_names_and_types)
     end,
-    "RowBinary" => fn ->
+    "RowBinary string=utf8" => fn ->
       RowBinary.decode_rows(row_binary, [:u32, :string, {:datetime, nil}, {:array, :string}])
+    end,
+    "RowBinary string=binary" => fn ->
+      RowBinary.decode_rows(row_binary, [:u32, :binary, {:datetime, nil}, {:array, :binary}])
     end
   },
   memory_time: 2

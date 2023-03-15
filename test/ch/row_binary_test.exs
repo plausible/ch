@@ -146,6 +146,28 @@ defmodule Ch.RowBinaryTest do
     end
   end
 
+  test "utf8" do
+    # example from https://clickhouse.com/docs/en/sql-reference/functions/string-functions/#tovalidutf8
+    value = "\x61\xF0\x80\x80\x80b"
+    bin = IO.iodata_to_binary(encode(:binary, value))
+    str = IO.iodata_to_binary(encode(:string, value))
+
+    # encoding is the same since we don't want to modify the values implicitly
+    assert bin == str
+
+    # but decoding is different based on what type is provided
+    assert decode_rows(str, [:string]) == [["a�b"]]
+    assert decode_rows(bin, [:string]) == [["a�b"]]
+    assert decode_rows(str, [:binary]) == [["\x61\xF0\x80\x80\x80b"]]
+    assert decode_rows(bin, [:binary]) == [["\x61\xF0\x80\x80\x80b"]]
+
+    path = "/some/url" <> <<0xAE>> <> "-/"
+    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [["/some/url�-/"]]
+
+    path = <<0xAF>> <> "/some/url" <> <<0xAE, 0xFE>> <> "-/" <> <<0xFA>>
+    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [["�/some/url�-/�"]]
+  end
+
   describe "decode_types/1" do
     test "decodes supported types" do
       spec = [
