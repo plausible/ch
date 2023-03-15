@@ -166,6 +166,12 @@ defmodule Ch.RowBinaryTest do
 
     path = <<0xAF>> <> "/some/url" <> <<0xAE, 0xFE>> <> "-/" <> <<0xFA>>
     assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [["�/some/url�-/�"]]
+
+    path = "/opportunity/category/جوائز-ومسابقات"
+    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
+
+    path = "/ﺝﻭﺎﺋﺯ-ﻮﻤﺳﺎﺒﻗﺎﺗ"
+    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
   end
 
   describe "decode_types/1" do
