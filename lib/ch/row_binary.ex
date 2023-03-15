@@ -14,28 +14,27 @@ defmodule Ch.RowBinary do
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
   @epoch_utc_datetime DateTime.new!(@epoch_date, ~T[00:00:00])
 
-  def encode_row([el | els], position, types) do
-    [encode(elem(types, position), el) | encode_row(els, position + 1, types)]
+  def encode_row([el | els], [type | types]), do: [encode(type, el) | encode_row(els, types)]
+  def encode_row([] = done, []), do: done
+
+  def encode_rows([row | rows], types), do: encode_rows(row, types, rows, types)
+  def encode_rows([] = empty, _types), do: empty
+
+  defp encode_rows([el | els], [t | ts], rows, types) do
+    [encode(t, el) | encode_rows(els, ts, rows, types)]
   end
 
-  def encode_row([] = done, _position, _types), do: done
-
-  def encode_rows([row | rows], types), do: [encode_row(row, 0, types) | encode_rows(rows, types)]
-  def encode_rows([] = done, _types), do: done
-
-  def encode_cols(cols, types), do: encode_cols(cols, 0, types)
-
-  defp encode_cols([col | cols], position, types) do
-    [encode_many(elem(types, position), col) | encode_cols(cols, position + 1, types)]
+  defp encode_rows([], [], [row | rows], types) do
+    encode_rows(row, types, rows, types)
   end
 
-  defp encode_cols([] = done, _position, _types), do: done
+  defp encode_rows([], [], [] = done, _types), do: done
 
-  defp encode_varint(num) when num <= 0x7F, do: num
-
-  defp encode_varint(num) do
-    [num &&& 0x7F | encode_varint(num >>> 7)]
-  end
+  @doc false
+  def encode_varint(num) when num <= 0x7F, do: num
+  def encode_varint(num), do: [num &&& 0x7F | encode_varint_cont(num >>> 7)]
+  defp encode_varint_cont(num) when num <= 0x7F, do: [num]
+  defp encode_varint_cont(num), do: [num &&& 0x7F | encode_varint_cont(num >>> 7)]
 
   def encode(type, str) when type in [:string, :binary] do
     case str do
