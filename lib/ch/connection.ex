@@ -5,19 +5,88 @@ defmodule Ch.Connection do
   alias Ch.{Error, RowBinary, Query, Result}
   alias Mint.HTTP1, as: HTTP
 
+  @type endpoint :: {
+          scheme :: Mint.Types.scheme(),
+          host :: Mint.Types.address(),
+          port :: :inet.port_number()
+        }
+
   @typep conn :: HTTP.t()
 
   @impl true
   @spec connect(Keyword.t()) :: {:ok, conn} | {:error, Error.t() | Mint.Types.error()}
   def connect(opts) do
-    scheme = String.to_existing_atom(opts[:scheme] || "http")
-    address = opts[:hostname] || "localhost"
-    port = opts[:port] || 8123
+    case endpoints(opts) do
+      [endpoint] -> connect(endpoint, opts)
+      endpoints -> connect_endpoints(endpoints, opts)
+    end
+  end
 
+  @doc false
+  def endpoints(opts) do
+    case Keyword.fetch(opts, :endpoints) do
+      :error ->
+        scheme = String.to_existing_atom(opts[:scheme] || "http")
+        address = opts[:hostname] || "localhost"
+        port = opts[:port] || 8123
+        [{scheme, address, port}]
+
+      {:ok, endpoints} when is_list(endpoints) ->
+        endpoints =
+          Enum.map(endpoints, fn {scheme, host, port} ->
+            {String.to_existing_atom(scheme), host, port}
+          end)
+
+        {:ok, endpoints}
+
+      {:ok, _} ->
+        raise ArgumentError, "expected :endpoints to be a list of tuples"
+    end
+  end
+
+  defp pick_endpoint(endpoints, opts) do
+    pool_index = Keyword.fetch!(opts, :pool_index)
+    Enum.at(endpoints, rem(pool_index, length(endpoints)))
+  end
+
+  defp connect_endpoints(endpoints, opts) do
+    connect_endpoints(endpoints, [], opts)
+  end
+
+  defp connect_endpoints(endpoints, errors, opts) do
+    attempted = Enum.map(errors, fn {endpoint, _error} -> endpoint end)
+
+    case endpoints -- attempted do
+      [] ->
+        concat_messages =
+          errors
+          |> Enum.reverse()
+          |> Enum.map_join("\n", fn {endpoint, %error_module{} = error} ->
+            {scheme, host, port} = endpoint
+
+            "  * #{scheme}://#{host}:#{port}: (#{inspect(error_module)}) #{Exception.message(error)}"
+          end)
+
+        message = "failed to establish connection to multiple endpoints:\n\n" <> concat_messages
+        {:error, Error.exception(message)}
+
+      available ->
+        endpoint = pick_endpoint(available, opts)
+
+        case connect(endpoint, opts) do
+          {:ok, _conn} = ok -> ok
+          {:error, reason} -> connect_endpoints(endpoints, [{endpoint, reason} | errors], opts)
+        end
+    end
+  end
+
+  @doc false
+  def connect({scheme, address, port}, opts) do
     with {:ok, conn} <- HTTP.connect(scheme, address, port, mode: :passive) do
       conn =
         conn
-        |> HTTP.put_private(:timeout, opts[:timeout] || :timer.seconds(15))
+        |> HTTP.put_private(:opts, opts)
+        |> maybe_put_private(:timeout, opts[:timeout])
         |> maybe_put_private(:database, opts[:database])
         |> maybe_put_private(:username, opts[:username])
         |> maybe_put_private(:password, opts[:password])
@@ -44,6 +113,36 @@ defmodule Ch.Connection do
   @impl true
   @spec ping(conn) :: {:ok, conn} | {:disconnect, Mint.Types.error() | Error.t(), conn}
   def ping(conn) do
+    current_endpoint = {conn.scheme_as_string, conn.host, conn.port}
+    opts = HTTP.get_private(conn, :opts)
+
+    case endpoints(opts) do
+      [_endpoint] ->
+        do_ping(conn)
+
+      endpoints ->
+        # TODO don't check just the intended endpoint by rather the history of attempts
+        intended_endpoint = pick_endpoint(endpoints, opts)
+
+        if current_endpoint == intended_endpoint do
+          do_ping(conn)
+        else
+          if Ch.Health.is_alive(intended_endpoint) do
+            {scheme, host, port} = intended_endpoint
+
+            {:disconnect,
+             Error.exception("re-balancing by re-connecting to #{scheme}://#{host}:#{port}"),
+             conn}
+          else
+            do_ping(conn)
+          end
+        end
+    end
+  end
+
+  # inlining for cleaner stacktraces
+  @compile inline: [do_ping: 1]
+  defp do_ping(conn) do
     case request(conn, "GET", "/ping", _headers = [], _body = "", _opts = []) do
       {:ok, conn, _response} -> {:ok, conn}
       {:error, error, conn} -> {:disconnect, error, conn}
@@ -56,7 +155,6 @@ defmodule Ch.Connection do
   def checkout(conn), do: {:ok, conn}
 
   # "supporting" transactions for Repo.checkout
-
   @impl true
   def handle_begin(_opts, conn), do: {:ok, %{}, conn}
   @impl true
@@ -285,7 +383,7 @@ defmodule Ch.Connection do
   defp maybe_put_header(headers, k, v), do: [{k, v} | headers]
 
   defp timeout(conn) do
-    HTTP.get_private(conn, :timeout)
+    HTTP.get_private(conn, :timeout, :timer.seconds(15))
   end
 
   defp timeout(conn, opts) do
