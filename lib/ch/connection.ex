@@ -13,8 +13,9 @@ defmodule Ch.Connection do
     scheme = String.to_existing_atom(opts[:scheme] || "http")
     address = opts[:hostname] || "localhost"
     port = opts[:port] || 8123
+    mint_opts = [mode: :passive] ++ Keyword.take(opts, [:hostname, :transport_opts])
 
-    with {:ok, conn} <- HTTP.connect(scheme, address, port, mode: :passive) do
+    with {:ok, conn} <- HTTP.connect(scheme, address, port, mint_opts) do
       conn =
         conn
         |> HTTP.put_private(:timeout, opts[:timeout] || :timer.seconds(15))
