@@ -3,7 +3,7 @@ Minimal HTTP ClickHouse client.
 **tl;dr**
 
 ```elixir
-iex> Mix.install([{:ch, github: "ruslandoga/ch"}])
+iex> Mix.install([{:ch, github: "plausible/ch"}])
 
 # https://clickhouse.com/docs/en/quick-start#step-3-create-a-database-and-table
 iex> {:ok, conn} = Ch.start_link(scheme: "http", hostname: "localhost", port: 8123)
