@@ -10,9 +10,9 @@ defmodule Ch.QueryTest do
   describe "command" do
     test "without command provided" do
       assert Query.build("select 1+2").command == :select
-      assert Query.build("select 1+2").command == :select
+      assert Query.build("SELECT 1+2").command == :select
       assert Query.build("   select 1+2").command == :select
-      assert Query.build("\t\n\t\nselect 1+2").command == :select
+      assert Query.build("\t\n\t\nSELECT 1+2").command == :select
 
       assert Query.build("""
 
