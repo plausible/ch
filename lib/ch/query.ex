@@ -1,6 +1,5 @@
 defmodule Ch.Query do
   @moduledoc false
-  @enforce_keys [:statement, :command]
   defstruct [:statement, :command]
 
   @type t :: %__MODULE__{statement: iodata, command: atom}
