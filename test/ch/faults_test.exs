@@ -24,7 +24,7 @@ defmodule Ch.FaultsTest do
       :ok = :gen_tcp.close(listen)
       test = self()
 
-      {:ok, conn} = Ch.start_link(port: port, queue_interval: 100)
+      {:ok, conn} = Ch.start_link(port: port, queue_interval: 100, backoff_min: 0)
 
       log =
         capture_async_log(fn ->
@@ -60,7 +60,7 @@ defmodule Ch.FaultsTest do
     test "reconnects after timeout", %{port: port, listen: listen, clickhouse: clickhouse} do
       log =
         capture_async_log(fn ->
-          Ch.start_link(port: port, timeout: 100)
+          Ch.start_link(port: port, timeout: 100, backoff_min: 0)
 
           # connect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -87,7 +87,7 @@ defmodule Ch.FaultsTest do
     test "reconnects after closed", %{port: port, listen: listen, clickhouse: clickhouse} do
       log =
         capture_async_log(fn ->
-          Ch.start_link(port: port)
+          Ch.start_link(port: port, backoff_min: 0)
 
           # connect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -117,7 +117,7 @@ defmodule Ch.FaultsTest do
 
       log =
         capture_async_log(fn ->
-          Ch.start_link(port: port)
+          Ch.start_link(port: port, backoff_min: 0)
 
           # connect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -147,7 +147,7 @@ defmodule Ch.FaultsTest do
 
       log =
         capture_async_log(fn ->
-          Ch.start_link(port: port)
+          Ch.start_link(port: port, backoff_min: 0)
 
           # connect
           {:ok, mint} = :gen_tcp.accept(listen)
