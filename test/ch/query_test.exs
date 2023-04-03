@@ -22,6 +22,10 @@ defmodule Ch.QueryTest do
       assert Query.build(["select 1+2"]).command == :select
 
       assert Query.build("with insert as (select 1) select * from insert").command == :select
+      assert Query.build("insert into table(a, b) values(1, 2)").command == :insert
+
+      assert Query.build("insert into table(a, b) select b, c from table2 where b = 'update'").command ==
+               :insert
     end
 
     test "with nil command provided" do
