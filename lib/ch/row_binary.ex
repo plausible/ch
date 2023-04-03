@@ -207,6 +207,8 @@ defmodule Ch.RowBinary do
     {"Float64", :f64},
     {"Date32", :date32},
     {"Bool", :boolean},
+    {"IPv4", :ipv4},
+    {"IPv6", :ipv6},
     {"Nothing", :nothing}
   ]
 
@@ -621,6 +623,14 @@ defmodule Ch.RowBinary do
       {:enum16, mapping} ->
         <<v::16-little, bin::bytes>> = bin
         decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
+
+      :ipv4 ->
+        <<b4, b3, b2, b1, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [{b1, b2, b3, b4} | row], rows, types)
+
+      :ipv6 ->
+        <<b1::16, b2::16, b3::16, b4::16, b5::16, b6::16, b7::16, b8::16, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [{b1, b2, b3, b4, b5, b6, b7, b8} | row], rows, types)
     end
   end
 
