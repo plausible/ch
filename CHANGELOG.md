@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.4 (05/04/2023)
+
+- added: caveats and limitations section
+
 ## v0.1.3 (05/04/2023)
 
 - fixed: fix `Ch.start_link` options formatting in docs

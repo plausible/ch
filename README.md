@@ -1,8 +1,19 @@
 # Ch
 
+[![Hex Package](https://img.shields.io/hexpm/v/before_ch.svg)](https://hex.pm/packages/before_ch)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/before_ch)
+
 ClickHouse driver for Elixir.
 
-Documentation: http://hexdocs.pm/ch/
+## Installation
+
+```elixir
+defp deps do
+  [
+    {:ch, "~> 0.1.0"}
+  ]
+end
+```
 
 ## Examples
 
@@ -78,4 +89,24 @@ iex> Ch.query(pid, "INSERT INTO my_first_table VALUES (0), (1)", [], settings: [
 
 iex> Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: [async_insert: 1])
 %Ch.Result{command: :show, rows: [["async_insert", "Bool", "1"]]}
+```
+
+## Caveats and limitations
+
+### Nullable
+
+Inserting `nil` into a `Nullable` column results in `NULL`.
+In all other cases the default value for the **type** is persisted.
+
+```iex
+iex> Ch.query(pid, "CREATE TABLE my_nulls (a UInt8 NULL, b UInt8 DEFAULT 10, c UInt8 NOT NULL) ENGINE = Memory")
+
+iex> rows = [[nil, nil, nil], [1, 1, 1]]
+iex> types = [{:nullable, :u8}, :u8, :u8]
+iex> Ch.query!(pid, "INSERT INTO my_nulls(a, b, c) FORMAT RowBinary", {:raw, Ch.RowBinary.encode_rows(rows, types)})
+%Ch.Result{command: :insert, num_rows: 2}
+
+# b UInt8 DEFAULT 10 is ignored
+iex> Ch.query!(pid, "SELECT * FROM my_nulls")
+%Ch.Result{command: :select, rows: [[nil, 0, 0], [1, 1, 1]]}
 ```
