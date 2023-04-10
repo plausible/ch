@@ -110,3 +110,16 @@ iex> Ch.query!(pid, "INSERT INTO my_nulls(a, b, c) FORMAT RowBinary", {:raw, Ch.
 iex> Ch.query!(pid, "SELECT * FROM my_nulls")
 %Ch.Result{command: :select, rows: [[nil, 0, 0], [1, 1, 1]]}
 ```
+
+## Alternatives
+
+- [Pillar](https://github.com/)
+
+## Benchmarks
+
+```
+$ curl -O https://
+$ elixir ch_benchmark.exs
+```
+
+## License

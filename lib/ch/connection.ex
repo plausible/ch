@@ -78,18 +78,51 @@ defmodule Ch.Connection do
   end
 
   @impl true
-  def handle_declare(_query, _params, _opts, conn) do
-    {:error, Error.exception("cursors are not supported"), conn}
+  def handle_declare(query, params, opts, conn) do
+    %Query{statement: statement} = query
+
+    format = Keyword.get(opts, :format) || "RowBinary"
+    path = path(settings(conn, opts) ++ params(params))
+    headers = [{"x-clickhouse-format", format} | headers(conn, opts)]
+
+    with {:ok, conn, ref} <- send_request(conn, "POST", path, headers, statement) do
+      {:ok, query, ref, conn}
+    end
   end
 
   @impl true
-  def handle_fetch(_query, _cursor, _opts, conn) do
-    {:error, Error.exception("cursors are not supported"), conn}
+  def handle_fetch(_query, ref, opts, conn) do
+    case HTTP.recv(conn, 0, timeout(conn, opts)) do
+      {:ok, conn, responses} ->
+        case stream_finished?(responses, ref) do
+          true -> {:halt, responses, conn}
+          false -> {:cont, responses, conn}
+        end
+
+      {:error, conn, reason, _responses} ->
+        {:disconnect, reason, conn}
+    end
   end
 
+  defp stream_finished?([{:done, ref}], ref), do: true
+
+  defp stream_finished?([{tag, ref, _data} | responses], ref)
+       when tag in [:status, :headers, :data] do
+    stream_finished?(responses, ref)
+  end
+
+  defp stream_finished?([], _ref), do: false
+
   @impl true
-  def handle_deallocate(_query, _cursor, _opts, conn) do
-    {:error, Error.exception("cursors are not supported"), conn}
+  def handle_deallocate(_query, _ref, _opts, conn) do
+    case HTTP.open_request_count(conn) do
+      0 ->
+        {:ok, [], conn}
+
+      1 ->
+        reason = Error.exception("cannot stop stream before receiving full response")
+        {:disconnect, reason, conn}
+    end
   end
 
   @impl true
