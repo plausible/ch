@@ -111,15 +111,26 @@ iex> Ch.query!(pid, "SELECT * FROM my_nulls")
 %Ch.Result{command: :select, rows: [[nil, 0, 0], [1, 1, 1]]}
 ```
 
-## Alternatives
+## Differences from alternatives
 
-- [Pillar](https://github.com/)
+- Pillar TODO
+- CLickhousex TODO
 
 ## Benchmarks
 
-```
-$ curl -O https://
-$ elixir ch_benchmark.exs
+There are a couple of benchmarks in `mix_install/` folder that can be run outside of this repo.
+Both of the benchmarks assume `clickhouse` is already started.
+
+```console
+$ curl -O https://raw.githubusercontent.com/plausible/ch/master/mix_install/bench_select.exs
+$ CH_SCHEME=http CH_HOSTNAME=localhost CH_PORT=8123 elixir bench_select.exs
 ```
 
-## License
+`INSERT` benchmark creates a database (`CH_DATABASE`) and a `test_table` table.
+
+```console
+$ curl -O https://raw.githubusercontent.com/plausible/ch/master/mix_install/bench_insert.exs
+$ CH_SCHEME=http CH_HOSTNAME=localhost CH_PORT=8123 CH_DATABASE=ch_bench elixir bench_insert.exs
+```
+
+Results: https://github.com/plausible/ch/actions/workflows/mix_install.yml

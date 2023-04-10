@@ -120,8 +120,7 @@ defmodule Ch.Connection do
         {:ok, [], conn}
 
       1 ->
-        reason = Error.exception("cannot stop stream before receiving full response")
-        {:disconnect, reason, conn}
+        {:disconnect, Error.exception("cannot stop stream before receiving full response"), conn}
     end
   end
 
