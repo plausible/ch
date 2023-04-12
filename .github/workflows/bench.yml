@@ -30,5 +30,3 @@ jobs:
       - run: mix deps.get
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
-      - run: mix run bench/encode.exs
-      - run: mix run bench/decode.exs
