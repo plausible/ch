@@ -32,7 +32,7 @@ iex> rows = [
 ]
 iex> stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, types) end)
 
-iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table(user_id, message, timestamp, metric) FORMAT RowBinary", stream)
+iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table(user_id, message, timestamp, metric) FORMAT RowBinary", {:raw, stream})
 
 iex> {:ok, %{rows: rows}} = Ch.query(conn, "SELECT * FROM helloworld.my_first_table")
 iex> rows
@@ -83,7 +83,7 @@ csv = """
 """
 
 File.write!("example.csv", csv)
-{:ok, _} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT CSV", File.stream!("example.csv"))
+{:ok, _} = Ch.query(conn, "INSERT INTO example(a, b) FORMAT CSV", {:raw, File.stream!("example.csv")})
 ```
 
 - CSV with headers inserts
@@ -97,7 +97,7 @@ a,b
 """
 
 File.write!("example.csv", csv)
-{:ok, _} = Ch.query(conn, "INSERT INTO example FORMAT CSVWithNames", File.stream!("example.csv"))
+{:ok, _} = Ch.query(conn, "INSERT INTO example FORMAT CSVWithNames", {:raw, File.stream!("example.csv")})
 ```
 
 - Custom [settings](https://clickhouse.com/docs/en/operations/settings/)

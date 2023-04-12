@@ -81,7 +81,7 @@ defmodule Ch.ConnectionTest do
   end
 
   test "create", %{conn: conn} do
-    assert {:ok, %{num_rows: 0, rows: []}} =
+    assert {:ok, %{num_rows: nil, rows: []}} =
              Ch.query(conn, "create table create_example(a UInt8) engine = Memory")
 
     on_exit(fn -> Ch.Test.drop_table("create_example") end)
@@ -179,7 +179,7 @@ defmodule Ch.ConnectionTest do
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
 
       assert {:ok, %{num_rows: 3}} =
-               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", stream)
+               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", {:raw, stream})
 
       assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
       assert rows == [[1, "a"], [2, "b"], [3, "c"]]
@@ -208,17 +208,16 @@ defmodule Ch.ConnectionTest do
   end
 
   test "delete", %{conn: conn} do
-    assert {:ok, %{num_rows: 0, rows: []}} =
-             Ch.query(
-               conn,
-               "create table delete_t(a UInt8, b String) engine = MergeTree order by tuple()"
-             )
+    Ch.query!(
+      conn,
+      "create table delete_t(a UInt8, b String) engine = MergeTree order by tuple()"
+    )
 
     on_exit(fn -> Ch.Test.drop_table("delete_t") end)
 
     assert {:ok, %{num_rows: 2}} = Ch.query(conn, "insert into delete_t values (1,'a'), (2,'b')")
 
-    assert {:ok, %{num_rows: 0}} =
+    assert {:ok, %{rows: [], command: :delete}} =
              Ch.query(conn, "delete from delete_t where 1", [],
                settings: [allow_experimental_lightweight_delete: 1]
              )
@@ -283,7 +282,7 @@ defmodule Ch.ConnectionTest do
         end)
 
       assert {:ok, %{num_rows: 4}} =
-               Ch.query(conn, "insert into fixed_string_t(a) format RowBinary", stream)
+               Ch.query(conn, "insert into fixed_string_t(a) format RowBinary", {:raw, stream})
 
       assert {:ok,
               %{num_rows: 4, rows: [[<<0, 0, 0>>], ["a" <> <<0, 0>>], ["aa" <> <<0>>], ["aaa"]]}} =
@@ -343,9 +342,10 @@ defmodule Ch.ConnectionTest do
       Ch.query!(
         conn,
         "insert into test_bool(A, B) format RowBinary",
-        Stream.map([[3, true], [4, false]], fn row ->
-          RowBinary.encode_row(row, [:i64, :boolean])
-        end)
+        {:raw,
+         Stream.map([[3, true], [4, false]], fn row ->
+           RowBinary.encode_row(row, [:i64, :boolean])
+         end)}
       )
 
       # anything > 0 is `true`, here `2` is `true`
@@ -389,9 +389,10 @@ defmodule Ch.ConnectionTest do
       Ch.query!(
         conn,
         "insert into t_uuid(x,y) format RowBinary",
-        Stream.map([[uuid, "Example 3"]], fn row ->
-          RowBinary.encode_row(row, [:uuid, :string])
-        end)
+        {:raw,
+         Stream.map([[uuid, "Example 3"]], fn row ->
+           RowBinary.encode_row(row, [:uuid, :string])
+         end)}
       )
 
       assert {:ok,
@@ -755,30 +756,50 @@ defmodule Ch.ConnectionTest do
 
   describe "stream" do
     test "sends mint http packets", %{conn: conn} do
-      Ch.run(conn, fn conn ->
-        packets =
+      stmt = "select number from system.numbers limit 1000"
+
+      drop_ref = fn packets ->
+        Enum.map(packets, fn
+          {tag, _ref, data} -> {tag, data}
+          {tag, _ref} -> tag
+        end)
+      end
+
+      packets =
+        Ch.run(conn, fn conn ->
           conn
-          |> Ch.stream("select number from system.numbers limit 1000")
-          |> Enum.map(fn packets ->
-            Enum.map(packets, fn
-              {tag, _ref, data} -> {tag, data}
-              {tag, _ref} -> tag
-            end)
-          end)
-          |> List.flatten()
+          |> Ch.stream(stmt)
+          |> Enum.flat_map(drop_ref)
+        end)
 
-        assert [
-                 {:status, 200},
-                 {:headers, headers},
-                 {:data, data1},
-                 {:data, data2},
-                 :done
-               ] = packets
+      assert [
+               {:status, 200},
+               {:headers, headers},
+               {:data, data0},
+               {:data, data1},
+               {:data, data2},
+               :done
+             ] = packets
 
-        assert List.keyfind!(headers, "transfer-encoding", 0) == {"transfer-encoding", "chunked"}
-        assert RowBinary.decode_rows(data1, [:u64]) == Enum.map(0..511, &[&1])
-        assert RowBinary.decode_rows(data2, [:u64]) == Enum.map(512..999, &[&1])
-      end)
+      assert List.keyfind!(headers, "transfer-encoding", 0) == {"transfer-encoding", "chunked"}
+      assert RowBinary.decode_rows(data0 <> data1 <> data2) == Enum.map(0..999, &[&1])
+    end
+
+    test "decodes RowBinary", %{conn: conn} do
+      stmt = "select number from system.numbers limit 1000"
+
+      # TODO ensure flattened
+      rows =
+        Ch.run(conn, fn conn ->
+          Ch.stream(conn, stmt, _params = [], types: [:u64]) |> Enum.into([])
+        end)
+
+      assert Enum.reject(rows, fn rows -> rows == [] end) == [
+               [
+                 Enum.map(0..511, &[&1]),
+                 Enum.map(512..999, &[&1])
+               ]
+             ]
     end
   end
 

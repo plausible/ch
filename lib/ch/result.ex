@@ -8,17 +8,15 @@ defmodule Ch.Result do
         row, each element in the inner list corresponds to a column;
       - raw iodata when the response is not automatically decoded, e.g. `x-clickhouse-format: CSV`
     * `num_rows` - The number of fetched or affected rows;
-    * `meta` - A map of metadata collected from the response headers like `x-clickhouse-format`,
-      `x-clickhouse-query-id`, `x-clickhouse-summary`, etc.
+    * `headers` - The HTTP response headers
   """
 
-  defstruct [:command, :meta, :num_rows, :rows]
+  defstruct [:command, :num_rows, :rows, :headers]
 
-  @type summary :: %{String.t() => String.t()}
   @type t :: %__MODULE__{
           command: atom,
-          meta: %{String.t() => String.t() | summary},
-          num_rows: non_neg_integer,
-          rows: [[term]] | iodata | nil
+          num_rows: non_neg_integer | nil,
+          rows: [[term]] | iodata | nil,
+          headers: Mint.Types.headers()
         }
 end

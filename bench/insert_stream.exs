@@ -9,7 +9,7 @@ database = System.get_env("CH_DATABASE") || "ch_bench"
 Ch.query!(conn, "CREATE DATABASE IF NOT EXISTS {$0:Identifier}", [database])
 
 Ch.query!(conn, """
-CREATE TABLE #{database}.benchmark (
+CREATE TABLE IF NOT EXISTS #{database}.benchmark (
   col1 UInt64,
   col2 String,
   col3 Array(UInt8),
@@ -37,7 +37,7 @@ Benchee.run(
         |> Stream.chunk_every(60_000)
         |> Stream.map(fn chunk -> Ch.RowBinary.encode_rows(chunk, types) end)
 
-      Ch.query!(conn, statement, stream)
+      Ch.query!(conn, statement, {:raw, stream})
     end
   },
   inputs: %{
