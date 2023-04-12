@@ -753,6 +753,35 @@ defmodule Ch.ConnectionTest do
     end
   end
 
+  describe "stream" do
+    test "sends mint http packets", %{conn: conn} do
+      Ch.run(conn, fn conn ->
+        packets =
+          conn
+          |> Ch.stream("select number from system.numbers limit 1000")
+          |> Enum.map(fn packets ->
+            Enum.map(packets, fn
+              {tag, _ref, data} -> {tag, data}
+              {tag, _ref} -> tag
+            end)
+          end)
+          |> List.flatten()
+
+        assert [
+                 {:status, 200},
+                 {:headers, headers},
+                 {:data, data1},
+                 {:data, data2},
+                 :done
+               ] = packets
+
+        assert List.keyfind!(headers, "transfer-encoding", 0) == {"transfer-encoding", "chunked"}
+        assert RowBinary.decode_rows(data1, [:u64]) == Enum.map(0..511, &[&1])
+        assert RowBinary.decode_rows(data2, [:u64]) == Enum.map(512..999, &[&1])
+      end)
+    end
+  end
+
   describe "prepare" do
     test "no-op", %{conn: conn} do
       query = Ch.Query.build("select 1 + 1")
