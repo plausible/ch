@@ -1,5 +1,4 @@
 defmodule Ch.Error do
-  @moduledoc false
   defexception [:code, :message]
   @type t :: %__MODULE__{code: pos_integer | nil, message: String.t()}
 

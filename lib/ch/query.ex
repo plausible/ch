@@ -1,5 +1,5 @@
 defmodule Ch.Query do
-  @moduledoc false
+  @moduledoc "Query struct wrapping the SQL statement."
   defstruct [:statement, :command]
 
   @type t :: %__MODULE__{statement: iodata, command: atom}
