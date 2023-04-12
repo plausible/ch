@@ -9,6 +9,18 @@ jobs:
     env:
       MIX_ENV: bench
 
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:22.8.13.20-alpine
+        ports:
+          - 8123:8123
+        env:
+          options: >-
+            --health-cmd nc -zw3 localhost 8124
+            --health-interval 10s
+            --health-timeout 5s
+            --health-retries 5
+
     steps:
       - uses: actions/checkout@v3
 
@@ -30,3 +42,10 @@ jobs:
       - run: mix deps.get
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
+      - run: mkdir results
+      - run: mix run bench/insert_stream.exs > results/insert-stream.txt
+      - run: mix run bench/stream.exs > results/stream.txt
+      - uses: actions/upload-artifact@v3
+        with:
+          name: results
+          path: results/*.txt
