@@ -23,16 +23,19 @@ PRIMARY KEY (user_id, timestamp)
 iex> {:ok, %{num_rows: 1}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table VALUES (0, {$0:String}, now(), {$1:Float32})", ["test", -1.0])
 iex> {:ok, _} = Ch.query(conn, "DELETE FROM helloworld.my_first_table WHERE user_id = 0", [], settings: [allow_experimental_lightweight_delete: 1])
 
-iex> types = [:u32, :string, :datetime, :f32]
 iex> rows = [
   [101, "Hello, ClickHouse!", ~N[2023-01-06 03:50:38], -1.0],
   [102, "Insert a lot of rows per batch", ~N[2023-01-05 00:00:00], 1.41421],
   [102, "Sort your data based on your commonly-used queries", ~N[2023-01-06 00:00:00], 2.718],
   [101, "Granules are the smallest chunks of data read", ~N[2023-01-06 03:55:38], 3.14159]
 ]
-iex> stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, types) end)
 
-iex> {:ok, %{num_rows: 4}} = Ch.query(conn, "INSERT INTO helloworld.my_first_table(user_id, message, timestamp, metric) FORMAT RowBinary", {:raw, stream})
+iex> {:ok, %{num_rows: 4}} = Ch.query(
+  conn,
+  "INSERT INTO helloworld.my_first_table(user_id, message, timestamp, metric) FORMAT RowBinary",
+  rows,
+  types: [:u32, :string, :datetime, :f32]
+)
 
 iex> {:ok, %{rows: rows}} = Ch.query(conn, "SELECT * FROM helloworld.my_first_table")
 iex> rows

@@ -132,15 +132,24 @@ defmodule Ch.ConnectionTest do
       assert message =~ "Cannot execute query in readonly mode."
     end
 
-    test "rowbinary", %{conn: conn} do
+    test "automatic RowBinary", %{conn: conn} do
+      stmt = "insert into insert_t(a, b) format RowBinary"
+      types = [:u8, :string]
+      rows = [[1, "a"], [2, "b"]]
+      assert %{num_rows: 2} = Ch.query!(conn, stmt, rows, types: types)
+      assert %{rows: rows} = Ch.query!(conn, "select * from insert_t")
+      assert rows == [[1, "a"], [2, "b"]]
+    end
+
+    test "manual RowBinary", %{conn: conn} do
+      stmt = "insert into insert_t(a, b) format RowBinary"
+
       types = [:u8, :string]
       rows = [[1, "a"], [2, "b"]]
       data = RowBinary.encode_rows(rows, types)
 
-      assert {:ok, %{num_rows: 2}} =
-               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", {:raw, data})
-
-      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert %{num_rows: 2} = Ch.query!(conn, stmt, {:raw, data})
+      assert %{rows: rows} = Ch.query!(conn, "select * from insert_t")
       assert rows == [[1, "a"], [2, "b"]]
     end
 

@@ -68,7 +68,7 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   @spec encode(Query.t(), params, Keyword.t()) :: {query_params, Mint.Types.headers(), body}
         when raw: iodata | Enumerable.t(),
-             params: map | list(term) | {:raw, raw},
+             params: map | [term] | [row :: [term]] | {:raw, raw},
              query_params: [{String.t(), String.t()}],
              body: raw
 
@@ -82,8 +82,17 @@ defimpl DBConnection.Query, for: Ch.Query do
     {_query_params = [], _extra_headers = [], body}
   end
 
-  def encode(%Query{command: :insert, statement: statement}, params, _opts) do
-    {query_params(params), _extra_headers = [], statement}
+  def encode(%Query{command: :insert, statement: statement}, params, opts) do
+    # TODO is there a better way?
+    row_binary? = statement |> String.trim_trailing() |> String.ends_with?("RowBinary")
+
+    if row_binary? do
+      types = Keyword.fetch!(opts, :types)
+      data = RowBinary.encode_rows(params, types)
+      {_query_params = [], _extra_headers = [], [statement, ?\n | data]}
+    else
+      {query_params(params), _extra_headers = [], statement}
+    end
   end
 
   def encode(%Query{statement: statement}, params, opts) do
