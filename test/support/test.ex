@@ -2,11 +2,19 @@ defmodule Ch.Test do
   # makes an http request to clickhouse bypassing dbconnection
   def sql_exec(sql, params \\ [], opts \\ []) do
     with {:ok, conn} <- Ch.Connection.connect(opts) do
+      query = Ch.Query.build(sql, opts[:command])
+      params = DBConnection.Query.encode(query, params, opts)
+
       try do
-        case Ch.Connection.handle_execute(Ch.Query.build(sql, opts[:command]), params, opts, conn) do
-          {:ok, _query, result, _conn} -> {:ok, result}
-          {:error, reason, _conn} -> {:error, reason}
-          {:disconnect, reason, _conn} -> {:error, reason}
+        case Ch.Connection.handle_execute(query, params, opts, conn) do
+          {:ok, query, responses, _conn} ->
+            {:ok, DBConnection.Query.decode(query, responses, opts)}
+
+          {:error, reason, _conn} ->
+            {:error, reason}
+
+          {:disconnect, reason, _conn} ->
+            {:error, reason}
         end
       after
         :ok = Ch.Connection.disconnect(:normal, conn)

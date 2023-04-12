@@ -355,7 +355,7 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
+                     Ch.query(conn, "insert into example(a,b) format RowBinary", {:raw, stream})
           end)
 
           # reconnect
@@ -367,7 +367,7 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
+                     Ch.query(conn, "insert into example(a,b) format RowBinary", {:raw, stream})
 
             assert message =~ ~r/UNKNOWN_TABLE/
 
@@ -404,7 +404,7 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
+                     Ch.query(conn, "insert into example(a,b) format RowBinary", {:raw, stream})
           end)
 
           # close after first packet from mint arrives
@@ -420,7 +420,7 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(conn, "insert into example(a,b) format RowBinary", stream)
+                     Ch.query(conn, "insert into example(a,b) format RowBinary", {:raw, stream})
 
             assert message =~ ~r/UNKNOWN_TABLE/
 
@@ -442,9 +442,8 @@ defmodule Ch.FaultsTest do
       test = self()
 
       header = "X-ClickHouse-Server-Display-Name"
-
-      {:ok, %Ch.Result{meta: %{"server-display-name" => expected_name}}} =
-        Ch.Test.sql_exec("select 1")
+      {:ok, %Result{headers: headers}} = Ch.Test.sql_exec("select 1")
+      {_, expected_name} = List.keyfind!(headers, String.downcase(header), 0)
 
       log =
         capture_async_log(fn ->

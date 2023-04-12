@@ -2,7 +2,7 @@ defmodule Ch.Connection do
   @moduledoc false
   use DBConnection
   require Logger
-  alias Ch.{Error, RowBinary, Query, Result}
+  alias Ch.{Error, Query, Result}
   alias Mint.HTTP1, as: HTTP
 
   @typep conn :: HTTP.t()
@@ -24,14 +24,19 @@ defmodule Ch.Connection do
         |> maybe_put_private(:password, opts[:password])
         |> maybe_put_private(:settings, opts[:settings])
 
-      handshake = "select 1"
+      handshake = Query.build("select 1")
+      params = DBConnection.Query.encode(handshake, _params = [], _opts = [])
 
-      case handle_execute(Query.build(handshake), [], [], conn) do
-        {:ok, _query, %Result{rows: [[1]]}, conn} ->
-          {:ok, conn}
+      case handle_execute(handshake, params, _opts = [], conn) do
+        {:ok, handshake, responses, conn} ->
+          case DBConnection.Query.decode(handshake, responses, _opts = []) do
+            %Result{rows: [[1]]} ->
+              {:ok, conn}
 
-        {:ok, _query, result, _conn} ->
-          {:error, Error.exception("unexpected result for '#{handshake}': " <> inspect(result))}
+            result ->
+              {:error,
+               Error.exception("unexpected result for '#{handshake}': " <> inspect(result))}
+          end
 
         {:error, reason, _conn} ->
           {:error, reason}
@@ -56,7 +61,8 @@ defmodule Ch.Connection do
   @spec checkout(conn) :: {:ok, conn}
   def checkout(conn), do: {:ok, conn}
 
-  # "supporting" transactions for Repo.checkout
+  # we "support" these four tx callbacks for Repo.checkout
+  # even though ClickHouse doesn't support txs
 
   @impl true
   def handle_begin(_opts, conn), do: {:ok, %{}, conn}
@@ -79,39 +85,35 @@ defmodule Ch.Connection do
 
   @impl true
   def handle_declare(query, params, opts, conn) do
-    %Query{statement: statement} = query
+    {query_params, extra_headers, body} = params
 
-    format = Keyword.get(opts, :format) || "RowBinary"
-    path = path(settings(conn, opts) ++ params(params))
-    headers = [{"x-clickhouse-format", format} | headers(conn, opts)]
+    path = path(conn, query_params, opts)
+    headers = headers(conn, extra_headers, opts)
+    types = Keyword.get(opts, :types)
 
-    with {:ok, conn, ref} <- send_request(conn, "POST", path, headers, statement) do
-      {:ok, query, ref, conn}
+    with {:ok, conn, ref} <- send_request(conn, "POST", path, headers, body) do
+      {:ok, query, {types, ref}, conn}
     end
   end
 
   @impl true
-  def handle_fetch(_query, ref, opts, conn) do
+  def handle_fetch(_query, {types, ref}, opts, conn) do
     case HTTP.recv(conn, 0, timeout(conn, opts)) do
       {:ok, conn, responses} ->
-        case stream_finished?(responses, ref) do
-          true -> {:halt, responses, conn}
-          false -> {:cont, responses, conn}
-        end
+        {halt_or_cont(responses, ref), {:stream, types, responses}, conn}
 
       {:error, conn, reason, _responses} ->
         {:disconnect, reason, conn}
     end
   end
 
-  defp stream_finished?([{:done, ref}], ref), do: true
+  defp halt_or_cont([{:done, ref}], ref), do: :halt
 
-  defp stream_finished?([{tag, ref, _data} | responses], ref)
-       when tag in [:status, :headers, :data] do
-    stream_finished?(responses, ref)
+  defp halt_or_cont([{tag, ref, _data} | rest], ref) when tag in [:data, :status, :headers] do
+    halt_or_cont(rest, ref)
   end
 
-  defp stream_finished?([], _ref), do: false
+  defp halt_or_cont([], _ref), do: :cont
 
   @impl true
   def handle_deallocate(_query, _ref, _opts, conn) do
@@ -125,48 +127,32 @@ defmodule Ch.Connection do
   end
 
   @impl true
-  def handle_execute(%Query{command: :insert} = query, %s{} = stream, opts, conn)
-      when s in [Stream, IO.Stream, File.Stream] do
-    path = path(settings(conn, opts))
-    headers = headers(conn, opts)
-    stream = Stream.concat([[query.statement, ?\n]], stream)
-
-    with {:ok, conn, responses} <- request_chunked(conn, "POST", path, headers, stream, opts) do
-      {:ok, query, insert_result(responses), conn}
-    end
-  end
-
-  def handle_execute(%Query{command: :insert} = query, {:raw, data}, opts, conn)
-      when is_list(data) or is_binary(data) do
-    path = path(settings(conn, opts))
-    headers = headers(conn, opts)
-    body = [query.statement, ?\n | data]
-
-    with {:ok, conn, responses} <- request(conn, "POST", path, headers, body, opts) do
-      {:ok, query, insert_result(responses), conn}
-    end
-  end
-
   def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
-    path = path(settings(conn, opts) ++ params(params))
-    headers = headers(conn, opts)
+    {query_params, extra_headers, body} = params
 
-    with {:ok, conn, responses} <- request(conn, "POST", path, headers, query.statement, opts) do
-      {:ok, query, insert_result(responses), conn}
+    path = path(conn, query_params, opts)
+    headers = headers(conn, extra_headers, opts)
+
+    result =
+      if is_function(body, 2) do
+        request_chunked(conn, "POST", path, headers, body, opts)
+      else
+        request(conn, "POST", path, headers, body, opts)
+      end
+
+    with {:ok, conn, responses} <- result do
+      {:ok, query, responses, conn}
     end
   end
 
   def handle_execute(query, params, opts, conn) do
-    %Query{command: command, statement: statement} = query
+    {query_params, extra_headers, body} = params
 
-    types = Keyword.get(opts, :types)
-    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
-    format = Keyword.get(opts, :format) || default_format
-    path = path(settings(conn, opts) ++ params(params))
-    headers = [{"x-clickhouse-format", format} | headers(conn, opts)]
+    path = path(conn, query_params, opts)
+    headers = headers(conn, extra_headers, opts)
 
-    with {:ok, conn, responses} <- request(conn, "POST", path, headers, statement, opts) do
-      {:ok, query, result(command, responses, types), conn}
+    with {:ok, conn, responses} <- request(conn, "POST", path, headers, body, opts) do
+      {:ok, query, responses, conn}
     end
   end
 
@@ -174,37 +160,6 @@ defmodule Ch.Connection do
   def disconnect(_error, conn) do
     {:ok = ok, _conn} = HTTP.close(conn)
     ok
-  end
-
-  defp insert_result(responses) do
-    [_status, headers | _data] = responses
-    meta = meta(headers)
-
-    num_rows =
-      if written_rows = get_in(meta, ["summary", "written_rows"]) do
-        String.to_integer(written_rows)
-      end
-
-    %Result{num_rows: num_rows, rows: nil, meta: meta, command: :insert}
-  end
-
-  defp result(command, responses, types) do
-    [_status, headers | data] = responses
-    meta = meta(headers)
-
-    rows =
-      case Map.get(meta, "format") do
-        "RowBinary" ->
-          data |> IO.iodata_to_binary() |> RowBinary.decode_rows(types)
-
-        "RowBinaryWithNamesAndTypes" ->
-          data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
-
-        _other ->
-          data
-      end
-
-    %Result{num_rows: length(rows), rows: rows, meta: meta, command: command}
   end
 
   @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
@@ -294,12 +249,22 @@ defmodule Ch.Connection do
     end
   end
 
+  defp handle_responses([{:done, ref}], ref, acc) do
+    {:ok, :lists.reverse(acc)}
+  end
+
+  defp handle_responses([{tag, ref, data} | rest], ref, acc)
+       when tag in [:data, :status, :headers] do
+    handle_responses(rest, ref, [data | acc])
+  end
+
+  defp handle_responses([], _ref, acc), do: {:more, acc}
+
   defp maybe_put_private(conn, _k, nil), do: conn
   defp maybe_put_private(conn, k, v), do: HTTP.put_private(conn, k, v)
 
-  defp get_opts_or_private(conn, opts, key) do
-    Keyword.get(opts, key) || HTTP.get_private(conn, key)
-  end
+  defp timeout(conn), do: HTTP.get_private(conn, :timeout)
+  defp timeout(conn, opts), do: Keyword.get(opts, :timeout) || timeout(conn)
 
   defp settings(conn, opts) do
     default_settings = HTTP.get_private(conn, :settings, [])
@@ -307,23 +272,19 @@ defmodule Ch.Connection do
     Keyword.merge(default_settings, opts_settings)
   end
 
-  defp headers(conn, opts) do
-    []
+  defp headers(conn, extra_headers, opts) do
+    extra_headers
     |> maybe_put_header("x-clickhouse-user", get_opts_or_private(conn, opts, :username))
     |> maybe_put_header("x-clickhouse-key", get_opts_or_private(conn, opts, :password))
     |> maybe_put_header("x-clickhouse-database", get_opts_or_private(conn, opts, :database))
   end
 
+  defp get_opts_or_private(conn, opts, key) do
+    Keyword.get(opts, key) || HTTP.get_private(conn, key)
+  end
+
   defp maybe_put_header(headers, _k, nil), do: headers
   defp maybe_put_header(headers, k, v), do: [{k, v} | headers]
-
-  defp timeout(conn) do
-    HTTP.get_private(conn, :timeout)
-  end
-
-  defp timeout(conn, opts) do
-    Keyword.get(opts, :timeout) || timeout(conn)
-  end
 
   defp get_header(headers, key) do
     case List.keyfind(headers, key, 0) do
@@ -332,18 +293,10 @@ defmodule Ch.Connection do
     end
   end
 
-  defp meta(headers) do
-    Map.new(_meta(headers))
+  defp path(conn, query_params, opts) do
+    settings = settings(conn, opts)
+    "/?" <> URI.encode_query(settings ++ query_params)
   end
-
-  defp _meta([{"x-clickhouse-summary" = k, summary} | headers]) do
-    "x-clickhouse-" <> k = k
-    [{k, Jason.decode!(summary)} | _meta(headers)]
-  end
-
-  defp _meta([{"x-clickhouse-" <> k, v} | headers]), do: [{k, v} | _meta(headers)]
-  defp _meta([{_k, _v} | headers]), do: _meta(headers)
-  defp _meta([]), do: []
 
   @server_display_name_key :server_display_name
 
@@ -369,107 +322,5 @@ defmodule Ch.Connection do
       true ->
         conn
     end
-  end
-
-  defp handle_responses([{:done, ref}], ref, acc) do
-    {:ok, :lists.reverse(acc)}
-  end
-
-  defp handle_responses([{tag, ref, data} | rest], ref, acc)
-       when tag in [:data, :status, :headers] do
-    handle_responses(rest, ref, [data | acc])
-  end
-
-  defp handle_responses([], _ref, acc), do: {:more, acc}
-
-  defp path(kv) do
-    "/?" <> URI.encode_query(kv)
-  end
-
-  defp params(params) when is_map(params) do
-    Enum.map(params, fn {k, v} -> {"param_#{k}", encode_param(v)} end)
-  end
-
-  defp params(params) when is_list(params) do
-    params
-    |> Enum.with_index()
-    |> Enum.map(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
-  end
-
-  defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
-  defp encode_param(f) when is_float(f), do: Float.to_string(f)
-  defp encode_param(b) when is_binary(b), do: b
-  defp encode_param(b) when is_boolean(b), do: b
-  defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
-
-  defp encode_param(%Date{} = date), do: date
-
-  defp encode_param(%NaiveDateTime{} = naive) do
-    NaiveDateTime.to_iso8601(naive)
-  end
-
-  defp encode_param(%DateTime{} = dt) do
-    dt |> DateTime.to_naive() |> NaiveDateTime.to_iso8601()
-  end
-
-  defp encode_param(a) when is_list(a) do
-    IO.iodata_to_binary([?[, encode_array_params(a), ?]])
-  end
-
-  defp encode_array_params([last]), do: encode_array_param(last)
-
-  defp encode_array_params([s | rest]) do
-    [encode_array_param(s), ?, | encode_array_params(rest)]
-  end
-
-  defp encode_array_params([] = empty), do: empty
-
-  defp encode_array_param(s) when is_binary(s) do
-    [?', to_iodata(s, 0, s, []), ?']
-  end
-
-  defp encode_array_param(v) do
-    encode_param(v)
-  end
-
-  @dialyzer {:no_improper_lists, to_iodata: 4, to_iodata: 5}
-
-  @doc false
-  # based on based on https://github.com/elixir-plug/plug/blob/main/lib/plug/html.ex#L41-L80
-  def to_iodata(binary, skip, original, acc)
-
-  escapes = [{?', "\\'"}, {?\\, "\\\\"}]
-
-  for {match, insert} <- escapes do
-    def to_iodata(<<unquote(match), rest::bits>>, skip, original, acc) do
-      to_iodata(rest, skip + 1, original, [acc | unquote(insert)])
-    end
-  end
-
-  def to_iodata(<<_char, rest::bits>>, skip, original, acc) do
-    to_iodata(rest, skip, original, acc, 1)
-  end
-
-  def to_iodata(<<>>, _skip, _original, acc) do
-    acc
-  end
-
-  for {match, insert} <- escapes do
-    defp to_iodata(<<unquote(match), rest::bits>>, skip, original, acc, len) do
-      part = binary_part(original, skip, len)
-      to_iodata(rest, skip + len + 1, original, [acc, part | unquote(insert)])
-    end
-  end
-
-  defp to_iodata(<<_char, rest::bits>>, skip, original, acc, len) do
-    to_iodata(rest, skip, original, acc, len + 1)
-  end
-
-  defp to_iodata(<<>>, 0, original, _acc, _len) do
-    original
-  end
-
-  defp to_iodata(<<>>, skip, original, acc, len) do
-    [acc | binary_part(original, skip, len)]
   end
 end
