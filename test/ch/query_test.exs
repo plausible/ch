@@ -20,6 +20,7 @@ defmodule Ch.QueryTest do
              """).command == :select
 
       assert Query.build(["select 1+2"]).command == :select
+      assert Query.build([?S, ?E, ?L | "ECT 1"]).command == :select
 
       assert Query.build("with insert as (select 1) select * from insert").command == :select
       assert Query.build("insert into table(a, b) values(1, 2)").command == :insert

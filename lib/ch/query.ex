@@ -40,21 +40,22 @@ defmodule Ch.Query do
     {"WATCH", :watch}
   ]
 
-  @doc false
-  def extract_command(statement)
+  defp extract_command(statement)
 
   for {statement, command} <- statements do
-    def extract_command(unquote(statement) <> _), do: unquote(command)
-    def extract_command(unquote(String.downcase(statement)) <> _), do: unquote(command)
+    defp extract_command(unquote(statement) <> _), do: unquote(command)
+    defp extract_command(unquote(String.downcase(statement)) <> _), do: unquote(command)
   end
 
-  def extract_command(<<whitespace, rest::bytes>>) when whitespace in [?\s, ?\t, ?\n] do
+  defp extract_command(<<whitespace, rest::bytes>>) when whitespace in [?\s, ?\t, ?\n] do
     extract_command(rest)
   end
 
-  # TODO cover more cases, don't rely on assumed format
-  def extract_command([first | _]), do: extract_command(first)
-  def extract_command(_other), do: nil
+  defp extract_command([first_segment | _] = statement) do
+    extract_command(first_segment) || extract_command(IO.iodata_to_binary(statement))
+  end
+
+  defp extract_command(_other), do: nil
 end
 
 defimpl DBConnection.Query, for: Ch.Query do
@@ -104,7 +105,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     statement |> String.trim_trailing() |> String.ends_with?("RowBinary")
   end
 
-  # this is mostly to account for `:chto`
+  # optimisation for `:chto`, consider :format option, for real
   # https://github.com/plausible/chto/blob/07f79d6d6d971f0effc85a1b06625b87f9930efb/lib/ecto/adapters/clickhouse/schema.ex#L35
   defp format_row_binary?([_ | " FORMAT RowBinary"]), do: true
 
