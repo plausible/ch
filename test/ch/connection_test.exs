@@ -11,7 +11,7 @@ defmodule Ch.ConnectionTest do
   end
 
   test "select with types", %{conn: conn} do
-    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1", [], types: [:u8])
+    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1", [], types: [Ch.u8()])
   end
 
   test "select with params", %{conn: conn} do
@@ -134,7 +134,7 @@ defmodule Ch.ConnectionTest do
 
     test "automatic RowBinary", %{conn: conn} do
       stmt = "insert into insert_t(a, b) format RowBinary"
-      types = [:u8, :string]
+      types = [Ch.u8(), Ch.string()]
       rows = [[1, "a"], [2, "b"]]
       assert %{num_rows: 2} = Ch.query!(conn, stmt, rows, types: types)
       assert %{rows: rows} = Ch.query!(conn, "select * from insert_t")
@@ -800,7 +800,7 @@ defmodule Ch.ConnectionTest do
       # TODO ensure flattened
       rows =
         Ch.run(conn, fn conn ->
-          Ch.stream(conn, stmt, _params = [], types: [:u64]) |> Enum.into([])
+          Ch.stream(conn, stmt, _params = [], types: [Ch.u64()]) |> Enum.into([])
         end)
 
       assert Enum.reject(rows, fn rows -> rows == [] end) == [

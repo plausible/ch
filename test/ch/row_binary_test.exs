@@ -156,22 +156,22 @@ defmodule Ch.RowBinaryTest do
     assert bin == str
 
     # but decoding is different based on what type is provided
-    assert decode_rows(str, [:string]) == [["a�b"]]
-    assert decode_rows(bin, [:string]) == [["a�b"]]
-    assert decode_rows(str, [:binary]) == [["\x61\xF0\x80\x80\x80b"]]
-    assert decode_rows(bin, [:binary]) == [["\x61\xF0\x80\x80\x80b"]]
+    assert decode_rows(str, [Ch.string()]) == [["a�b"]]
+    assert decode_rows(bin, [Ch.string()]) == [["a�b"]]
+    assert decode_rows(str, [Ch.binary()]) == [["\x61\xF0\x80\x80\x80b"]]
+    assert decode_rows(bin, [Ch.binary()]) == [["\x61\xF0\x80\x80\x80b"]]
 
     path = "/some/url" <> <<0xAE>> <> "-/"
-    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [["/some/url�-/"]]
+    assert decode_rows(<<byte_size(path), path::bytes>>, [Ch.string()]) == [["/some/url�-/"]]
 
     path = <<0xAF>> <> "/some/url" <> <<0xAE, 0xFE>> <> "-/" <> <<0xFA>>
-    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [["�/some/url�-/�"]]
+    assert decode_rows(<<byte_size(path), path::bytes>>, [Ch.string()]) == [["�/some/url�-/�"]]
 
     path = "/opportunity/category/جوائز-ومسابقات"
-    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
+    assert decode_rows(<<byte_size(path), path::bytes>>, [Ch.string()]) == [[path]]
 
     path = "/ﺝﻭﺎﺋﺯ-ﻮﻤﺳﺎﺒﻗﺎﺗ"
-    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
+    assert decode_rows(<<byte_size(path), path::bytes>>, [Ch.string()]) == [[path]]
   end
 
   describe "decode_types/1" do
@@ -295,11 +295,11 @@ defmodule Ch.RowBinaryTest do
 
   describe "decode_rows/2" do
     test "empty" do
-      assert decode_rows(<<>>, [:u8, :string]) == []
+      assert decode_rows(<<>>, [Ch.u8(), Ch.string()]) == []
     end
 
     test "non-empty" do
-      assert decode_rows(<<1, 2>>, [:u8, :u8]) == [[1, 2]]
+      assert decode_rows(<<1, 2>>, [Ch.u8(), Ch.u8()]) == [[1, 2]]
     end
   end
 end

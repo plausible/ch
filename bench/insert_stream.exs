@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS #{database}.benchmark (
 ) Engine Null
 """)
 
-types = [:u64, :string, {:array, :u8}, :datetime]
+types = [Ch.u64(), Ch.string(), Ch.array(Ch.u8()), Ch.datetime()]
 statement = "INSERT INTO #{database}.benchmark FORMAT RowBinary"
 
 Benchee.run(

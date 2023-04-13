@@ -75,4 +75,51 @@ defmodule Ch do
   def run(conn, f, opts \\ []) when is_function(f, 1) do
     DBConnection.run(conn, f, opts)
   end
+
+  for size <- [8, 16, 32, 64, 128, 256] do
+    @doc "UInt#{size} type helper"
+    def unquote(:"u#{size}")(), do: unquote(:"u#{size}")
+    @doc "Int#{size} type helper"
+    def unquote(:"i#{size}")(), do: unquote(:"i#{size}")
+  end
+
+  for size <- [32, 64] do
+    @doc "Float#{size} type helper"
+    def unquote(:"f#{size}")(), do: unquote(:"f#{size}")
+  end
+
+  @doc "UTF8 String type helper"
+  def string, do: :string
+  @doc "Binary type helper"
+  def binary, do: :binary
+  @doc "Boolean type helper"
+  def boolean, do: :boolean
+  @doc "Date type helper"
+  def date, do: :date
+  @doc "DateTime type helper"
+  def datetime, do: :datetime
+  @doc "Date32 type helper"
+  def date32, do: :date32
+  @doc "DateTime64(precision) type helper"
+  def datetime64(unit), do: {:datetime64, unit, nil}
+  @doc "UUID type helper"
+  def uuid, do: :uuid
+
+  # def datetime(tz) when is_binary(tz), do: {:datetime, tz}
+  # def datetime64(unit, timezone), do: {:datetime64, unit, nil}
+
+  @doc "FixedString(size) type helper"
+  def string(size) when is_integer(size) and size > 0, do: {:string, size}
+
+  for size <- [32, 64, 128, 256] do
+    @doc "Decimal#{size}(scale) type helper"
+    def unquote(:"decimal#{size}")(scale) when is_integer(scale) do
+      {:decimal, unquote(size), scale}
+    end
+  end
+
+  @doc "Array(T) type helper"
+  def array(type), do: {:array, type}
+  @doc "Nullable(T) type helper"
+  def nullable(type), do: {:nullable, type}
 end

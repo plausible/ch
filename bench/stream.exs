@@ -15,6 +15,8 @@ run_stream = fn statement, opts ->
   Ch.run(conn, f, timeout: :infinity)
 end
 
+types = [Ch.u64()]
+
 Benchee.run(
   %{
     "stream without decode" => fn statement ->
@@ -27,7 +29,7 @@ Benchee.run(
         |> Ch.stream(statement, [], format: "RowBinary")
         |> Stream.map(fn responses ->
           Enum.each(responses, fn
-            {:data, _ref, data} -> Ch.RowBinary.decode_rows(data, [:u64])
+            {:data, _ref, data} -> Ch.RowBinary.decode_rows(data, types)
             {:status, _ref, 200} -> :ok
             {:headers, _ref, _headers} -> :ok
             {:done, _ref} -> :ok
@@ -39,7 +41,7 @@ Benchee.run(
       Ch.run(conn, f, timeout: :infinity)
     end,
     "stream with decode" => fn statement ->
-      run_stream.(statement, types: [:u64])
+      run_stream.(statement, types: types)
     end
   },
   inputs: %{

@@ -337,7 +337,7 @@ defmodule Ch.FaultsTest do
 
       test = self()
       rows = [[1, 2], [3, 4]]
-      stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
+      stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [Ch.u8(), Ch.u8()]) end)
 
       log =
         capture_async_log(fn ->
@@ -389,7 +389,7 @@ defmodule Ch.FaultsTest do
 
       test = self()
       rows = [[1, 2], [3, 4]]
-      stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
+      stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [Ch.u8(), Ch.u8()]) end)
 
       log =
         capture_async_log(fn ->
