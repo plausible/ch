@@ -1,8 +1,6 @@
 # Ch
 
-Minimal HTTP ClickHouse client for Elixir.
-
-See the [Ecto adapter](https://github.com/plausible/chto) as well!
+Minimal HTTP ClickHouse client for Elixir. Used as the driver for a [ClickHouse Ecto adapter.](https://github.com/plausible/chto)
 
 ## Installation
 
@@ -20,7 +18,7 @@ end
 <summary>Start <code>DBConnection</code> pool</summary>
 
 ```elixir
-defaults = [
+ch_defaults = [
   scheme: "http",
   hostname: "localhost",
   port: 8123,
@@ -28,7 +26,11 @@ defaults = [
   settings: []
 ]
 
-{:ok, pid} = Ch.start_link(defaults)
+dbconnection_defaults = [
+  pool_size: 1
+]
+
+{:ok, pid} = Ch.start_link(ch_defaults ++ dbconnection_defaults)
 ```
 
 </details>
