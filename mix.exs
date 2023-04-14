@@ -1,14 +1,21 @@
 defmodule Ch.MixProject do
   use Mix.Project
 
+  @source_url "https://github.com/plausible/ch"
+  @version "0.1.0"
+
   def project do
     [
       app: :ch,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.14",
       elixirc_paths: elixirc_paths(Mix.env()),
-      start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      name: "Ch",
+      description: "HTTP ClickHouse driver for Elixir",
+      docs: docs(),
+      package: package(),
+      source_url: @source_url
     ]
   end
 
@@ -31,7 +38,25 @@ defmodule Ch.MixProject do
       {:jason, "~> 1.4"},
       {:decimal, "~> 2.0"},
       {:benchee, "~> 1.1", only: [:bench]},
-      {:dialyxir, "~> 1.2", only: [:dev], runtime: false}
+      {:dialyxir, "~> 1.2", only: [:dev], runtime: false},
+      {:ex_doc, ">= 0.0.0", only: :docs}
+    ]
+  end
+
+  defp docs do
+    [
+      source_url: @source_url,
+      source_ref: "v#{@version}",
+      main: "readme",
+      extras: ["README.md", "CHANGELOG.md"],
+      skip_undefined_reference_warnings_on: ["CHANGELOG.md"]
+    ]
+  end
+
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{"GitHub" => @source_url}
     ]
   end
 end
