@@ -1,5 +1,8 @@
 # Ch
 
+<!-- [![Hex Package](https://img.shields.io/hexpm/v/ch.svg)](https://hex.pm/packages/ch)
+     [![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/ch) -->
+
 Minimal HTTP ClickHouse client for Elixir.
 
 See the [Ecto adapter](https://github.com/plausible/chto) as well!
