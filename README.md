@@ -138,6 +138,64 @@ ten_encoded_chunks = Stream.take(encoded, 10)
 
 </details>
 
+## Caveats
+
+<details>
+<summary>NULL handling in RowBinary</summary>
+
+Inserting `nil` into a `Nullable` column results in `NULL`. In all other cases the default value for the type is persisted.
+
+Note that in the following example `DEFAULT 10` is ignored and `0` (the default value for `UInt8`) is stored instead.
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+Ch.query!(pid, """
+CREATE TABLE ch_nulls (
+  a UInt8 NULL,
+  b UInt8 DEFAULT 10,
+  c UInt8 NOT NULL
+) ENGINE = Memory
+""")
+
+types = [{:nullable, :u8}, :u8, :u8]
+rows = [[nil, nil, nil]]
+
+%Ch.Result{num_rows: 2} =
+  Ch.query!(pid, "INSERT INTO ch_nulls(a, b, c) FORMAT RowBinary", rows, types: types)
+
+%Ch.Result{rows: [[nil, 0, 0]]} =
+  Ch.query!(pid, "SELECT * FROM ch_nulls")
+```
+
+</details>
+
+<details>
+<summary>UTF-8 in RowBinary</summary>
+
+Similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and text formats, when decoding `:string`, non-UTF8 characters are replaced with `�` (U+FFFD).
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+Ch.query!(pid, "CREATE TABLE ch_utf8(str String) ENGINE = Memory")
+
+%Ch.Result{num_rows: 1} =
+  Ch.query!(pid, "INSERT INTO ch_utf8(str) FORMAT RowBinary", [["\x61\xF0\x80\x80\x80b"]], types: [:string])
+
+%Ch.Result{rows: [["a�b"]]} =
+  Ch.query!(pid, "SELECT * FROM ch_utf8")
+```
+
+To get raw binary, use `:binary` type that skips UTF-8 checks.
+
+```elixir
+%Ch.Result{rows: [["\x61\xF0\x80\x80\x80b"]]} =
+  Ch.query!(pid, "SELECT * FROM ch_utf8", [], types: [:binary])
+```
+
+</details>
+
 ## Benchmarks
 
 <details>
