@@ -50,14 +50,14 @@ defmodule Ch.AggregationTest do
       insert into candle_fragments
         (ticker, time, high, open, close, low)
       VALUES
-      -- 1681410780 '2023-04-13 18:33:00' UTC
+      -- 1681410780  UTC
       -- 1681410840 '2023-04-13 18:34:00' UTC
       -- 1681410900 '2023-04-13 18:35:00' UTC
       -- 1681410960 '2023-04-13 18:36:00' UTC
-      ('INTC', 1681410780, 32, 32, 32, 32),
-      ('INTC', 1681410840, 33, 33, 33, 33),
-      ('INTC', 1681410900, 32, 32, 31, 26),
-      ('INTC', 1681410960, 32, 27, 27, 27)
+      ('INTC', '2023-04-13 20:33:00', 32, 32, 32, 32),
+      ('INTC', '2023-04-13 20:34:00', 33, 33, 33, 33),
+      ('INTC', '2023-04-13 20:35:00', 32, 32, 31, 26),
+      ('INTC', '2023-04-13 20:36:00', 32, 27, 27, 27)
     """
 
     Ch.query!(conn, insert_query)
@@ -69,8 +69,8 @@ defmodule Ch.AggregationTest do
     query = """
     select
     t.ticker as ticker,
-    toStartOfHour(t.time, 'UTC') as start_time,
-    toStartOfHour(t.time, 'UTC') + interval 1 hour as end_time,
+    toStartOfHour(t.time) as start_time,
+    toStartOfHour(t.time) + interval 1 hour as end_time,
     toStartOfHour(t.time)::DATE as date,
     max(t.high) as high,
     argMinMerge(t.open) as open,
