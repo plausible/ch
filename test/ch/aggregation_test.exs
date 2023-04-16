@@ -4,11 +4,8 @@ defmodule Ch.AggregationTest do
   setup do
     conn = start_supervised!(Ch)
 
-    Ch.query!(conn, "drop table if exists candle_fragments", %{})
-    Ch.query!(conn, "drop table if exists candles_one_hour_amt", %{})
-
     create_table = """
-    create table candle_fragments (
+    create table ch_candle_fragments (
       ticker LowCardinality(String),
       time DateTime CODEC(Delta, Default),
       high Float64 CODEC(Delta, Default),
@@ -19,10 +16,11 @@ defmodule Ch.AggregationTest do
     ORDER BY (ticker, time)
     """
 
-    Ch.query!(conn, create_table, %{})
+    Ch.query!(conn, create_table)
+    on_exit(fn -> Ch.Test.sql_exec("drop table ch_candle_fragments") end)
 
     create_table = """
-    CREATE MATERIALIZED VIEW candles_one_hour_amt
+    CREATE MATERIALIZED VIEW ch_candles_one_hour_amt
     (
       ticker LowCardinality(String),
       time DateTime CODEC(Delta, Default),
@@ -45,7 +43,8 @@ defmodule Ch.AggregationTest do
     group by ticker, time
     """
 
-    Ch.query!(conn, create_table, %{})
+    Ch.query!(conn, create_table)
+    on_exit(fn -> Ch.Test.sql_exec("drop table ch_candles_one_hour_amt") end)
 
     insert_query = """
       insert into candle_fragments
@@ -57,7 +56,7 @@ defmodule Ch.AggregationTest do
       ('INTC', '2023-04-13 20:36:00', 32, 27, 27, 27)
     """
 
-    Ch.query!(conn, insert_query, %{})
+    Ch.query!(conn, insert_query)
 
     {:ok, conn: conn}
   end
@@ -77,13 +76,13 @@ defmodule Ch.AggregationTest do
     group by ticker, time
     """
 
-    %{rows: rows} = Ch.query!(conn, query, %{})
+    %{rows: rows} = Ch.query!(conn, query)
 
     expected = [
       [
         "INTC",
-        ~U[2023-04-13 18:00:00Z],
-        ~U[2023-04-13 19:00:00Z],
+        ~U[2023-04-13 20:00:00Z],
+        ~U[2023-04-13 21:00:00Z],
         ~D[2023-04-13],
         33.0,
         32.0,
