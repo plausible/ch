@@ -50,10 +50,6 @@ defmodule Ch.AggregationTest do
       insert into ch_candle_fragments
         (ticker, time, high, open, close, low)
       VALUES
-      -- 1681410780  UTC
-      -- 1681410840 '2023-04-13 18:34:00' UTC
-      -- 1681410900 '2023-04-13 18:35:00' UTC
-      -- 1681410960 '2023-04-13 18:36:00' UTC
       ('INTC', '2023-04-13 20:33:00', 32, 32, 32, 32),
       ('INTC', '2023-04-13 20:34:00', 33, 33, 33, 33),
       ('INTC', '2023-04-13 20:35:00', 32, 32, 31, 26),
