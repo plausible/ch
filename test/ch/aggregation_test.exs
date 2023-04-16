@@ -7,7 +7,7 @@ defmodule Ch.AggregationTest do
     create_table = """
     create table ch_candle_fragments (
       ticker LowCardinality(String),
-      time DateTime CODEC(Delta, Default),
+      time DateTime('UTC') CODEC(Delta, Default),
       high Float64 CODEC(Delta, Default),
       open Float64 CODEC(Delta, Default),
       close Float64 CODEC(Delta, Default),
