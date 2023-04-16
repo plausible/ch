@@ -23,7 +23,7 @@ defmodule Ch.AggregationTest do
     CREATE MATERIALIZED VIEW ch_candles_one_hour_amt
     (
       ticker LowCardinality(String),
-      time DateTime CODEC(Delta, Default),
+      time DateTime('UTC') CODEC(Delta, Default),
       high SimpleAggregateFunction(max, Float64) CODEC(Delta, Default),
       open AggregateFunction(argMin, Float64, DateTime('UTC')),
       close AggregateFunction(argMax , Float64, DateTime('UTC')),
