@@ -1,6 +1,5 @@
 defmodule Ch.AggregationTest do
   use ExUnit.Case
-  alias Ch.RowBinary
 
   setup do
     conn = start_supervised!(Ch)
@@ -67,8 +66,8 @@ defmodule Ch.AggregationTest do
     query = """
     select
     t.ticker as ticker,
-    toStartOfHour(t.time) as start_time,
-    toStartOfHour(t.time) + interval 1 hour as end_time,
+    toStartOfHour(t.time, 'UTC') as start_time,
+    toStartOfHour(t.time,  'UTC') + interval 1 hour as end_time,
     toStartOfHour(t.time)::DATE as date,
     max(t.high) as high,
     argMinMerge(t.open) as open,
@@ -83,8 +82,8 @@ defmodule Ch.AggregationTest do
     expected = [
       [
         "INTC",
-        ~N[2023-04-13 18:00:00],
-        ~N[2023-04-13 19:00:00],
+        ~U[2023-04-13 18:00:00Z],
+        ~U[2023-04-13 19:00:00Z],
         ~D[2023-04-13],
         33.0,
         32.0,
