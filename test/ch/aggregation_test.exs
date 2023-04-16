@@ -67,7 +67,7 @@ defmodule Ch.AggregationTest do
     select
     t.ticker as ticker,
     toStartOfHour(t.time, 'UTC') as start_time,
-    toStartOfHour(t.time,  'UTC') + interval 1 hour as end_time,
+    toStartOfHour(t.time, 'UTC') + interval 1 hour as end_time,
     toStartOfHour(t.time)::DATE as date,
     max(t.high) as high,
     argMinMerge(t.open) as open,
