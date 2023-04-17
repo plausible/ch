@@ -20,7 +20,7 @@ end
 ## Usage
 
 <details>
-<summary>Start <a href="https://github.com/elixir-ecto/db_connection"><code>DBConnection</code></a> pool</summary>
+<summary>Start <a href="https://github.com/elixir-ecto/db_connection"><code>DBConnection</code></a> pool</summary><br>
 
 ```elixir
 ch_defaults = [
@@ -42,7 +42,7 @@ db_connection_defaults = [
 </details>
 
 <details>
-<summary><code>SELECT</code> rows</summary>
+<summary><code>SELECT</code> rows</summary><br>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -60,7 +60,7 @@ db_connection_defaults = [
 </details>
 
 <details>
-<summary><code>INSERT</code> rows as <code>VALUES</code></summary>
+<summary><code>INSERT</code> rows as <code>VALUES</code></summary><br>
      
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -88,7 +88,7 @@ Some links about SQL parser that is used to decode `VALUES` and its difference f
 </details>
 
 <details>
-<summary><code>INSERT</code> as <a href="https://clickhouse.com/docs/en/interfaces/formats#rowbinary"><code>RowBinary</code></a></summary>
+<summary><code>INSERT</code> as <a href="https://clickhouse.com/docs/en/interfaces/formats#rowbinary"><code>RowBinary</code></a></summary><br>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -102,7 +102,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 </details>
 
 <details>
-<summary><code>INSERT</code> with custom <a href="https://clickhouse.com/docs/en/interfaces/formats"><code>FORMAT</code></a></summary>
+<summary><code>INSERT</code> with custom <a href="https://clickhouse.com/docs/en/interfaces/formats"><code>FORMAT</code></a></summary><br>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -118,7 +118,7 @@ csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
 </details>
 
 <details>
-<summary><code>INSERT</code> as chunked <code>RowBinary</code> stream</summary>
+<summary><code>INSERT</code> as chunked <code>RowBinary</code> stream</summary><br>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -134,12 +134,12 @@ ten_encoded_chunks = Stream.take(encoded, 10)
   Ch.query(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", {:raw, ten_encoded_chunks})
 ```
 
-The query above makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting in a more controlled memory usage.
+This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting in a more controlled memory usage.
 
 </details>
 
 <details>
-<summary>Query with <a href="https://clickhouse.com/docs/en/operations/settings/settings"><code>SETTINGS</code></a></summary>
+<summary>Query with <a href="https://clickhouse.com/docs/en/operations/settings/settings"><code>SETTINGS</code></a></summary><br>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -158,7 +158,7 @@ settings = [async_insert: 1]
 ## Caveats
 
 <details>
-<summary><code>NULL</code> handling in <code>RowBinary</code></summary>
+<summary><code>NULL</code> handling in <code>RowBinary</code></summary><br>
 
 Inserting `nil` into a `Nullable` column results in `NULL`. In all other cases the default value for the type is persisted.
 
@@ -189,9 +189,9 @@ selected_rows = [[nil, 0, 0]]
 </details>
 
 <details>
-<summary><code>UTF-8</code> handling in <code>RowBinary</code></summary>
+<summary>UTF-8 handling in <code>RowBinary</code></summary><br>
 
-Similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and text formats, when decoding `:string`, non-UTF8 characters are replaced with `�` (U+FFFD).
+When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types/string) columns or `:string` types (if manually provided in `:types` option), non UTF-8 characters are replaced with `�` (U+FFFD). This behaviour is similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and JSON formats.
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -206,9 +206,12 @@ utf8 = "a�b"
 
 %Ch.Result{rows: [[^utf8]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8")
+
+%Ch.Result{rows: %{"data" => [[^utf8]]}} =
+  pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact") |> Map.update!(:rows, &Jason.decode!/1)
 ```
 
-To get raw binary, use `:binary` type that skips UTF-8 checks.
+To get raw binary use `:binary` type that skips UTF-8 checks.
 
 ```elixir
 %Ch.Result{rows: [[^raw]]} =
@@ -220,7 +223,7 @@ To get raw binary, use `:binary` type that skips UTF-8 checks.
 ## Benchmarks
 
 <details>
-<summary><code>INSERT</code> 1 million rows <a href="https://github.com/ClickHouse/clickhouse-go#benchmark">(original)</a></summary>
+<summary><code>INSERT</code> 1 million rows <a href="https://github.com/ClickHouse/clickhouse-go#benchmark">(original)</a></summary><br>
 
 ```console
 $ MIX_ENV=bench mix run bench/insert_stream.exs
@@ -262,7 +265,7 @@ insert           0.89 - 2.96x slower +746.15 ms
 </details>
 
 <details>
-<summary><code>SELECT</code> 500, 500 thousand, and 500 million rows <a href="https://github.com/ClickHouse/ch-bench">(original)</a></summary>
+<summary><code>SELECT</code> 500, 500 thousand, and 500 million rows <a href="https://github.com/ClickHouse/ch-bench">(original)</a></summary><br>
 
 ```console
 $ MIX_ENV=bench mix run bench/stream.exs
