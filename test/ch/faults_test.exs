@@ -10,6 +10,8 @@ defmodule Ch.FaultsTest do
   @socket_opts [:binary, {:active, true}, {:packet, :raw}]
 
   setup do
+    # this setup makes the test act as MITM for clickhouse and ch's http conn (mint)
+    # allowing the test to intercept, slow down, and modify packets to cause failures
     {:ok, clickhouse} = :gen_tcp.connect({127, 0, 0, 1}, 8123, @socket_opts)
     {:ok, listen} = :gen_tcp.listen(0, @socket_opts)
     {:ok, port} = :inet.port(listen)
