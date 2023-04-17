@@ -7,6 +7,12 @@ Minimal HTTP ClickHouse client for Elixir.
 
 Used in [Ecto ClickHouse adapter.](https://github.com/plausible/chto)
 
+## Key features
+
+- RowBinary
+- Native query parameters
+- Per query settings
+
 ## Installation
 
 ```elixir
