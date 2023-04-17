@@ -343,7 +343,7 @@ defmodule Ch.FaultsTest do
 
       log =
         capture_async_log(fn ->
-          {:ok, conn} = Ch.start_link(port: port)
+          {:ok, conn} = Ch.start_link(database: Ch.Test.database(), port: port)
 
           # connect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -357,7 +357,11 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(conn, "insert into example(a,b) format RowBinary", {:raw, stream})
+                     Ch.query(
+                       conn,
+                       "insert into unknown_table(a,b) format RowBinary",
+                       {:raw, stream}
+                     )
           end)
 
           # reconnect
@@ -369,7 +373,11 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(conn, "insert into example(a,b) format RowBinary", {:raw, stream})
+                     Ch.query(
+                       conn,
+                       "insert into unknown_table(a,b) format RowBinary",
+                       {:raw, stream}
+                     )
 
             assert message =~ ~r/UNKNOWN_TABLE/
 
@@ -395,7 +403,7 @@ defmodule Ch.FaultsTest do
 
       log =
         capture_async_log(fn ->
-          {:ok, conn} = Ch.start_link(port: port)
+          {:ok, conn} = Ch.start_link(database: Ch.Test.database(), port: port)
 
           # connect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -406,7 +414,11 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(conn, "insert into example(a,b) format RowBinary", {:raw, stream})
+                     Ch.query(
+                       conn,
+                       "insert into unknown_table(a,b) format RowBinary",
+                       {:raw, stream}
+                     )
           end)
 
           # close after first packet from mint arrives
@@ -422,7 +434,11 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(conn, "insert into example(a,b) format RowBinary", {:raw, stream})
+                     Ch.query(
+                       conn,
+                       "insert into unknown_table(a,b) format RowBinary",
+                       {:raw, stream}
+                     )
 
             assert message =~ ~r/UNKNOWN_TABLE/
 

@@ -1,29 +1,17 @@
 defmodule Ch.Test do
-  # makes an http request to clickhouse bypassing dbconnection
+  @moduledoc false
+
+  def database, do: Application.fetch_env!(:ch, :database)
+
+  # makes a query in a short lived process so that pool automatically exits once finished
   def sql_exec(sql, params \\ [], opts \\ []) do
-    with {:ok, conn} <- Ch.Connection.connect(opts) do
-      query = Ch.Query.build(sql, opts[:command])
-      params = DBConnection.Query.encode(query, params, opts)
+    task =
+      Task.async(fn ->
+        {:ok, pid} = Ch.start_link(opts)
+        Ch.query(pid, sql, params, opts)
+      end)
 
-      try do
-        case Ch.Connection.handle_execute(query, params, opts, conn) do
-          {:ok, query, responses, _conn} ->
-            {:ok, DBConnection.Query.decode(query, responses, opts)}
-
-          {:error, reason, _conn} ->
-            {:error, reason}
-
-          {:disconnect, reason, _conn} ->
-            {:error, reason}
-        end
-      after
-        :ok = Ch.Connection.disconnect(:normal, conn)
-      end
-    end
-  end
-
-  def drop_table(table) do
-    sql_exec("drop table `#{table}`")
+    Task.await(task)
   end
 
   # TODO packet: :http?
