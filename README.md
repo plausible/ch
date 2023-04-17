@@ -88,7 +88,7 @@ Some links about SQL parser that is used to decode `VALUES` and its difference f
 </details>
 
 <details>
-<summary>Efficient <code>INSERT</code> as <a href="https://clickhouse.com/docs/en/interfaces/formats#rowbinary"><code>RowBinary</code></a></summary>
+<summary><code>INSERT</code> as <a href="https://clickhouse.com/docs/en/interfaces/formats#rowbinary"><code>RowBinary</code></a></summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -133,6 +133,8 @@ ten_encoded_chunks = Stream.take(encoded, 10)
 %Ch.Result{num_rows: 1000} =
   Ch.query(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", {:raw, ten_encoded_chunks})
 ```
+
+The query above makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting in a more controlled memory usage.
 
 </details>
 
