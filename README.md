@@ -20,10 +20,10 @@ end
 ## Usage
 
 <details>
-<summary>Start <code>DBConnection</code> pool</summary>
+<summary>Start <a href="https://github.com/elixir-ecto/db_connection"><code>DBConnection</code></a> pool</summary>
 
 ```elixir
-defaults = [
+ch_defaults = [
   scheme: "http",
   hostname: "localhost",
   port: 8123,
@@ -31,7 +31,12 @@ defaults = [
   settings: []
 ]
 
-{:ok, pid} = Ch.start_link(defaults)
+db_connection_defaults = [
+  pool_size: 1,
+  timeout: 15_000
+]
+
+{:ok, pid} = Ch.start_link(ch_defaults ++ db_connection_defaults)
 ```
 
 </details>
@@ -56,7 +61,7 @@ defaults = [
 
 <details>
 <summary><code>INSERT</code> rows as <code>VALUES</code></summary>
-
+     
 ```elixir
 {:ok, pid} = Ch.start_link()
 
@@ -75,10 +80,15 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 2})
 ```
 
+Some links about SQL parser that is used to decode `VALUES` and its difference from streaming parser:
+
+- https://clickhouse.com/docs/en/sql-reference/syntax
+- https://clickhouse.com/docs/en/interfaces/formats#data-format-values
+
 </details>
 
 <details>
-<summary>Efficient <code>INSERT</code> as <code>RowBinary</code></summary>
+<summary>Efficient <code>INSERT</code> as <a href="https://clickhouse.com/docs/en/interfaces/formats#rowbinary"><code>RowBinary</code></a></summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -92,7 +102,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 </details>
 
 <details>
-<summary><code>INSERT</code> with custom <code>FORMAT</code></summary>
+<summary><code>INSERT</code> with custom <a href="https://clickhouse.com/docs/en/interfaces/formats"><code>FORMAT</code></a></summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -127,16 +137,18 @@ ten_encoded_chunks = Stream.take(encoded, 10)
 </details>
 
 <details>
-<summary>Query with <code>SETTINGS</code></summary>
+<summary>Query with <a href="https://clickhouse.com/docs/en/operations/settings/settings"><code>SETTINGS</code></a></summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
+
+settings = [async_insert: 1]
 
 %Ch.Result{rows: [["async_insert", "Bool", "0"]]} =
   Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'")
 
 %Ch.Result{rows: [["async_insert", "Bool", "1"]]} =
-  Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: [async_insert: 1])
+  Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: settings)
 ```
 
 </details>
@@ -162,12 +174,13 @@ CREATE TABLE ch_nulls (
 """)
 
 types = [{:nullable, :u8}, :u8, :u8]
-rows = [[nil, nil, nil]]
+inserted_rows = [[nil, nil, nil]]
+selected_rows = [[nil, 0, 0]]
 
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_nulls(a, b, c) FORMAT RowBinary", rows, types: types)
+  Ch.query!(pid, "INSERT INTO ch_nulls(a, b, c) FORMAT RowBinary", inserted_rows, types: types)
 
-%Ch.Result{rows: [[nil, 0, 0]]} =
+%Ch.Result{rows: ^selected_rows} =
   Ch.query!(pid, "SELECT * FROM ch_nulls")
 ```
 
@@ -183,17 +196,20 @@ Similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/function
 
 Ch.query!(pid, "CREATE TABLE ch_utf8(str String) ENGINE = Memory")
 
-%Ch.Result{num_rows: 1} =
-  Ch.query!(pid, "INSERT INTO ch_utf8(str) FORMAT RowBinary", [["\x61\xF0\x80\x80\x80b"]], types: [:string])
+raw = "\x61\xF0\x80\x80\x80b"
+utf8 = "a�b"
 
-%Ch.Result{rows: [["a�b"]]} =
+%Ch.Result{num_rows: 1} =
+  Ch.query!(pid, "INSERT INTO ch_utf8(str) FORMAT RowBinary", [[raw]], types: [:string])
+
+%Ch.Result{rows: [[^utf8]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8")
 ```
 
 To get raw binary, use `:binary` type that skips UTF-8 checks.
 
 ```elixir
-%Ch.Result{rows: [["\x61\xF0\x80\x80\x80b"]]} =
+%Ch.Result{rows: [[^raw]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8", [], types: [:binary])
 ```
 
