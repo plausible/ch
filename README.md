@@ -37,7 +37,7 @@ defaults = [
 </details>
 
 <details>
-<summary>Select rows</summary>
+<summary><code>SELECT</code> rows</summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -55,7 +55,7 @@ defaults = [
 </details>
 
 <details>
-<summary>Insert rows</summary>
+<summary><code>INSERT</code> rows as <code>VALUES</code></summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -78,7 +78,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 </details>
 
 <details>
-<summary>Insert RowBinary</summary>
+<summary>Efficient <code>INSERT</code> as <code>RowBinary</code></summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -92,7 +92,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 </details>
 
 <details>
-<summary>Insert custom format</summary>
+<summary><code>INSERT</code> with custom <code>FORMAT</code></summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -108,7 +108,7 @@ csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
 </details>
 
 <details>
-<summary>Insert stream</summary>
+<summary><code>INSERT</code> as chunked <code>RowBinary</code> stream</summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -127,7 +127,7 @@ ten_encoded_chunks = Stream.take(encoded, 10)
 </details>
 
 <details>
-<summary>Query with settings</summary>
+<summary>Query with <code>SETTINGS</code></summary>
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -144,7 +144,7 @@ ten_encoded_chunks = Stream.take(encoded, 10)
 ## Caveats
 
 <details>
-<summary>NULL handling in RowBinary</summary>
+<summary><code>NULL</code> handling in <code>RowBinary</code></summary>
 
 Inserting `nil` into a `Nullable` column results in `NULL`. In all other cases the default value for the type is persisted.
 
@@ -174,7 +174,7 @@ rows = [[nil, nil, nil]]
 </details>
 
 <details>
-<summary>UTF-8 in RowBinary</summary>
+<summary><code>UTF-8</code> handling in <code>RowBinary</code></summary>
 
 Similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and text formats, when decoding `:string`, non-UTF8 characters are replaced with `�` (U+FFFD).
 
@@ -202,12 +202,12 @@ To get raw binary, use `:binary` type that skips UTF-8 checks.
 ## Benchmarks
 
 <details>
-<summary>Insert 1 million rows</summary>
+<summary><code>INSERT</code> 1 million rows <a href="https://github.com/ClickHouse/clickhouse-go#benchmark">(original)</a></summary>
 
 ```console
 $ MIX_ENV=bench mix run bench/insert_stream.exs
 
-This benchmarks is based on https://github.com/ClickHouse/clickhouse-go#benchmark
+This benchmark is based on https://github.com/ClickHouse/clickhouse-go#benchmark
 
 Operating System: macOS
 CPU Information: Apple M1
@@ -244,7 +244,7 @@ insert           0.89 - 2.96x slower +746.15 ms
 </details>
 
 <details>
-<summary>Select 500, 500 thousand, and 500 million rows</summary>
+<summary><code>SELECT</code> 500, 500 thousand, and 500 million rows <a href="https://github.com/ClickHouse/ch-bench">(original)</a></summary>
 
 ```console
 $ MIX_ENV=bench mix run bench/stream.exs
