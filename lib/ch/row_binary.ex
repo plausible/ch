@@ -348,6 +348,11 @@ defmodule Ch.RowBinary do
     decode_type(rest)
   end
 
+  defp decode_type("SimpleAggregateFunction(" <> rest) do
+    [_agg_fun, rest] = :binary.split(rest, [", ", ")"], [:global, :trim])
+    decode_type(rest)
+  end
+
   defp decode_type("Array(" <> rest) do
     {:array, decode_type(rest)}
   end
