@@ -5,7 +5,7 @@
 
 Minimal HTTP ClickHouse client for Elixir.
 
-See the [Ecto adapter](https://github.com/plausible/chto) as well!
+Used in [Ecto ClickHouse adapter.](https://github.com/plausible/chto)
 
 ## Installation
 
