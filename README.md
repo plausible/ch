@@ -121,7 +121,7 @@ ten_encoded_chunks = Stream.take(encoded, 10)
   Ch.query(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", {:raw, ten_encoded_chunks})
 ```
 
-This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting lower memory usage.
+This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting in lower memory usage.
 
 #### Query with custom [settings](https://clickhouse.com/docs/en/operations/settings/settings)
 
