@@ -40,14 +40,45 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} =
              Ch.query(conn, "select {a:Date32}", %{"a" => ~D[2022-01-01]})
 
-    assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00]]]}} =
-             Ch.query(conn, "select {a:DateTime}", %{"a" => ~N[2022-01-01 12:00:00]})
+    naive_noon = ~N[2022-01-01 12:00:00]
 
-    assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00.123000]]]}} =
-             Ch.query(conn, "select {a:DateTime64(3)}", %{"a" => ~N[2022-01-01 12:00:00.123]})
+    # datetimes in params are sent in text and ClickHouse translates them to UTC from server timezone by default
+    # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
+    #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
+    assert {:ok, %{num_rows: 1, rows: [[naive_datetime]], headers: headers}} =
+             Ch.query(conn, "select {naive:DateTime}", %{"naive" => naive_noon})
+
+    # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
+    # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
+    {_, timezone} = List.keyfind!(headers, "x-clickhouse-timezone", 0)
+
+    assert naive_datetime ==
+             naive_noon
+             |> DateTime.from_naive!(timezone)
+             |> DateTime.shift_zone!("Etc/UTC")
+             |> DateTime.to_naive()
+
+    # when the timezone information is provided in the type, we don't need to rely on server timezone
+    assert {:ok, %{num_rows: 1, rows: [[bkk_datetime]]}} =
+             Ch.query(conn, "select {$0:DateTime('Asia/Bangkok')}", [naive_noon])
+
+    assert bkk_datetime == DateTime.from_naive!(naive_noon, "Asia/Bangkok")
 
     assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00Z]]]}} =
-             Ch.query(conn, "select {a:DateTime('UTC')}", %{"a" => ~U[2022-01-01 12:00:00Z]})
+             Ch.query(conn, "select {$0:DateTime('UTC')}", [naive_noon])
+
+    naive_noon_ms = ~N[2022-01-01 12:00:00.123]
+
+    assert {:ok, %{num_rows: 1, rows: [[naive_datetime]]}} =
+             Ch.query(conn, "select {$0:DateTime64(3)}", [naive_noon_ms])
+
+    assert NaiveDateTime.compare(
+             naive_datetime,
+             naive_noon_ms
+             |> DateTime.from_naive!(timezone)
+             |> DateTime.shift_zone!("Etc/UTC")
+             |> DateTime.to_naive()
+           ) == :eq
 
     assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} =
              Ch.query(conn, "select {a:Array(String)}", %{"a" => ["a", "b'", "\\'c"]})
@@ -509,20 +540,32 @@ defmodule Ch.ConnectionTest do
                ]
              ]
 
-      assert {:ok, %{num_rows: 1, rows: [[~N[2022-12-12 12:00:00], "2022-12-12 12:00:00"]]}} =
-               Ch.query(conn, "select {dt:DateTime} as d, toString(d)", %{
-                 "dt" => ~N[2022-12-12 12:00:00]
-               })
+      naive_noon = ~N[2022-12-12 12:00:00]
+
+      # datetimes in params are sent in text and ClickHouse translates them to UTC from server timezone by default
+      # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
+      #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
+      assert {:ok,
+              %{num_rows: 1, rows: [[naive_datetime, "2022-12-12 12:00:00"]], headers: headers}} =
+               Ch.query(conn, "select {$0:DateTime} as d, toString(d)", [naive_noon])
+
+      # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
+      # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
+      {_, timezone} = List.keyfind!(headers, "x-clickhouse-timezone", 0)
+
+      assert naive_datetime ==
+               naive_noon
+               |> DateTime.from_naive!(timezone)
+               |> DateTime.shift_zone!("Etc/UTC")
+               |> DateTime.to_naive()
 
       assert {:ok, %{num_rows: 1, rows: [[~U[2022-12-12 12:00:00Z], "2022-12-12 12:00:00"]]}} =
-               Ch.query(conn, "select {dt:DateTime('UTC')} as d, toString(d)", %{
-                 "dt" => ~N[2022-12-12 12:00:00]
-               })
+               Ch.query(conn, "select {$0:DateTime('UTC')} as d, toString(d)", [naive_noon])
 
       assert {:ok, %{num_rows: 1, rows: rows}} =
-               Ch.query(conn, "select {dt:DateTime('Asia/Bangkok')} as d, toString(d)", %{
-                 "dt" => ~N[2022-12-12 12:00:00]
-               })
+               Ch.query(conn, "select {$0:DateTime('Asia/Bangkok')} as d, toString(d)", [
+                 naive_noon
+               ])
 
       assert rows == [
                [
@@ -531,11 +574,13 @@ defmodule Ch.ConnectionTest do
                ]
              ]
 
-      # unknown timezone
-      assert_raise ArgumentError, ~r/:time_zone_not_found/, fn ->
-        Ch.query(conn, "select {dt:DateTime('Asia/Hong_Kong')}", %{
-          "dt" => ~N[2022-12-12 12:00:00]
-        })
+      # simulate unknown timezone
+      prev_tz_db = Calendar.get_time_zone_database()
+      Calendar.put_time_zone_database(Calendar.UTCOnlyTimeZoneDatabase)
+      on_exit(fn -> Calendar.put_time_zone_database(prev_tz_db) end)
+
+      assert_raise ArgumentError, ~r/:utc_only_time_zone_database/, fn ->
+        Ch.query(conn, "select {$0:DateTime('Asia/Tokyo')}", [naive_noon])
       end
     end
 
@@ -549,25 +594,25 @@ defmodule Ch.ConnectionTest do
       assert {:ok,
               %{
                 num_rows: 2,
-                rows: [[~D[2100-01-01], 1, "2100-01-01"], [~D[2100-01-01], 2, "2100-01-01"]]
+                rows: [first_event, [~D[2100-01-01], 2, "2100-01-01"]]
               }} = Ch.query(conn, "SELECT *, toString(timestamp) FROM new")
 
+      # TODO use timezone info to be more exact
+      assert first_event in [
+               [~D[2099-12-31], 1, "2099-12-31"],
+               [~D[2100-01-01], 1, "2100-01-01"]
+             ]
+
       assert {:ok, %{num_rows: 1, rows: [[~D[1900-01-01], "1900-01-01"]]}} =
-               Ch.query(conn, "select {date:Date32} as d, toString(d)", %{
-                 "date" => ~D[1900-01-01]
-               })
+               Ch.query(conn, "select {$0:Date32} as d, toString(d)", [~D[1900-01-01]])
 
       # max
       assert {:ok, %{num_rows: 1, rows: [[~D[2299-12-31], "2299-12-31"]]}} =
-               Ch.query(conn, "select {date:Date32} as d, toString(d)", %{
-                 "date" => ~D[2299-12-31]
-               })
+               Ch.query(conn, "select {$0:Date32} as d, toString(d)", [~D[2299-12-31]])
 
       # min
       assert {:ok, %{num_rows: 1, rows: [[~D[1900-01-01], "1900-01-01"]]}} =
-               Ch.query(conn, "select {date:Date32} as d, toString(d)", %{
-                 "date" => ~D[1900-01-01]
-               })
+               Ch.query(conn, "select {$0:Date32} as d, toString(d)", [~D[1900-01-01]])
 
       Ch.query!(
         conn,
@@ -578,11 +623,17 @@ defmodule Ch.ConnectionTest do
       assert %{
                num_rows: 3,
                rows: [
-                 [~D[2100-01-01], 1, "2100-01-01"],
+                 first_event,
                  [~D[2100-01-01], 2, "2100-01-01"],
                  [~D[1960-01-01], 3, "1960-01-01"]
                ]
              } = Ch.query!(conn, "SELECT *, toString(timestamp) FROM new")
+
+      # TODO use timezone info to be more exact
+      assert first_event in [
+               [~D[2099-12-31], 1, "2099-12-31"],
+               [~D[2100-01-01], 1, "2100-01-01"]
+             ]
 
       assert %{num_rows: 1, rows: [[3]]} =
                Ch.query!(conn, "SELECT event_id FROM new WHERE timestamp = '1960-01-01'")
@@ -652,12 +703,25 @@ defmodule Ch.ConnectionTest do
              ]
 
       for precision <- 0..9 do
-        expected = ~N[2022-01-01 12:00:00]
+        naive_noon = ~N[2022-01-01 12:00:00]
 
-        assert {:ok, %{num_rows: 1, rows: [[datetime]]}} =
-                 Ch.query(conn, "select {dt:DateTime64(#{precision})}", %{"dt" => expected})
+        # datetimes in params are sent in text and ClickHouse translates them to UTC from server timezone by default
+        # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
+        #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
+        assert {:ok, %{num_rows: 1, rows: [[naive_datetime]], headers: headers}} =
+                 Ch.query(conn, "select {$0:DateTime64(#{precision})}", [naive_noon])
 
-        assert NaiveDateTime.compare(datetime, expected) == :eq
+        # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
+        # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
+        {_, timezone} = List.keyfind!(headers, "x-clickhouse-timezone", 0)
+
+        expected =
+          naive_noon
+          |> DateTime.from_naive!(timezone)
+          |> DateTime.shift_zone!("Etc/UTC")
+          |> DateTime.to_naive()
+
+        assert NaiveDateTime.compare(naive_datetime, expected) == :eq
       end
 
       assert {:ok,

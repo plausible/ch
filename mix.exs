@@ -39,7 +39,8 @@ defmodule Ch.MixProject do
       {:decimal, "~> 2.0"},
       {:benchee, "~> 1.1", only: [:bench]},
       {:dialyxir, "~> 1.2", only: [:dev], runtime: false},
-      {:ex_doc, ">= 0.0.0", only: :docs}
+      {:ex_doc, ">= 0.0.0", only: :docs},
+      {:tz, "~> 0.26.1", only: [:test]}
     ]
   end
 
