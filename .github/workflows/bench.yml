@@ -39,7 +39,7 @@ jobs:
             ${{ runner.os }}-mix-bench-${{ github.head_ref || github.ref }}-
             ${{ runner.os }}-mix-bench-refs/heads/master-
 
-      - run: mix deps.get
+      - run: mix deps.get --only $MIX_ENV
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
       - run: mkdir results

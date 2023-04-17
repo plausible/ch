@@ -331,8 +331,6 @@ defmodule Ch.ConnectionTest do
     end
 
     test "decimal", %{conn: conn} do
-      import RowBinary, only: [decimal: 1]
-
       assert {:ok, %{num_rows: 1, rows: [row]}} =
                Ch.query(conn, "SELECT toDecimal32(2, 4) AS x, x / 3, toTypeName(x)")
 
@@ -364,7 +362,7 @@ defmodule Ch.ConnectionTest do
                    [Decimal.new("2.6666")],
                    [Decimal.new("2.66666")]
                  ],
-                 types: [decimal(size: 32, scale: 4)]
+                 types: [{:decimal, _size = 32, _scale = 4}]
                )
 
       assert %{num_rows: 3, rows: rows} = Ch.query!(conn, "select * from decimal_t")
