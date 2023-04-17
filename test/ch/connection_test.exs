@@ -3,7 +3,7 @@ defmodule Ch.ConnectionTest do
   alias Ch.RowBinary
 
   setup do
-    {:ok, conn: start_supervised!(Ch)}
+    {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   test "select without params", %{conn: conn} do
@@ -114,8 +114,6 @@ defmodule Ch.ConnectionTest do
   test "create", %{conn: conn} do
     assert {:ok, %{num_rows: nil, rows: []}} =
              Ch.query(conn, "create table create_example(a UInt8) engine = Memory")
-
-    on_exit(fn -> Ch.Test.drop_table("create_example") end)
   end
 
   test "create with options", %{conn: conn} do
@@ -129,64 +127,70 @@ defmodule Ch.ConnectionTest do
 
   describe "insert" do
     setup %{conn: conn} do
-      Ch.query!(conn, "create table insert_t(a UInt8 default 1, b String) engine = Memory")
-      on_exit(fn -> Ch.Test.drop_table("insert_t") end)
+      table = "insert_t_#{System.unique_integer([:positive])}"
+
+      Ch.query!(
+        conn,
+        "create table #{table}(a UInt8 default 1, b String) engine = Memory"
+      )
+
+      {:ok, table: table}
     end
 
-    test "values", %{conn: conn} do
+    test "values", %{conn: conn, table: table} do
       assert {:ok, %{num_rows: 3}} =
                Ch.query(
                  conn,
-                 "insert into insert_t values (1, 'a'),(2,'b'),   (null,       null)"
+                 "insert into #{table} values (1, 'a'),(2,'b'),   (null,       null)"
                )
 
-      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from #{table}")
       assert rows == [[1, "a"], [2, "b"], [1, ""]]
 
       assert {:ok, %{num_rows: 2}} =
                Ch.query(
                  conn,
-                 "insert into insert_t(a, b) values ({$0:UInt8},{$1:String}),({$2:UInt8},{$3:String})",
+                 "insert into #{table}(a, b) values ({$0:UInt8},{$1:String}),({$2:UInt8},{$3:String})",
                  [4, "d", 5, "e"]
                )
 
-      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t where a >= 4")
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from #{table} where a >= 4")
       assert rows == [[4, "d"], [5, "e"]]
     end
 
-    test "when readonly", %{conn: conn} do
+    test "when readonly", %{conn: conn, table: table} do
       opts = [settings: [readonly: 1]]
 
       assert {:error, %Ch.Error{code: 164, message: message}} =
-               Ch.query(conn, "insert into insert_t values (1, 'a'), (2, 'b')", [], opts)
+               Ch.query(conn, "insert into #{table} values (1, 'a'), (2, 'b')", [], opts)
 
       assert message =~ "Cannot execute query in readonly mode."
     end
 
-    test "automatic RowBinary", %{conn: conn} do
-      stmt = "insert into insert_t(a, b) format RowBinary"
+    test "automatic RowBinary", %{conn: conn, table: table} do
+      stmt = "insert into #{table}(a, b) format RowBinary"
       types = [:u8, :string]
       rows = [[1, "a"], [2, "b"]]
       assert %{num_rows: 2} = Ch.query!(conn, stmt, rows, types: types)
-      assert %{rows: rows} = Ch.query!(conn, "select * from insert_t")
+      assert %{rows: rows} = Ch.query!(conn, "select * from #{table}")
       assert rows == [[1, "a"], [2, "b"]]
     end
 
-    test "manual RowBinary", %{conn: conn} do
-      stmt = "insert into insert_t(a, b) format RowBinary"
+    test "manual RowBinary", %{conn: conn, table: table} do
+      stmt = "insert into #{table}(a, b) format RowBinary"
 
       types = [:u8, :string]
       rows = [[1, "a"], [2, "b"]]
       data = RowBinary.encode_rows(rows, types)
 
       assert %{num_rows: 2} = Ch.query!(conn, stmt, {:raw, data})
-      assert %{rows: rows} = Ch.query!(conn, "select * from insert_t")
+      assert %{rows: rows} = Ch.query!(conn, "select * from #{table}")
       assert rows == [[1, "a"], [2, "b"]]
     end
 
     # hmmmmmmmmmmmmmmmm
     @tag skip: true
-    test "nullable rowbinary", %{conn: conn} do
+    test "nullable rowbinary", %{conn: conn, table: table} do
       types = [{:nullable, :u8}, {:nullable, :string}]
       rows = [[1, "a"], [2, "b"], [nil, nil]]
 
@@ -200,16 +204,16 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 3}} =
                Ch.query(
                  conn,
-                 "insert into insert_t format RowBinaryWithNamesAndTypes",
+                 "insert into #{table} format RowBinaryWithNamesAndTypes",
                  {:raw, data},
                  settings: [input_format_null_as_default: 1]
                )
 
-      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from #{table}")
       assert rows == nil
     end
 
-    test "chunked", %{conn: conn} do
+    test "chunked", %{conn: conn, table: table} do
       types = [:u8, :string]
       rows = [[1, "a"], [2, "b"], [3, "c"]]
 
@@ -219,30 +223,30 @@ defmodule Ch.ConnectionTest do
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
 
       assert {:ok, %{num_rows: 3}} =
-               Ch.query(conn, "insert into insert_t(a, b) format RowBinary", {:raw, stream})
+               Ch.query(conn, "insert into #{table}(a, b) format RowBinary", {:raw, stream})
 
-      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from #{table}")
       assert rows == [[1, "a"], [2, "b"], [3, "c"]]
     end
 
-    test "select", %{conn: conn} do
+    test "select", %{conn: conn, table: table} do
       assert {:ok, %{num_rows: 3}} =
-               Ch.query(conn, "insert into insert_t values (1, 'a'), (2, 'b'), (null, null)")
+               Ch.query(conn, "insert into #{table} values (1, 'a'), (2, 'b'), (null, null)")
 
       assert {:ok, %{num_rows: 3}} =
-               Ch.query(conn, "insert into insert_t(a, b) select a, b from insert_t")
+               Ch.query(conn, "insert into #{table}(a, b) select a, b from #{table}")
 
-      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from insert_t")
+      assert {:ok, %{rows: rows}} = Ch.query(conn, "select * from #{table}")
       assert rows == [[1, "a"], [2, "b"], [1, ""], [1, "a"], [2, "b"], [1, ""]]
 
       assert {:ok, %{num_rows: 2}} =
                Ch.query(
                  conn,
-                 "insert into insert_t(a, b) select a, b from insert_t where a > {$0:UInt8}",
+                 "insert into #{table}(a, b) select a, b from #{table} where a > {$0:UInt8}",
                  [1]
                )
 
-      assert {:ok, %{rows: new_rows}} = Ch.query(conn, "select * from insert_t")
+      assert {:ok, %{rows: new_rows}} = Ch.query(conn, "select * from #{table}")
       assert new_rows -- rows == [[2, "b"], [2, "b"]]
     end
   end
@@ -252,8 +256,6 @@ defmodule Ch.ConnectionTest do
       conn,
       "create table delete_t(a UInt8, b String) engine = MergeTree order by tuple()"
     )
-
-    on_exit(fn -> Ch.Test.drop_table("delete_t") end)
 
     assert {:ok, %{num_rows: 2}} = Ch.query(conn, "insert into delete_t values (1,'a'), (2,'b')")
 
@@ -314,7 +316,6 @@ defmodule Ch.ConnectionTest do
                Ch.query(conn, "select {a:FixedString(5)}", %{"a" => "aaaaa"})
 
       Ch.query!(conn, "create table fixed_string_t(a FixedString(3)) engine = Memory")
-      on_exit(fn -> Ch.Test.drop_table("fixed_string_t") end)
 
       stream =
         Stream.map([[""], ["a"], ["aa"], ["aaa"]], fn row ->
@@ -353,7 +354,6 @@ defmodule Ch.ConnectionTest do
       assert row == [Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(76, 4)"]
 
       Ch.query!(conn, "create table decimal_t(d Decimal32(4)) engine = Memory")
-      on_exit(fn -> Ch.Test.drop_table("decimal_t") end)
 
       assert %{num_rows: 3} =
                Ch.query!(
@@ -381,7 +381,6 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 1, rows: [[true, false]]}} = Ch.query(conn, "select true, false")
 
       Ch.query!(conn, "create table test_bool(A Int64, B Bool) engine = Memory")
-      on_exit(fn -> Ch.Test.drop_table("test_bool") end)
 
       Ch.query!(conn, "INSERT INTO test_bool VALUES (1, true),(2,0)")
 
@@ -421,8 +420,6 @@ defmodule Ch.ConnectionTest do
                |> Base.decode16!(case: :lower)
 
       Ch.query!(conn, " CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog")
-      on_exit(fn -> Ch.Test.drop_table("t_uuid") end)
-
       Ch.query!(conn, "INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'")
 
       assert {:ok, %{num_rows: 1, rows: [[<<_::16-bytes>>, "Example 1"]]}} =
@@ -451,8 +448,6 @@ defmodule Ch.ConnectionTest do
     @tag skip: true
     test "json", %{conn: conn} do
       Ch.query!(conn, "CREATE TABLE json(o JSON) ENGINE = Memory")
-      on_exit(fn -> Ch.Test.drop_table("json") end)
-
       Ch.query!(conn, ~s|INSERT INTO json VALUES ('{"a": 1, "b": { "c": 2, "d": [1, 2, 3] }}')|)
 
       assert {:ok, %{num_rows: 1, rows: [[1, 2, 3]]}} =
@@ -464,8 +459,6 @@ defmodule Ch.ConnectionTest do
 
     test "enum", %{conn: conn} do
       Ch.query!(conn, "CREATE TABLE t_enum(x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog")
-      on_exit(fn -> Ch.Test.drop_table("t_enum") end)
-
       Ch.query!(conn, "INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')")
 
       assert {:error,
@@ -501,11 +494,15 @@ defmodule Ch.ConnectionTest do
     @tag skip: true
     test "map", %{conn: conn} do
       Ch.query!(conn, "CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory")
-      on_exit(fn -> Ch.Test.drop_table("table_map") end)
 
       Ch.query!(
         conn,
-        "INSERT INTO table_map VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30})"
+        """
+        INSERT INTO table_map VALUES
+        ({'key1':1, 'key2':10}),
+        ({'key1':2,'key2':20}),
+        ({'key1':3,'key2':30})
+        """
       )
 
       assert {:ok, %{num_rows: 3, rows: [[10], [20], [30]]}} =
@@ -521,8 +518,6 @@ defmodule Ch.ConnectionTest do
         conn,
         "CREATE TABLE dt(`timestamp` DateTime('Asia/Istanbul'), `event_id` UInt8) ENGINE = TinyLog"
       )
-
-      on_exit(fn -> Ch.Test.drop_table("dt") end)
 
       Ch.query!(conn, "INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2)")
 
@@ -589,8 +584,6 @@ defmodule Ch.ConnectionTest do
     # TODO are negatives correct? what's the range?
     test "date32", %{conn: conn} do
       Ch.query!(conn, "CREATE TABLE new(`timestamp` Date32, `event_id` UInt8) ENGINE = TinyLog;")
-      on_exit(fn -> Ch.Test.drop_table("new") end)
-
       Ch.query!(conn, "INSERT INTO new VALUES (4102444800, 1), ('2100-01-01', 2)")
 
       assert {:ok,
@@ -645,18 +638,16 @@ defmodule Ch.ConnectionTest do
     test "datetime64", %{conn: conn} do
       Ch.query!(
         conn,
-        "CREATE TABLE dt(`timestamp` DateTime64(3, 'Asia/Istanbul'), `event_id` UInt8) ENGINE = TinyLog"
+        "CREATE TABLE datetime64_t(`timestamp` DateTime64(3, 'Asia/Istanbul'), `event_id` UInt8) ENGINE = TinyLog"
       )
-
-      on_exit(fn -> Ch.Test.drop_table("dt") end)
 
       Ch.query!(
         conn,
-        "INSERT INTO dt Values (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3)"
+        "INSERT INTO datetime64_t Values (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3)"
       )
 
       assert {:ok, %{num_rows: 3, rows: rows}} =
-               Ch.query(conn, "SELECT *, toString(timestamp) FROM dt")
+               Ch.query(conn, "SELECT *, toString(timestamp) FROM datetime64_t")
 
       assert rows == [
                [
@@ -678,7 +669,7 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "insert into dt(event_id, timestamp) format RowBinary",
+        "insert into datetime64_t(event_id, timestamp) format RowBinary",
         _rows = [
           [4, ~N[2021-01-01 12:00:00.123456]],
           [5, ~N[2021-01-01 12:00:00]]
@@ -689,7 +680,7 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 2, rows: rows}} =
                Ch.query(
                  conn,
-                 "SELECT *, toString(timestamp)  FROM dt WHERE timestamp > '2020-01-01'"
+                 "SELECT *, toString(timestamp)  FROM datetime64_t WHERE timestamp > '2020-01-01'"
                )
 
       assert rows == [
@@ -755,8 +746,6 @@ defmodule Ch.ConnectionTest do
         conn,
         "CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple()"
       )
-
-      on_exit(fn -> Ch.Test.drop_table("nullable") end)
 
       Ch.query!(conn, "INSERT INTO nullable VALUES (1) (NULL) (2) (NULL)")
 
@@ -886,10 +875,14 @@ defmodule Ch.ConnectionTest do
 
   describe "start_link/1" do
     test "can pass options to start_link/1" do
-      {:ok, _} = Ch.Test.sql_exec("CREATE DATABASE another_db")
-      on_exit(fn -> {:ok, _} = Ch.Test.sql_exec("DROP DATABASE another_db") end)
+      db = "#{Ch.Test.database()}_#{System.unique_integer([:positive])}"
+      {:ok, _} = Ch.Test.sql_exec("CREATE DATABASE {db:Identifier}", %{"db" => db})
 
-      {:ok, conn} = Ch.start_link(database: "another_db")
+      on_exit(fn ->
+        {:ok, _} = Ch.Test.sql_exec("DROP DATABASE {db:Identifier}", %{"db" => db})
+      end)
+
+      {:ok, conn} = Ch.start_link(database: db)
       Ch.query!(conn, "create table example(a UInt8) engine=Memory")
       assert {:ok, %{rows: [["example"]]}} = Ch.query(conn, "show tables")
     end

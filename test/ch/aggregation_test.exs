@@ -2,10 +2,10 @@ defmodule Ch.AggregationTest do
   use ExUnit.Case
 
   setup do
-    conn = start_supervised!(Ch)
+    conn = start_supervised!({Ch, database: Ch.Test.database()})
 
     create_table = """
-    create table ch_candle_fragments (
+    create table candle_fragments (
       ticker LowCardinality(String),
       time DateTime('UTC') CODEC(Delta, Default),
       high Float64 CODEC(Delta, Default),
@@ -17,10 +17,9 @@ defmodule Ch.AggregationTest do
     """
 
     Ch.query!(conn, create_table)
-    on_exit(fn -> Ch.Test.sql_exec("drop table ch_candle_fragments") end)
 
     create_table = """
-    CREATE MATERIALIZED VIEW ch_candles_one_hour_amt
+    CREATE MATERIALIZED VIEW candles_one_hour_amt
     (
       ticker LowCardinality(String),
       time DateTime('UTC') CODEC(Delta, Default),
@@ -39,15 +38,14 @@ defmodule Ch.AggregationTest do
     argMinState(t.open, t.time) as open,
     argMaxState(t.close, t.time) as close,
     min(t.low) as low
-    from ch_candle_fragments t
+    from candle_fragments t
     group by ticker, time
     """
 
     Ch.query!(conn, create_table)
-    on_exit(fn -> Ch.Test.sql_exec("drop table ch_candles_one_hour_amt") end)
 
     insert_query = """
-      insert into ch_candle_fragments
+      insert into candle_fragments
         (ticker, time, high, open, close, low)
       VALUES
       ('INTC', '2023-04-13 20:33:00', 32, 32, 32, 32),
@@ -72,7 +70,7 @@ defmodule Ch.AggregationTest do
     argMinMerge(t.open) as open,
     argMaxMerge(t.close) as close,
     min(t.low) as low
-    from ch_candles_one_hour_amt t
+    from candles_one_hour_amt t
     group by ticker, time
     """
 

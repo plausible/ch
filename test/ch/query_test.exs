@@ -46,7 +46,7 @@ defmodule Ch.QueryTest do
   # adapted from https://github.com/elixir-ecto/postgrex/blob/master/test/query_test.exs
   describe "query" do
     setup do
-      {:ok, conn: start_supervised!(Ch)}
+      {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
     end
 
     test "iodata", %{conn: conn} do
