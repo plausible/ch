@@ -797,18 +797,14 @@ defmodule Ch.ConnectionTest do
     test "decodes RowBinary", %{conn: conn} do
       stmt = "select number from system.numbers limit 1000"
 
-      # TODO ensure flattened
       rows =
         Ch.run(conn, fn conn ->
-          Ch.stream(conn, stmt, _params = [], types: [:u64]) |> Enum.into([])
+          conn
+          |> Ch.stream(stmt, _params = [], types: [:u64])
+          |> Enum.into([])
         end)
 
-      assert Enum.reject(rows, fn rows -> rows == [] end) == [
-               [
-                 Enum.map(0..511, &[&1]),
-                 Enum.map(512..999, &[&1])
-               ]
-             ]
+      assert List.flatten(rows) == Enum.into(0..999, [])
     end
   end
 
