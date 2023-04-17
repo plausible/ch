@@ -191,7 +191,7 @@ selected_rows = [[nil, 0, 0]]
 <details>
 <summary>UTF-8 handling in <code>RowBinary</code></summary><br>
 
-When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types/string) columns or `:string` types (if manually provided in `:types` option), non UTF-8 characters are replaced with `�` (U+FFFD). This behaviour is similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and JSON formats.
+When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types/string) columns or `:string` types (if manually provided in `:types` option), non UTF-8 characters are replaced with `�` (U+FFFD). This behaviour is similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and [JSON formats.](https://clickhouse.com/docs/en/interfaces/formats#json)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
