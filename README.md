@@ -1,7 +1,7 @@
 # Ch
 
-<!-- [![Hex Package](https://img.shields.io/hexpm/v/ch.svg)](https://hex.pm/packages/ch)
-     [![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/ch) -->
+[![Hex Package](https://img.shields.io/hexpm/v/ch.svg)](https://hex.pm/packages/ch)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/ch)
 
 Minimal HTTP ClickHouse client for Elixir.
 
@@ -19,8 +19,7 @@ end
 
 ## Usage
 
-<details>
-<summary>Start <a href="https://github.com/elixir-ecto/db_connection"><code>DBConnection</code></a> pool</summary><br>
+#### Start [DBConnection](https://github.com/elixir-ecto/db_connection) pool
 
 ```elixir
 ch_defaults = [
@@ -39,10 +38,7 @@ db_connection_defaults = [
 {:ok, pid} = Ch.start_link(ch_defaults ++ db_connection_defaults)
 ```
 
-</details>
-
-<details>
-<summary><code>SELECT</code> rows</summary><br>
+#### Select rows
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -57,11 +53,8 @@ db_connection_defaults = [
   Ch.query(pid, "SELECT * FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 3})
 ```
 
-</details>
+#### Insert rows
 
-<details>
-<summary><code>INSERT</code> rows as <code>VALUES</code></summary><br>
-     
 ```elixir
 {:ok, pid} = Ch.start_link()
 
@@ -80,15 +73,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 2})
 ```
 
-Some links about SQL parser that is used to decode `VALUES` and its difference from streaming parser:
-
-- https://clickhouse.com/docs/en/sql-reference/syntax
-- https://clickhouse.com/docs/en/interfaces/formats#data-format-values
-
-</details>
-
-<details>
-<summary><code>INSERT</code> as <a href="https://clickhouse.com/docs/en/interfaces/formats#rowbinary"><code>RowBinary</code></a></summary><br>
+#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary) (recommended)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -99,10 +84,9 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", [[0], [1]], types: [:u64])
 ```
 
-</details>
+Note that RowBinary format requires `:types` option to be provided.
 
-<details>
-<summary><code>INSERT</code> with custom <a href="https://clickhouse.com/docs/en/interfaces/formats"><code>FORMAT</code></a></summary><br>
+#### Insert rows in custom [format](https://clickhouse.com/docs/en/interfaces/formats)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -115,10 +99,7 @@ csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
   Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT CSV", {:raw, csv})
 ```
 
-</details>
-
-<details>
-<summary><code>INSERT</code> as chunked <code>RowBinary</code> stream</summary><br>
+#### Insert rows as chunked RowBinary stream
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -134,12 +115,9 @@ ten_encoded_chunks = Stream.take(encoded, 10)
   Ch.query(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", {:raw, ten_encoded_chunks})
 ```
 
-This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting in a more controlled memory usage.
+This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting lower memory usage.
 
-</details>
-
-<details>
-<summary>Query with <a href="https://clickhouse.com/docs/en/operations/settings/settings"><code>SETTINGS</code></a></summary><br>
+#### Query with custom [settings](https://clickhouse.com/docs/en/operations/settings/settings)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -153,16 +131,13 @@ settings = [async_insert: 1]
   Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: settings)
 ```
 
-</details>
-
 ## Caveats
 
-<details>
-<summary><code>NULL</code> handling in <code>RowBinary</code></summary><br>
+#### NULL in RowBinary
 
-Inserting `nil` into a `Nullable` column results in `NULL`. In all other cases the default value for the type is persisted.
+It's the same as in [`ch-go`](https://clickhouse.com/docs/en/integrations/go#nullable)
 
-Note that in the following example `DEFAULT 10` is ignored and `0` (the default value for `UInt8`) is stored instead.
+> At insert time, Nil can be passed for both the normal and Nullable version of a column. For the former, the default value for the type will be persisted, e.g., an empty string for string. For the nullable version, a NULL value will be stored in ClickHouse.
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -186,10 +161,9 @@ selected_rows = [[nil, 0, 0]]
   Ch.query!(pid, "SELECT * FROM ch_nulls")
 ```
 
-</details>
+Note that in this example `DEFAULT 10` is ignored and `0` (the default value for `UInt8`) is stored instead.
 
-<details>
-<summary>UTF-8 handling in <code>RowBinary</code></summary><br>
+#### UTF-8 in RowBinary
 
 When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types/string) columns or `:string` types (if manually provided in `:types` option), non UTF-8 characters are replaced with `�` (U+FFFD). This behaviour is similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and [JSON formats.](https://clickhouse.com/docs/en/interfaces/formats#json)
 
@@ -218,14 +192,12 @@ To get raw binary use `:binary` type that skips UTF-8 checks.
   Ch.query!(pid, "SELECT * FROM ch_utf8", [], types: [:binary])
 ```
 
-</details>
-
 ## Benchmarks
 
 <details>
-<summary><code>INSERT</code> 1 million rows <a href="https://github.com/ClickHouse/clickhouse-go#benchmark">(original)</a></summary><br>
+<summary><code>INSERT</code> 1 million rows <a href="https://github.com/ClickHouse/clickhouse-go#benchmark">(original)</a></summary>
 
-```console
+<pre><code>
 $ MIX_ENV=bench mix run bench/insert_stream.exs
 
 This benchmark is based on https://github.com/ClickHouse/clickhouse-go#benchmark
@@ -259,15 +231,15 @@ insert           0.89     1127.15 ms     ±3.52%     1110.76 ms     1183.62 ms
 Comparison:
 control          2.62
 encode           1.03 - 2.54x slower +588.49 ms
-insert           0.89 - 2.96x slower +746.15 ms
-```
+insert           0.89 - 2.96x slower +746.15 ms</code>
+</pre>
 
 </details>
 
 <details>
-<summary><code>SELECT</code> 500, 500 thousand, and 500 million rows <a href="https://github.com/ClickHouse/ch-bench">(original)</a></summary><br>
+<summary><code>SELECT</code> 500, 500 thousand, and 500 million rows <a href="https://github.com/ClickHouse/ch-bench">(original)</a></summary>
 
-```console
+<pre><code>
 $ MIX_ENV=bench mix run bench/stream.exs
 
 This benchmark is based on https://github.com/ClickHouse/ch-bench
@@ -329,9 +301,9 @@ stream with decode               0.0462        21.66 s     ±0.00%        21.66 
 Comparison:
 stream without decode              0.32
 stream with manual decode        0.0891 - 3.55x slower +8.06 s
-stream with decode               0.0462 - 6.84x slower +18.50 s
-```
+stream with decode               0.0462 - 6.84x slower +18.50 s</code>
+</pre>
 
 </details>
 
-<sub>[CI Results](https://github.com/plausible/ch/actions/workflows/bench.yml) (click the latest workflow run and scroll down to "Artifacts")</sub>
+[CI Results](https://github.com/plausible/ch/actions/workflows/bench.yml) (click the latest workflow run and scroll down to "Artifacts")

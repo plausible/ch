@@ -1,22 +1,50 @@
 defmodule Ch.RowBinary do
-  @moduledoc false
+  @moduledoc "Helpers for working with ClickHouse [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) format."
+
   # @compile {:bin_opt_info, true}
   @dialyzer :no_improper_lists
 
   import Bitwise
-  require Record
-
-  Record.defrecord(:string, [:size])
-  Record.defrecord(:decimal, [:size, :scale])
-  Record.defrecord(:datetime64, [:unit])
 
   @epoch_date ~D[1970-01-01]
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
   @epoch_utc_datetime DateTime.new!(@epoch_date, ~T[00:00:00])
 
+  @doc """
+  Encodes a single row to [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) as iodata.
+
+  Examples:
+
+      iex> encode_row([], [])
+      []
+
+      iex> encode_row([1], [:u8])
+      [<<1>>]
+
+      iex> encode_row([3, "hello"], [:u8, :string])
+      [<<3>>, [<<5>> | "hello"]]
+
+  """
+  def encode_row(row, types)
   def encode_row([el | els], [type | types]), do: [encode(type, el) | encode_row(els, types)]
   def encode_row([] = done, []), do: done
 
+  @doc """
+  Encodes multiple rows to [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) as iodata.
+
+  Examples:
+
+      iex> encode_rows([], [])
+      []
+
+      iex> encode_rows([[1]], [:u8])
+      [<<1>>]
+
+      iex> encode_rows([[3, "hello"], [4, "hi"]], [:u8, :string])
+      [<<3>>, ["\x05" | "hello"], <<4>>, [<<2>> | "hi"]]
+
+  """
+  def encode_rows(rows, types)
   def encode_rows([row | rows], types), do: encode_rows(row, types, rows, types)
   def encode_rows([] = done, _types), do: done
 
@@ -26,6 +54,7 @@ defmodule Ch.RowBinary do
 
   defp encode_rows([], [], rows, types), do: encode_rows(rows, types)
 
+  @doc false
   def encode(:varint, num) when is_integer(num) and num < 128, do: <<num>>
 
   def encode(:varint, num) when is_integer(num) do
@@ -40,16 +69,16 @@ defmodule Ch.RowBinary do
     end
   end
 
-  def encode(string(size: size), str) when byte_size(str) == size do
+  def encode({:string, size}, str) when byte_size(str) == size do
     str
   end
 
-  def encode(string(size: size), str) when byte_size(str) < size do
+  def encode({:string, size}, str) when byte_size(str) < size do
     to_pad = size - byte_size(str)
     [str | <<0::size(to_pad * 8)>>]
   end
 
-  def encode(string(size: size), nil), do: <<0::size(size * 8)>>
+  def encode({:string, size}, nil), do: <<0::size(size * 8)>>
 
   for size <- [8, 16, 32, 64, 128, 256] do
     def encode(unquote(:"u#{size}"), i) when is_integer(i) do
@@ -72,23 +101,23 @@ defmodule Ch.RowBinary do
     def encode(unquote(:"f#{size}"), nil), do: <<0::unquote(size)>>
   end
 
-  def encode(decimal(size: size, scale: scale), %Decimal{sign: sign, coef: coef, exp: exp})
+  def encode({:decimal, size, scale}, %Decimal{sign: sign, coef: coef, exp: exp})
       when scale == -exp do
     i = sign * coef
     <<i::size(size)-little>>
   end
 
-  def encode(decimal(size: size, scale: scale), %Decimal{sign: sign, coef: coef, exp: exp})
+  def encode({:decimal, size, scale}, %Decimal{sign: sign, coef: coef, exp: exp})
       when exp >= 0 do
     i = sign * coef * round(:math.pow(10, exp + scale))
     <<i::size(size)-little>>
   end
 
-  def encode(decimal(scale: scale) = t, %Decimal{} = d) do
+  def encode({:decimal, _size, scale} = t, %Decimal{} = d) do
     encode(t, Decimal.round(d, scale))
   end
 
-  def encode(decimal(size: size), nil), do: <<0::size(size)>>
+  def encode({:decimal, size, _scale}, nil), do: <<0::size(size)>>
 
   def encode(:boolean, true), do: <<1>>
   def encode(:boolean, false), do: <<0>>
@@ -117,15 +146,15 @@ defmodule Ch.RowBinary do
     encode(t, v)
   end
 
-  def encode(datetime64(unit: unit), %NaiveDateTime{} = datetime) do
+  def encode({:datetime64, unit}, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, unit)::64-little-signed>>
   end
 
-  def encode(datetime64(unit: unit), %DateTime{} = datetime) do
+  def encode({:datetime64, unit}, %DateTime{} = datetime) do
     <<DateTime.diff(datetime, @epoch_utc_datetime, unit)::64-little-signed>>
   end
 
-  def encode(datetime64(), nil), do: <<0::64>>
+  def encode({:datetime64, _unit}, nil), do: <<0::64>>
 
   def encode(:date, %Date{} = date) do
     <<Date.diff(date, @epoch_date)::16-little>>
@@ -212,6 +241,9 @@ defmodule Ch.RowBinary do
     {"Nothing", :nothing}
   ]
 
+  @doc false
+  def encode_type(type)
+
   for {encoded, decoded} <- scalar_types do
     for decoded <- List.wrap(decoded) do
       def encode_type(unquote(decoded)), do: unquote(encoded)
@@ -234,7 +266,7 @@ defmodule Ch.RowBinary do
 
   # TODO verify with custom precision Decimals
   for {size, precision} <- [{32, 9}, {64, 18}, {128, 38}, {256, 76}] do
-    def encode_type(decimal(size: unquote(size), scale: scale)) do
+    def encode_type({:decimal, unquote(size), scale}) do
       [
         unquote("Decimal(#{precision}, "),
         String.Chars.Integer.to_string(scale),
@@ -245,9 +277,29 @@ defmodule Ch.RowBinary do
 
   # TODO datetime64, enum, etc.
 
+  @doc """
+  Decodes [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinarywithnamesandtypes) into rows.
+
+  Example:
+
+      iex> decode_rows(<<1, 3, "1+1"::bytes, 5, "UInt8"::bytes, 2>>)
+      [[2]]
+
+  """
+  def decode_rows(row_binary_with_names_and_types)
   def decode_rows(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
   def decode_rows(<<>>), do: []
 
+  @doc """
+  Decodes [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) into rows.
+
+  Example:
+
+      iex> decode_rows(<<1>>, [:u8])
+      [[1]]
+
+  """
+  def decode_rows(row_binary, types)
   def decode_rows(<<>>, _types), do: []
 
   def decode_rows(<<data::bytes>>, types) do
@@ -334,14 +386,14 @@ defmodule Ch.RowBinary do
 
   defp decode_type("FixedString(" <> rest) do
     [size] = :binary.split(rest, ")", [:global, :trim])
-    string(size: String.to_integer(size))
+    {:string, String.to_integer(size)}
   end
 
   defp decode_type("Decimal(" <> rest) do
     [precision, scale] = :binary.split(rest, [", ", ")"], [:global, :trim])
     {scale, _} = Integer.parse(scale)
     precision = String.to_integer(precision)
-    decimal(size: decimal_size(precision), scale: scale)
+    {:decimal, decimal_size(precision), scale}
   end
 
   defp decode_type("LowCardinality(" <> rest) do
@@ -549,7 +601,7 @@ defmodule Ch.RowBinary do
         decode_binary_decode_rows(bin, types_rest, row, rows, types)
 
       # TODO utf8?
-      string(size: size) ->
+      {:string, size} ->
         <<s::size(size)-bytes, bin::bytes>> = bin
         decode_rows(types_rest, bin, [s | row], rows, types)
 
@@ -584,7 +636,7 @@ defmodule Ch.RowBinary do
 
         decode_rows(types_rest, bin, [dt | row], rows, types)
 
-      decimal(size: size, scale: scale) ->
+      {:decimal, size, scale} ->
         <<val::size(size)-little-signed, bin::bytes>> = bin
         sign = if val < 0, do: -1, else: 1
         d = Decimal.new(sign, abs(val), -scale)

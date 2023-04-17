@@ -1,5 +1,5 @@
 defmodule Ch do
-  @moduledoc "Minimal HTTP ClickHouse client"
+  @moduledoc "Minimal HTTP ClickHouse client."
   alias Ch.{Connection, Query, Result}
 
   @doc """
@@ -7,14 +7,15 @@ defmodule Ch do
 
   ## Options
 
-    * `:hostname` - server hostname, defaults to `localhost`
+    * `:hostname` - server hostname, defaults to `"localhost"`
     * `:port` - HTTP port, defualts to `8123`
     * `:scheme` - HTTP scheme, defaults to `"http"`
     * `:database` - Database, defaults to `"default"`
     * `:username` - Username
     * `:password` - User password
-    * `:settings` - Keyword list of settings
+    * `:settings` - Keyword list of ClickHouse settings
     * `:timeout` - HTTP receive timeout in milliseconds
+    * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
 
   """
   def start_link(opts \\ []) do
@@ -30,7 +31,7 @@ defmodule Ch do
 
   @doc """
   Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
-  `{:error, %Ch.Error{}}` if there was a database error.
+  `{:error, Exception.t()}` if there was a database error.
 
   ## Options
 
