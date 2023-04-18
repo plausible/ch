@@ -92,7 +92,7 @@ defmodule Ch.RowBinaryTest do
     encoded = [
       num_cols,
       Enum.map(1..num_cols, fn col -> encode(:string, "col#{col}") end),
-      Enum.map(types, fn type -> encode(:string, encode_type(type)) end),
+      Enum.map(types, fn type -> encode(:string, Ch.Types.encode(type)) end),
       encode_row(row, types)
     ]
 
@@ -224,8 +224,8 @@ defmodule Ch.RowBinaryTest do
         {"DateTime64(6)", {:datetime64, 1_000_000, nil}},
         {"DateTime64(3, 'UTC')", {:datetime64, 1000, "UTC"}},
         {"DateTime64(9, 'Asia/Tokyo')", {:datetime64, 1_000_000_000, "Asia/Tokyo"}},
-        {"Enum8('a' = 1, 'b' = 2)", {:enum8, %{1 => :a, 2 => :b}}},
-        {"Enum16('hello' = 2, 'world' = 3)", {:enum16, %{2 => :hello, 3 => :world}}},
+        {"Enum8('a' = 1, 'b' = 2)", {:enum8, %{1 => "a", 2 => "b"}}},
+        {"Enum16('hello' = 2, 'world' = 3)", {:enum16, %{2 => "hello", 3 => "world"}}},
         {"LowCardinality(String)", :string},
         {"LowCardinality(FixedString(2))", {:fixed_string, _size = 2}},
         {"LowCardinality(Date)", :date},
@@ -236,7 +236,7 @@ defmodule Ch.RowBinaryTest do
         {"Array(FixedString(2))", {:array, {:fixed_string, _size = 2}}},
         {"Array(LowCardinality(String))", {:array, :string}},
         {"Array(Enum8('hello' = 2, 'world' = 3))",
-         {:array, {:enum8, %{2 => :hello, 3 => :world}}}},
+         {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
         {"Array(Nothing)", {:array, :nothing}},
         {"Nullable(String)", {:nullable, :string}},
         {"Nullable(Float64)", {:nullable, :f64}},
@@ -246,22 +246,6 @@ defmodule Ch.RowBinaryTest do
       Enum.each(spec, fn {encoded, decoded} ->
         assert decode_types([encoded]) == [decoded]
       end)
-    end
-
-    test "raises on unsupported types" do
-      types = [
-        "Tuple(UInt8, String)",
-        "Tuple(UInt8, Nullable(Nothing))",
-        # TODO these values can be decoded already, just need to improve type decoding
-        "SimpleAggregateFunction(any, Map(String, UInt8))",
-        "Map(String, Enum8('hello' = 1, 'world' = 2))"
-      ]
-
-      for type <- types do
-        assert_raise ArgumentError, "#{type} type is not supported", fn ->
-          decode_types([type])
-        end
-      end
     end
 
     test "preserves order" do
@@ -281,7 +265,7 @@ defmodule Ch.RowBinaryTest do
       encoded = [
         num_cols,
         Enum.map(1..num_cols, fn col -> encode(:string, "col#{col}") end),
-        Enum.map(types, fn type -> encode(:string, encode_type(type)) end)
+        Enum.map(types, fn type -> encode(:string, Ch.Types.encode(type)) end)
       ]
 
       assert decode_rows(IO.iodata_to_binary(encoded)) == []

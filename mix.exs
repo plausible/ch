@@ -37,6 +37,7 @@ defmodule Ch.MixProject do
       {:db_connection, "~> 2.4"},
       {:jason, "~> 1.4"},
       {:decimal, "~> 2.0"},
+      {:ecto, "~> 3.10", optional: true},
       {:benchee, "~> 1.1", only: [:bench]},
       {:dialyxir, "~> 1.2", only: [:dev], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
