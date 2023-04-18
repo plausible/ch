@@ -69,16 +69,16 @@ defmodule Ch.RowBinary do
     end
   end
 
-  def encode({:string, size}, str) when byte_size(str) == size do
+  def encode({:fixed_string, size}, str) when byte_size(str) == size do
     str
   end
 
-  def encode({:string, size}, str) when byte_size(str) < size do
+  def encode({:fixed_string, size}, str) when byte_size(str) < size do
     to_pad = size - byte_size(str)
     [str | <<0::size(to_pad * 8)>>]
   end
 
-  def encode({:string, size}, nil), do: <<0::size(size * 8)>>
+  def encode({:fixed_string, size}, nil), do: <<0::size(size * 8)>>
 
   for size <- [8, 16, 32, 64, 128, 256] do
     def encode(unquote(:"u#{size}"), i) when is_integer(i) do
@@ -94,30 +94,48 @@ defmodule Ch.RowBinary do
   end
 
   for size <- [32, 64] do
-    def encode(unquote(:"f#{size}"), f) when is_number(f) do
+    type = :"f#{size}"
+
+    def encode(unquote(type), f) when is_number(f) do
       <<f::unquote(size)-little-signed-float>>
     end
 
-    def encode(unquote(:"f#{size}"), nil), do: <<0::unquote(size)>>
+    def encode(unquote(type), nil), do: <<0::unquote(size)>>
   end
 
-  def encode({:decimal, size, scale}, %Decimal{sign: sign, coef: coef, exp: exp})
-      when scale == -exp do
-    i = sign * coef
-    <<i::size(size)-little>>
+  # TODO do once
+  def encode({:decimal, precision, scale}, decimal) do
+    type =
+      case decimal_size(precision) do
+        32 -> :decimal32
+        64 -> :decimal64
+        128 -> :decimal128
+        256 -> :decimal256
+      end
+
+    encode({type, scale}, decimal)
   end
 
-  def encode({:decimal, size, scale}, %Decimal{sign: sign, coef: coef, exp: exp})
-      when exp >= 0 do
-    i = sign * coef * round(:math.pow(10, exp + scale))
-    <<i::size(size)-little>>
-  end
+  for size <- [32, 64, 128, 256] do
+    type = :"decimal#{size}"
 
-  def encode({:decimal, _size, scale} = t, %Decimal{} = d) do
-    encode(t, Decimal.round(d, scale))
-  end
+    def encode({unquote(type), scale} = t, %Decimal{sign: sign, coef: coef, exp: exp} = d) do
+      cond do
+        scale == -exp ->
+          i = sign * coef
+          <<i::unquote(size)-little>>
 
-  def encode({:decimal, size, _scale}, nil), do: <<0::size(size)>>
+        exp >= 0 ->
+          i = sign * coef * round(:math.pow(10, exp + scale))
+          <<i::unquote(size)-little>>
+
+        true ->
+          encode(t, Decimal.round(d, scale))
+      end
+    end
+
+    def encode({unquote(type), _scale}, nil), do: <<0::unquote(size)>>
+  end
 
   def encode(:boolean, true), do: <<1>>
   def encode(:boolean, false), do: <<0>>
@@ -138,31 +156,35 @@ defmodule Ch.RowBinary do
   def encode({:map, _k, _v}, []), do: <<0>>
   def encode({:map, _k, _v}, nil), do: <<0>>
 
+  # TODO it's forced to UTC on server, so it's equivalent to inserting utc datetime, doc it
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
   end
 
+  def encode(:datetime, %DateTime{time_zone: "Etc/UTC"} = datetime) do
+    <<DateTime.to_unix(datetime, :second)::32-little>>
+  end
+
   def encode(:datetime, %DateTime{} = datetime) do
-    <<DateTime.diff(datetime, @epoch_utc_datetime)::32-little>>
+    raise ArgumentError, "non-UTC timezones are not supported for encoding: #{datetime}"
   end
 
   def encode(:datetime, nil), do: <<0::32>>
 
-  # TODO right now the timezones are ignored during encoding
-  # assuming the user has provided the correct one
-  def encode({:datetime = t, _timezone}, v) do
-    encode(t, v)
+  # TODO it's forced to UTC on server, so it's equivalent to inserting utc datetime, doc it
+  def encode({:datetime64, precision}, %NaiveDateTime{} = datetime) do
+    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, time_unit(precision))::64-little-signed>>
   end
 
-  def encode({:datetime64, unit}, %NaiveDateTime{} = datetime) do
-    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, unit)::64-little-signed>>
+  def encode({:datetime64, precision}, %DateTime{time_zone: "Etc/UTC"} = datetime) do
+    <<DateTime.diff(datetime, @epoch_utc_datetime, time_unit(precision))::64-little-signed>>
   end
 
-  def encode({:datetime64, unit}, %DateTime{} = datetime) do
-    <<DateTime.diff(datetime, @epoch_utc_datetime, unit)::64-little-signed>>
+  def encode({:datetime64, _precision}, %DateTime{} = datetime) do
+    raise ArgumentError, "non-UTC timezones are not supported for encoding: #{datetime}"
   end
 
-  def encode({:datetime64, _unit}, nil), do: <<0::64>>
+  def encode({:datetime64, _precision}, nil), do: <<0::64>>
 
   def encode(:date, %Date{} = date) do
     <<Date.diff(date, @epoch_date)::16-little>>
@@ -289,17 +311,15 @@ defmodule Ch.RowBinary do
 
   def encode_type(:datetime), do: "DateTime"
 
-  def encode_type({:datetime, timezone}) when is_binary(timezone) do
-    ["DateTime('", timezone, "')"]
+  def encode_type({:fixed_string, size}) do
+    ["FixedString(", String.Chars.Integer.to_string(size), ?)]
   end
 
-  def encode_type({:datetime, nil}), do: "DateTime"
-  def encode_type({:string, size}), do: ["FixedString(", String.Chars.Integer.to_string(size), ?)]
   def encode_type(:date), do: "Date"
 
   # TODO verify with custom precision Decimals
   for {size, precision} <- [{32, 9}, {64, 18}, {128, 38}, {256, 76}] do
-    def encode_type({:decimal, unquote(size), scale}) do
+    def encode_type({unquote(:"decimal#{size}"), scale}) do
       [
         unquote("Decimal(#{precision}, "),
         String.Chars.Integer.to_string(scale),
@@ -336,8 +356,32 @@ defmodule Ch.RowBinary do
   def decode_rows(<<>>, _types), do: []
 
   def decode_rows(<<data::bytes>>, types) do
+    types = prepare_types_for_decoding(types)
     decode_rows(types, data, [], [], types)
   end
+
+  defp prepare_types_for_decoding([type | types]) do
+    [maybe_remap_type_for_decoding(type) | types]
+  end
+
+  defp prepare_types_for_decoding([] = done), do: done
+
+  defp maybe_remap_type_for_decoding(:datetime = t), do: {t, _tz = nil}
+
+  defp maybe_remap_type_for_decoding({:decimal = t, p, s}), do: {t, decimal_size(p), s}
+
+  defp maybe_remap_type_for_decoding({:decimal32 = t, s}), do: {t, 32, s}
+  defp maybe_remap_type_for_decoding({:decimal64 = t, s}), do: {t, 64, s}
+  defp maybe_remap_type_for_decoding({:decimal128 = t, s}), do: {t, 128, s}
+  defp maybe_remap_type_for_decoding({:decimal256 = t, s}), do: {t, 256, s}
+
+  defp maybe_remap_type_for_decoding({:datetime64 = t, p}), do: {t, time_unit(p), _tz = nil}
+
+  defp maybe_remap_type_for_decoding({e, mappings}) when e in [:enum8, :enum16] do
+    {e, Map.new(mappings, fn {k, v} -> {v, k} end)}
+  end
+
+  defp maybe_remap_type_for_decoding(type), do: type
 
   defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
 
@@ -406,12 +450,10 @@ defmodule Ch.RowBinary do
   defp decode_type("DateTime64(" <> rest, _original_type) do
     case :binary.split(rest, [", ", ")", "'"], [:global, :trim_all]) do
       [precision, timezone] ->
-        time_unit = round(:math.pow(10, String.to_integer(precision)))
-        {:datetime64, time_unit, timezone}
+        {:datetime64, time_unit(String.to_integer(precision)), timezone}
 
       [precision] ->
-        time_unit = round(:math.pow(10, String.to_integer(precision)))
-        {:datetime64, time_unit, nil}
+        {:datetime64, time_unit(String.to_integer(precision)), nil}
     end
   end
 
@@ -420,7 +462,7 @@ defmodule Ch.RowBinary do
 
   defp decode_type("FixedString(" <> rest, _original_type) do
     [size] = :binary.split(rest, ")", [:global, :trim])
-    {:string, String.to_integer(size)}
+    {:fixed_string, String.to_integer(size)}
   end
 
   defp decode_type("Decimal(" <> rest, _original_type) do
@@ -461,7 +503,7 @@ defmodule Ch.RowBinary do
       rest
       |> :binary.split(["' = ", ", '", ")"], [:global, :trim_all])
       |> Enum.chunk_every(2)
-      |> Map.new(fn [k, v] -> {String.to_integer(v), k} end)
+      |> Map.new(fn [k, v] -> {String.to_integer(v), String.to_atom(k)} end)
 
     {:enum8, mapping}
   end
@@ -471,7 +513,7 @@ defmodule Ch.RowBinary do
       rest
       |> :binary.split(["' = ", ", '", ")"], [:global, :trim_all])
       |> Enum.chunk_every(2)
-      |> Map.new(fn [k, v] -> {String.to_integer(v), k} end)
+      |> Map.new(fn [k, v] -> {String.to_integer(v), String.to_atom(k)} end)
 
     {:enum16, mapping}
   end
@@ -680,7 +722,7 @@ defmodule Ch.RowBinary do
         decode_binary_decode_rows(bin, types_rest, row, rows, types)
 
       # TODO utf8?
-      {:string, size} ->
+      {:fixed_string, size} ->
         <<s::size(size)-bytes, bin::bytes>> = bin
         decode_rows(types_rest, bin, [s | row], rows, types)
 
@@ -799,5 +841,12 @@ defmodule Ch.RowBinary do
       precision >= 10 -> 64
       true -> 32
     end
+  end
+
+  # TODO do it once
+  @compile inline: [time_unit: 1]
+  for precision <- 0..9 do
+    time_unit = round(:math.pow(10, precision))
+    defp time_unit(unquote(precision)), do: unquote(time_unit)
   end
 end

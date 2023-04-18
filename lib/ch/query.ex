@@ -190,8 +190,17 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp encode_param(%Date{} = date), do: date
   defp encode_param(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
 
+  defp encode_param(%DateTime{time_zone: "Etc/UTC", microsecond: microsecond} = dt) do
+    seconds = DateTime.to_unix(dt, :second)
+
+    case microsecond do
+      {val, size} -> Float.to_string((seconds * size + val) / size)
+      _ -> Integer.to_string(seconds)
+    end
+  end
+
   defp encode_param(%DateTime{} = dt) do
-    dt |> DateTime.to_naive() |> NaiveDateTime.to_iso8601()
+    raise ArgumentError, "non-UTC timezones are not supported for encoding: #{dt}"
   end
 
   defp encode_param(tuple) when is_tuple(tuple) do
