@@ -319,7 +319,7 @@ defmodule Ch.ConnectionTest do
 
       stream =
         Stream.map([[""], ["a"], ["aa"], ["aaa"]], fn row ->
-          RowBinary.encode_row(row, [{:string, 3}])
+          RowBinary.encode_row(row, [{:fixed_string, 3}])
         end)
 
       assert {:ok, %{num_rows: 4}} =
@@ -362,7 +362,7 @@ defmodule Ch.ConnectionTest do
                    [Decimal.new("2.6666")],
                    [Decimal.new("2.66666")]
                  ],
-                 types: [{:decimal, _size = 32, _scale = 4}]
+                 types: [{:decimal32, _scale = 4}]
                )
 
       assert %{num_rows: 3, rows: rows} = Ch.query!(conn, "select * from decimal_t")
@@ -467,7 +467,7 @@ defmodule Ch.ConnectionTest do
                     _
               }} = Ch.query(conn, "INSERT INTO t_enum values('a')")
 
-      assert {:ok, %{num_rows: 3, rows: [["hello"], ["world"], ["hello"]]}} =
+      assert {:ok, %{num_rows: 3, rows: [[:hello], [:world], [:hello]]}} =
                Ch.query(conn, "SELECT * FROM t_enum")
 
       assert {:ok, %{num_rows: 3, rows: [[1], [2], [1]]}} =
@@ -476,16 +476,16 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 1, rows: [["Enum8('a' = 1, 'b' = 2)"]]}} =
                Ch.query(conn, "SELECT toTypeName(CAST('a', 'Enum(\\'a\\' = 1, \\'b\\' = 2)'))")
 
-      assert {:ok, %{num_rows: 1, rows: [["a"]]}} =
+      assert {:ok, %{num_rows: 1, rows: [[:a]]}} =
                Ch.query(conn, "SELECT CAST('a', 'Enum(\\'a\\' = 1, \\'b\\' = 2)')")
 
-      assert {:ok, %{num_rows: 1, rows: [["b"]]}} =
+      assert {:ok, %{num_rows: 1, rows: [[:b]]}} =
                Ch.query(conn, "select {enum:Enum('a' = 1, 'b' = 2)}", %{"enum" => "b"})
 
-      assert {:ok, %{num_rows: 1, rows: [["b"]]}} =
+      assert {:ok, %{num_rows: 1, rows: [[:b]]}} =
                Ch.query(conn, "select {enum:Enum('a' = 1, 'b' = 2)}", %{"enum" => 2})
 
-      assert {:ok, %{num_rows: 1, rows: [["b"]]}} =
+      assert {:ok, %{num_rows: 1, rows: [[:b]]}} =
                Ch.query(conn, "select {enum:Enum16('a' = 1, 'b' = 2)}", %{"enum" => 2})
     end
 
@@ -709,7 +709,7 @@ defmodule Ch.ConnectionTest do
           [4, ~N[2021-01-01 12:00:00.123456]],
           [5, ~N[2021-01-01 12:00:00]]
         ],
-        types: [:u8, {:datetime64, :millisecond}]
+        types: [:u8, {:datetime64, 3}]
       )
 
       assert {:ok, %{num_rows: 2, rows: rows}} =

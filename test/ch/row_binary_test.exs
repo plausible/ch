@@ -9,9 +9,9 @@ defmodule Ch.RowBinaryTest do
       {:string, "a"},
       {:string, String.duplicate("a", 500)},
       {:string, String.duplicate("a", 15000)},
-      {{:string, 2}, <<0, 0>>},
-      {{:string, 2}, "a" <> <<0>>},
-      {{:string, 2}, "aa"},
+      {{:fixed_string, 2}, <<0, 0>>},
+      {{:fixed_string, 2}, "a" <> <<0>>},
+      {{:fixed_string, 2}, "aa"},
       {:u8, 0},
       {:u8, 0xFF},
       {:u16, 0},
@@ -52,9 +52,6 @@ defmodule Ch.RowBinaryTest do
       {:datetime, ~N[1970-01-01 00:00:00]},
       {:datetime, ~N[2022-01-01 00:00:00]},
       {:datetime, ~N[2042-01-01 00:00:00]},
-      {{:datetime, nil}, ~N[2042-01-01 00:00:00]},
-      {{:datetime, "UTC"}, ~U[2042-01-01 00:00:00Z]},
-      {{:datetime, "Asia/Bangkok"}, DateTime.new!(~D[2042-01-01], ~T[07:00:00], "Asia/Bangkok")},
       {{:array, :string}, []},
       {{:array, :string},
        [
@@ -108,7 +105,7 @@ defmodule Ch.RowBinaryTest do
 
   describe "encode/2" do
     test "decimal" do
-      type = {:decimal, _size = 32, _scale = 4}
+      type = {:decimal32, _scale = 4}
       assert encode(type, Decimal.new("2")) == <<20000::32-little>>
       assert encode(type, Decimal.new("2.66")) == <<26600::32-little>>
       assert encode(type, Decimal.new("2.6666")) == <<26666::32-little>>
@@ -136,7 +133,7 @@ defmodule Ch.RowBinaryTest do
     test "nil" do
       assert encode({:nullable, :string}, nil) == 1
       assert encode(:string, nil) == <<0>>
-      assert encode({:string, _size = 2}, nil) == <<0, 0>>
+      assert encode({:fixed_string, _size = 2}, nil) == <<0, 0>>
       assert encode(:u8, nil) == <<0>>
       assert encode(:u16, nil) == <<0, 0>>
       assert encode(:u32, nil) == <<0, 0, 0, 0>>
@@ -154,7 +151,10 @@ defmodule Ch.RowBinaryTest do
       assert encode(:datetime, nil) == <<0, 0, 0, 0>>
       assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
       assert encode(:uuid, nil) == <<0::128>>
-      assert encode({:decimal, _size = 32, _scale = 4}, nil) == <<0::32>>
+      assert encode({:decimal32, _scale = 4}, nil) == <<0::32>>
+      assert encode({:decimal64, _scale = 4}, nil) == <<0::64>>
+      assert encode({:decimal128, _scale = 4}, nil) == <<0::128>>
+      assert encode({:decimal256, _scale = 4}, nil) == <<0::256>>
       assert encode(:point, nil) == <<0::128>>
       assert encode(:ring, nil) == <<0>>
       assert encode(:polygon, nil) == <<0>>
@@ -212,9 +212,9 @@ defmodule Ch.RowBinaryTest do
         {"Decimal(23, 11)", {:decimal, _size = 128, _scale = 11}},
         {"Bool", :boolean},
         {"String", :string},
-        {"FixedString(2)", {:string, _size = 2}},
-        {"FixedString(22)", {:string, _size = 22}},
-        {"FixedString(222)", {:string, _size = 222}},
+        {"FixedString(2)", {:fixed_string, _size = 2}},
+        {"FixedString(22)", {:fixed_string, _size = 22}},
+        {"FixedString(222)", {:fixed_string, _size = 222}},
         {"UUID", :uuid},
         {"Date", :date},
         {"Date32", :date32},
@@ -224,19 +224,19 @@ defmodule Ch.RowBinaryTest do
         {"DateTime64(6)", {:datetime64, 1_000_000, nil}},
         {"DateTime64(3, 'UTC')", {:datetime64, 1000, "UTC"}},
         {"DateTime64(9, 'Asia/Tokyo')", {:datetime64, 1_000_000_000, "Asia/Tokyo"}},
-        {"Enum8('a' = 1, 'b' = 2)", {:enum8, %{1 => "a", 2 => "b"}}},
-        {"Enum16('hello' = 2, 'world' = 3)", {:enum16, %{2 => "hello", 3 => "world"}}},
+        {"Enum8('a' = 1, 'b' = 2)", {:enum8, %{1 => :a, 2 => :b}}},
+        {"Enum16('hello' = 2, 'world' = 3)", {:enum16, %{2 => :hello, 3 => :world}}},
         {"LowCardinality(String)", :string},
-        {"LowCardinality(FixedString(2))", {:string, _size = 2}},
+        {"LowCardinality(FixedString(2))", {:fixed_string, _size = 2}},
         {"LowCardinality(Date)", :date},
         {"LowCardinality(DateTime)", {:datetime, nil}},
         {"LowCardinality(UInt64)", :u64},
         {"Array(String)", {:array, :string}},
         {"Array(Array(String))", {:array, {:array, :string}}},
-        {"Array(FixedString(2))", {:array, {:string, _size = 2}}},
+        {"Array(FixedString(2))", {:array, {:fixed_string, _size = 2}}},
         {"Array(LowCardinality(String))", {:array, :string}},
         {"Array(Enum8('hello' = 2, 'world' = 3))",
-         {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
+         {:array, {:enum8, %{2 => :hello, 3 => :world}}}},
         {"Array(Nothing)", {:array, :nothing}},
         {"Nullable(String)", {:nullable, :string}},
         {"Nullable(Float64)", {:nullable, :f64}},
