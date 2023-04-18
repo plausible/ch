@@ -762,6 +762,207 @@ defmodule Ch.ConnectionTest do
 
       assert count == 2 + 5
     end
+
+    test "can decode casted Point", %{conn: conn} do
+      assert Ch.query!(conn, "select cast((0, 1) as Point)").rows == [
+               _row = [_point = {0.0, 1.0}]
+             ]
+    end
+
+    test "can encode and then decode Point in query params", %{conn: conn} do
+      assert Ch.query!(conn, "select {$0:Point}", [{10, 10}]).rows == [
+               _row = [_point = {10.0, 10.0}]
+             ]
+    end
+
+    test "can insert and select Point", %{conn: conn} do
+      Ch.query!(conn, "CREATE TABLE geo_point (p Point) ENGINE = Memory()")
+      Ch.query!(conn, "INSERT INTO geo_point VALUES((10, 10))")
+      Ch.query!(conn, "INSERT INTO geo_point FORMAT RowBinary", [[{20, 20}]], types: [:point])
+
+      assert Ch.query!(conn, "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC").rows == [
+               [{10.0, 10.0}, "Point"],
+               [{20.0, 20.0}, "Point"]
+             ]
+
+      # to make our RowBinary is not garbage in garbage out we also test a text format response
+      assert conn
+             |> Ch.query!(
+               "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC FORMAT JSONCompact"
+             )
+             |> Map.fetch!(:rows)
+             |> Jason.decode!()
+             |> Map.fetch!("data") == [
+               [[10, 10], "Point"],
+               [[20, 20], "Point"]
+             ]
+    end
+
+    test "can decode casted Ring", %{conn: conn} do
+      ring = [{0.0, 1.0}, {10.0, 3.0}]
+      assert Ch.query!(conn, "select cast([(0,1),(10,3)] as Ring)").rows == [_row = [ring]]
+    end
+
+    test "can encode and then decode Ring in query params", %{conn: conn} do
+      ring = [{0.0, 1.0}, {10.0, 3.0}]
+      assert Ch.query!(conn, "select {$0:Ring}", [ring]).rows == [_row = [ring]]
+    end
+
+    test "can insert and select Ring", %{conn: conn} do
+      Ch.query!(conn, "CREATE TABLE geo_ring (r Ring) ENGINE = Memory()")
+      Ch.query!(conn, "INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)])")
+
+      ring = [{20, 20}, {0, 0}, {0, 20}]
+      Ch.query!(conn, "INSERT INTO geo_ring FORMAT RowBinary", [[ring]], types: [:ring])
+
+      assert Ch.query!(conn, "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC").rows == [
+               [[{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}], "Ring"],
+               [[{20.0, 20.0}, {0.0, 0.0}, {0.0, 20.0}], "Ring"]
+             ]
+
+      # to make our RowBinary is not garbage in garbage out we also test a text format response
+      assert Ch.query!(
+               conn,
+               "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC FORMAT JSONCompact"
+             ).rows
+             |> Jason.decode!()
+             |> Map.fetch!("data") == [
+               [[[0, 0], [10, 0], [10, 10], [0, 10]], "Ring"],
+               [[[20, 20], [0, 0], [0, 20]], "Ring"]
+             ]
+    end
+
+    test "can decode casted Polygon", %{conn: conn} do
+      polygon = [[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]]
+
+      assert Ch.query!(conn, "select cast([[(0,1),(10,3)],[],[(2,2)]] as Polygon)").rows == [
+               _row = [polygon]
+             ]
+    end
+
+    test "can encode and then decode Polygon in query params", %{conn: conn} do
+      polygon = [[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]]
+      assert Ch.query!(conn, "select {$0:Polygon}", [polygon]).rows == [_row = [polygon]]
+    end
+
+    test "can insert and select Polygon", %{conn: conn} do
+      Ch.query!(conn, "CREATE TABLE geo_polygon (pg Polygon) ENGINE = Memory()")
+
+      Ch.query!(
+        conn,
+        "INSERT INTO geo_polygon VALUES([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]])"
+      )
+
+      polygon = [[{0, 1.0}, {10, 3.2}], [], [{2, 2}]]
+      Ch.query!(conn, "INSERT INTO geo_polygon FORMAT RowBinary", [[polygon]], types: [:polygon])
+
+      assert Ch.query!(conn, "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC").rows ==
+               [
+                 [[[{0.0, 1.0}, {10.0, 3.2}], [], [{2.0, 2.0}]], "Polygon"],
+                 [
+                   [
+                     [{20.0, 20.0}, {50.0, 20.0}, {50.0, 50.0}, {20.0, 50.0}],
+                     [{30.0, 30.0}, {50.0, 50.0}, {50.0, 30.0}]
+                   ],
+                   "Polygon"
+                 ]
+               ]
+
+      # to make our RowBinary is not garbage in garbage out we also test a text format response
+      assert Ch.query!(
+               conn,
+               "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC FORMAT JSONCompact"
+             ).rows
+             |> Jason.decode!()
+             |> Map.fetch!("data") == [
+               [[[[0, 1], [10, 3.2]], [], [[2, 2]]], "Polygon"],
+               [
+                 [[[20, 20], [50, 20], [50, 50], [20, 50]], [[30, 30], [50, 50], [50, 30]]],
+                 "Polygon"
+               ]
+             ]
+    end
+
+    test "can decode casted MultiPolygon", %{conn: conn} do
+      multipolygon = [[[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]], [], [[{3, 3}]]]
+
+      assert Ch.query!(
+               conn,
+               "select cast([[[(0,1),(10,3)],[],[(2,2)]],[],[[(3, 3)]]] as MultiPolygon)"
+             ).rows == [
+               _row = [multipolygon]
+             ]
+    end
+
+    test "can encode and then decode MultiPolygon in query params", %{conn: conn} do
+      multipolygon = [[[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]], [], [[{3, 3}]]]
+
+      assert Ch.query!(conn, "select {$0:MultiPolygon}", [multipolygon]).rows == [
+               _row = [multipolygon]
+             ]
+    end
+
+    test "can insert and select MultiPolygon", %{conn: conn} do
+      Ch.query!(conn, "CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory()")
+
+      Ch.query!(
+        conn,
+        "INSERT INTO geo_multipolygon VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]])"
+      )
+
+      multipolygon = [[[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]], [], [[{3, 3}]]]
+
+      Ch.query!(conn, "INSERT INTO geo_multipolygon FORMAT RowBinary", [[multipolygon]],
+        types: [:multipolygon]
+      )
+
+      assert Ch.query!(conn, "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC").rows ==
+               [
+                 _row = [
+                   _multipolygon = [
+                     _polygon = [
+                       _ring = [{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}]
+                     ],
+                     [
+                       [{20.0, 20.0}, {50.0, 20.0}, {50.0, 50.0}, {20.0, 50.0}],
+                       [{30.0, 30.0}, {50.0, 50.0}, {50.0, 30.0}]
+                     ]
+                   ],
+                   "MultiPolygon"
+                 ],
+                 [
+                   [
+                     [
+                       [{0.0, 1.0}, {10.0, 3.0}],
+                       [],
+                       [{2.0, 2.0}]
+                     ],
+                     [],
+                     [
+                       [{3.0, 3.0}]
+                     ]
+                   ],
+                   "MultiPolygon"
+                 ]
+               ]
+
+      # to make our RowBinary is not garbage in garbage out we also test a text format response
+      assert Ch.query!(
+               conn,
+               "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC FORMAT JSONCompact"
+             ).rows
+             |> Jason.decode!()
+             |> Map.fetch!("data") == [
+               [
+                 [
+                   [[[0, 0], [10, 0], [10, 10], [0, 10]]],
+                   [[[20, 20], [50, 20], [50, 50], [20, 50]], [[30, 30], [50, 50], [50, 30]]]
+                 ],
+                 "MultiPolygon"
+               ],
+               [[[[[0, 1], [10, 3]], [], [[2, 2]]], [], [[[3, 3]]]], "MultiPolygon"]
+             ]
+    end
   end
 
   describe "options" do

@@ -186,6 +186,12 @@ defmodule Ch.RowBinary do
 
   def encode(:uuid, nil), do: <<0::128>>
 
+  def encode(:point, {x, y}), do: [encode(:f64, x) | encode(:f64, y)]
+  def encode(:point, nil), do: <<0::128>>
+  def encode(:ring, points), do: encode({:array, :point}, points)
+  def encode(:polygon, rings), do: encode({:array, :ring}, rings)
+  def encode(:multipolygon, polygons), do: encode({:array, :polygon}, polygons)
+
   def encode({:nullable, _type}, nil), do: 1
   def encode({:nullable, type}, value), do: [0 | encode(type, value)]
 
@@ -238,7 +244,11 @@ defmodule Ch.RowBinary do
     {"Bool", :boolean},
     {"IPv4", :ipv4},
     {"IPv6", :ipv6},
-    {"Nothing", :nothing}
+    {"Nothing", :nothing},
+    {"Point", :point},
+    {"Ring", {:array, :point}},
+    {"Polygon", {:array, {:array, :point}}},
+    {"MultiPolygon", {:array, {:array, {:array, :point}}}}
   ]
 
   @doc false
@@ -688,6 +698,10 @@ defmodule Ch.RowBinary do
       :ipv6 ->
         <<b1::16, b2::16, b3::16, b4::16, b5::16, b6::16, b7::16, b8::16, bin::bytes>> = bin
         decode_rows(types_rest, bin, [{b1, b2, b3, b4, b5, b6, b7, b8} | row], rows, types)
+
+      :point ->
+        <<x::64-little-float, y::64-little-float, bin::bytes>> = bin
+        decode_rows(types_rest, bin, [{x, y} | row], rows, types)
     end
   end
 

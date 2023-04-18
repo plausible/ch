@@ -194,6 +194,10 @@ defimpl DBConnection.Query, for: Ch.Query do
     dt |> DateTime.to_naive() |> NaiveDateTime.to_iso8601()
   end
 
+  defp encode_param(tuple) when is_tuple(tuple) do
+    IO.iodata_to_binary([?(, encode_array_params(Tuple.to_list(tuple)), ?)])
+  end
+
   defp encode_param(a) when is_list(a) do
     IO.iodata_to_binary([?[, encode_array_params(a), ?]])
   end
