@@ -127,7 +127,11 @@ Note that RowBinary format encoding requires `:types` option to be provided.
 | [Polygon](https://clickhouse.com/docs/en/sql-reference/data-types/geo#polygon)                                                                                                       | `:polygon`                                                                                                                                                 | `[[{4,2}]]`                                       |
 | [MultiPolygon](https://clickhouse.com/docs/en/sql-reference/data-types/geo#multipolygon)                                                                                             | `:multipolygon`                                                                                                                                            | `[[[{4,2}]]]`                                     |
 
-\*\*\*\* decoding requires a [timezone database;](https://hexdocs.pm/elixir/DateTime.html#module-time-zone-database) encoding raises for non-UTC timezone
+\* UTF-8 lalala
+
+\*\* zero padding lalala
+
+\*\*\* decoding requires a [timezone database;](https://hexdocs.pm/elixir/DateTime.html#module-time-zone-database) encoding raises for non-UTC timezone
 
 #### Insert rows in custom [format](https://clickhouse.com/docs/en/interfaces/formats)
 
