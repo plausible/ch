@@ -443,16 +443,12 @@ defmodule Ch.ConnectionTest do
               }} = Ch.query(conn, "SELECT * FROM t_uuid")
     end
 
-    @tag skip: true
     test "json", %{conn: conn} do
       Ch.query!(conn, "CREATE TABLE json(o JSON) ENGINE = Memory")
       Ch.query!(conn, ~s|INSERT INTO json VALUES ('{"a": 1, "b": { "c": 2, "d": [1, 2, 3] }}')|)
 
-      assert {:ok, %{num_rows: 1, rows: [[1, 2, 3]]}} =
-               Ch.query(conn, "SELECT o.a, o.b.c, o.b.d[3] FROM json")
-
-      # TODO
-      Ch.query(conn, "SELECT o FROM json")
+      assert Ch.query!(conn, "SELECT o.a, o.b.c, o.b.d[3] FROM json").rows == [[1, 2, 3]]
+      assert Ch.query!(conn, "SELECT o FROM json").rows == nil
     end
 
     test "enum", %{conn: conn} do

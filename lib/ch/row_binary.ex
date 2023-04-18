@@ -156,6 +156,18 @@ defmodule Ch.RowBinary do
   def encode({:map, _k, _v}, []), do: <<0>>
   def encode({:map, _k, _v}, nil), do: <<0>>
 
+  def encode({:tuple, _types} = t, v) when is_tuple(v) do
+    encode(t, Tuple.to_list(v))
+  end
+
+  def encode({:tuple, types}, values) when is_list(types) and is_list(values) do
+    encode_row(values, types)
+  end
+
+  def encode({:tuple, types}, nil) when is_list(types) do
+    Enum.map(types, fn type -> encode(type, nil) end)
+  end
+
   # TODO it's forced to UTC on server, so it's equivalent to inserting utc datetime, doc it
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
@@ -307,6 +319,11 @@ defmodule Ch.RowBinary do
 
   def encode_type({:map, key_type, value_type}) do
     ["Map(", encode_type(key_type), ", ", encode_type(value_type), ?)]
+  end
+
+  def encode_type({:tuple, types}) do
+    types = types |> Enum.map(&encode_type/1) |> Enum.intersperse(", ")
+    ["Tuple(", types, ?)]
   end
 
   def encode_type(:datetime), do: "DateTime"
@@ -492,6 +509,16 @@ defmodule Ch.RowBinary do
       [k, v] -> {:map, decode_type(k, original_type), decode_type(v, original_type)}
       _ -> raise ArgumentError, "#{original_type} type is not supported"
     end
+  end
+
+  defp decode_type("Tuple(" <> rest, original_type) do
+    # TODO this breaks on types with , in their name (Enum, DateTime64 with time zone, Decimal, Tuple, etc.)
+    types =
+      rest
+      |> :binary.split([", "], [:global, :trim])
+      |> Enum.map(&decode_type(&1, original_type))
+
+    {:tuple, types}
   end
 
   defp decode_type("Nullable(" <> rest, original_type) do
@@ -781,6 +808,13 @@ defmodule Ch.RowBinary do
       {:map_over, original_row} ->
         map = row |> Enum.chunk_every(2) |> Enum.map(fn [v, k] -> {k, v} end) |> Map.new()
         decode_rows(types_rest, bin, [map | original_row], rows, types)
+
+      {:tuple, types} ->
+        decode_rows(types ++ [{:tuple_over, row} | types_rest], bin, [], rows, types)
+
+      {:tuple_over, original_row} ->
+        tuple = row |> :lists.reverse() |> List.to_tuple()
+        decode_rows(types_rest, bin, [tuple | original_row], rows, types)
 
       {:datetime64, time_unit, timezone} ->
         <<s::64-little-signed, bin::bytes>> = bin
