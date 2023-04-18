@@ -489,26 +489,63 @@ defmodule Ch.ConnectionTest do
                Ch.query(conn, "select {enum:Enum16('a' = 1, 'b' = 2)}", %{"enum" => 2})
     end
 
-    @tag skip: true
     test "map", %{conn: conn} do
+      assert Ch.query!(
+               conn,
+               "SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map"
+             ).rows == [[%{1 => "Ready", 2 => "Steady", 3 => "Go"}]]
+
+      assert Ch.query!(conn, "select {map:Map(String, UInt8)}", %{
+               "map" => %{"pg" => 13, "hello" => 100}
+             }).rows == [[%{"hello" => 100, "pg" => 13}]]
+
       Ch.query!(conn, "CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory")
 
       Ch.query!(
         conn,
-        """
-        INSERT INTO table_map VALUES
-        ({'key1':1, 'key2':10}),
-        ({'key1':2,'key2':20}),
-        ({'key1':3,'key2':30})
-        """
+        "INSERT INTO table_map VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30})"
       )
 
-      assert {:ok, %{num_rows: 3, rows: [[10], [20], [30]]}} =
-               Ch.query(conn, "SELECT a['key2'] FROM table_map")
+      assert Ch.query!(conn, "SELECT a['key2'] FROM table_map").rows == [[10], [20], [30]]
 
-      assert_raise ArgumentError, "Map(String, UInt64) type is not supported", fn ->
-        Ch.query(conn, "select a from table_map")
-      end
+      assert Ch.query!(conn, "INSERT INTO table_map VALUES ({'key3':100}), ({})")
+
+      assert Ch.query!(conn, "SELECT a['key3'] FROM table_map ORDER BY 1 DESC").rows == [
+               [100],
+               [0],
+               [0],
+               [0],
+               [0]
+             ]
+
+      assert Ch.query!(
+               conn,
+               "INSERT INTO table_map FORMAT RowBinary",
+               _rows = [
+                 [%{"key10" => 20, "key20" => 40}],
+                 # empty map
+                 [%{}],
+                 # null map
+                 [nil],
+                 # empty proplist map
+                 [[]],
+                 [[{"key50", 100}]]
+               ],
+               types: [{:map, :string, :u64}]
+             )
+
+      assert Ch.query!(conn, "SELECT * FROM table_map ORDER BY a ASC").rows == [
+               [%{}],
+               [%{}],
+               [%{}],
+               [%{}],
+               [%{"key1" => 1, "key2" => 10}],
+               [%{"key1" => 2, "key2" => 20}],
+               [%{"key1" => 3, "key2" => 30}],
+               [%{"key10" => 20, "key20" => 40}],
+               [%{"key3" => 100}],
+               [%{"key50" => 100}]
+             ]
     end
 
     test "datetime", %{conn: conn} do
