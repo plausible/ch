@@ -85,7 +85,8 @@ defmodule Ch.RowBinaryTest do
       {{:nullable, :string}, nil},
       {{:nullable, :string}, "string"},
       {:point, {10, 10}},
-      {:point, {10.5, 11}}
+      {:point, {10.5, 11}},
+      {{:map, :string, :string}, %{"a" => "b", "c" => "d"}}
     ]
 
     num_cols = length(spec)
@@ -124,6 +125,14 @@ defmodule Ch.RowBinaryTest do
       assert encode(:uuid, hex) == encode(:uuid, uuid)
     end
 
+    test "map" do
+      assert encode({:map, :string, :string}, []) == <<0>>
+      assert encode({:map, :string, :string}, %{}) == <<0>>
+
+      assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
+               encode({:map, :string, :string}, [{"hello", "world"}])
+    end
+
     test "nil" do
       assert encode({:nullable, :string}, nil) == 1
       assert encode(:string, nil) == <<0>>
@@ -150,6 +159,7 @@ defmodule Ch.RowBinaryTest do
       assert encode(:ring, nil) == <<0>>
       assert encode(:polygon, nil) == <<0>>
       assert encode(:multipolygon, nil) == <<0>>
+      assert encode({:map, :string, :string}, nil) == <<0>>
     end
   end
 
@@ -245,10 +255,6 @@ defmodule Ch.RowBinaryTest do
 
       assert_raise ArgumentError, "Tuple(UInt8, Nullable(Nothing)) type is not supported", fn ->
         decode_types(["Tuple(UInt8, Nullable(Nothing))"])
-      end
-
-      assert_raise ArgumentError, "Map(String, UInt64) type is not supported", fn ->
-        decode_types(["Map(String, UInt64)"])
       end
     end
 

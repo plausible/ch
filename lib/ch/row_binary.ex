@@ -130,6 +130,14 @@ defmodule Ch.RowBinary do
   def encode({:array, _type}, []), do: <<0>>
   def encode({:array, _type}, nil), do: <<0>>
 
+  def encode({:map, k, v}, [_ | _] = m) do
+    [encode(:varint, length(m)) | encode_many_kv(m, k, v)]
+  end
+
+  def encode({:map, _k, _v} = t, m) when is_map(m), do: encode(t, Map.to_list(m))
+  def encode({:map, _k, _v}, []), do: <<0>>
+  def encode({:map, _k, _v}, nil), do: <<0>>
+
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
   end
@@ -198,6 +206,16 @@ defmodule Ch.RowBinary do
   defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
   defp encode_many([] = done, _type), do: done
 
+  defp encode_many_kv([{key, value} | rest], key_type, value_type) do
+    [
+      encode(key_type, key),
+      encode(value_type, value)
+      | encode_many_kv(rest, key_type, value_type)
+    ]
+  end
+
+  defp encode_many_kv([] = done, _key_type, _value_type), do: done
+
   @compile {:inline, d: 1}
 
   defp d(?0), do: 0
@@ -264,6 +282,11 @@ defmodule Ch.RowBinary do
 
   def encode_type({:nullable, type}), do: ["Nullable(", encode_type(type), ?)]
   def encode_type({:array, type}), do: ["Array(", encode_type(type), ?)]
+
+  def encode_type({:map, key_type, value_type}) do
+    ["Map(", encode_type(key_type), ", ", encode_type(value_type), ?)]
+  end
+
   def encode_type(:datetime), do: "DateTime"
 
   def encode_type({:datetime, timezone}) when is_binary(timezone) do
@@ -411,12 +434,19 @@ defmodule Ch.RowBinary do
   end
 
   defp decode_type("SimpleAggregateFunction(" <> rest) do
+    # TODO would break on type with " ," in the name, like Enum or Map or Decimal, etc.
     [_agg_fun, rest] = :binary.split(rest, [", ", ")"], [:global, :trim])
     decode_type(rest)
   end
 
   defp decode_type("Array(" <> rest) do
     {:array, decode_type(rest)}
+  end
+
+  defp decode_type("Map(" <> rest) do
+    # TODO would break on Enum key
+    [k, v] = :binary.split(rest, [", "])
+    {:map, decode_type(k), decode_type(v)}
   end
 
   defp decode_type("Nullable(" <> rest) do
@@ -535,6 +565,42 @@ defmodule Ch.RowBinary do
       decode_rows(types_rest, bin, [], rows, types)
     end
   end
+
+  @compile inline: [decode_map_decode_rows: 7]
+  defp decode_map_decode_rows(
+         <<0, bin::bytes>>,
+         _key_type,
+         _value_type,
+         types_rest,
+         row,
+         rows,
+         types
+       ) do
+    decode_rows(types_rest, bin, [%{} | row], rows, types)
+  end
+
+  for {pattern, size} <- varints do
+    defp decode_map_decode_rows(
+           <<unquote(pattern), bin::bytes>>,
+           key_type,
+           value_type,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      types_rest =
+        map_types(unquote(size), key_type, value_type) ++ [{:map_over, row} | types_rest]
+
+      decode_rows(types_rest, bin, [], rows, types)
+    end
+  end
+
+  defp map_types(count, key_type, value_type) when count > 0 do
+    [key_type, value_type | map_types(count - 1, key_type, value_type)]
+  end
+
+  defp map_types(0, _key_type, _value_types), do: []
 
   defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
     case type do
@@ -663,6 +729,13 @@ defmodule Ch.RowBinary do
 
       {:array_over, original_row} ->
         decode_rows(types_rest, bin, [:lists.reverse(row) | original_row], rows, types)
+
+      {:map, key_type, value_type} ->
+        decode_map_decode_rows(bin, key_type, value_type, types_rest, row, rows, types)
+
+      {:map_over, original_row} ->
+        map = row |> Enum.chunk_every(2) |> Enum.map(fn [v, k] -> {k, v} end) |> Map.new()
+        decode_rows(types_rest, bin, [map | original_row], rows, types)
 
       {:datetime64, time_unit, timezone} ->
         <<s::64-little-signed, bin::bytes>> = bin

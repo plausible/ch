@@ -202,6 +202,10 @@ defimpl DBConnection.Query, for: Ch.Query do
     IO.iodata_to_binary([?[, encode_array_params(a), ?]])
   end
 
+  defp encode_param(m) when is_map(m) do
+    IO.iodata_to_binary([?{, encode_map_params(Map.to_list(m)), ?}])
+  end
+
   defp encode_array_params([last]), do: encode_array_param(last)
 
   defp encode_array_params([s | rest]) do
@@ -210,11 +214,23 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   defp encode_array_params([] = empty), do: empty
 
+  defp encode_map_params([last]), do: encode_map_param(last)
+
+  defp encode_map_params([kv | rest]) do
+    [encode_map_param(kv), ?, | encode_map_params(rest)]
+  end
+
+  defp encode_map_params([] = empty), do: empty
+
   defp encode_array_param(s) when is_binary(s) do
     [?', to_iodata(s, 0, s, []), ?']
   end
 
   defp encode_array_param(v), do: encode_param(v)
+
+  defp encode_map_param({k, v}) do
+    [encode_array_param(k), ?:, encode_array_param(v)]
+  end
 
   @dialyzer {:no_improper_lists, to_iodata: 4, to_iodata: 5}
 
