@@ -83,7 +83,9 @@ defmodule Ch.RowBinaryTest do
        [~N[1970-01-01 12:23:34], ~N[2022-01-01 22:12:59], ~N[2042-01-01 04:23:01]]},
       {{:array, {:array, :string}}, [["a"], [], ["a", "b"]]},
       {{:nullable, :string}, nil},
-      {{:nullable, :string}, "string"}
+      {{:nullable, :string}, "string"},
+      {:point, {10, 10}},
+      {:point, {10.5, 11}}
     ]
 
     num_cols = length(spec)
@@ -144,6 +146,10 @@ defmodule Ch.RowBinaryTest do
       assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
       assert encode(:uuid, nil) == <<0::128>>
       assert encode({:decimal, _size = 32, _scale = 4}, nil) == <<0::32>>
+      assert encode(:point, nil) == <<0::128>>
+      assert encode(:ring, nil) == <<0>>
+      assert encode(:polygon, nil) == <<0>>
+      assert encode(:multipolygon, nil) == <<0>>
     end
   end
 
