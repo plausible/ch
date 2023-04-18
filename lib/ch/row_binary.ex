@@ -388,21 +388,22 @@ defmodule Ch.RowBinary do
 
   @doc false
   def decode_types([type | types]) do
-    [decode_type(type) | decode_types(types)]
+    [decode_type(type, type) | decode_types(types)]
   end
 
   def decode_types([] = done), do: done
 
   for {encoded, decoded} <- scalar_types do
-    defp decode_type(<<unquote(encoded)::bytes, _rest::bytes>>), do: unquote(decoded)
+    defp decode_type(<<unquote(encoded)::bytes, _rest::bytes>>, _original_type),
+      do: unquote(decoded)
   end
 
-  defp decode_type("DateTime('" <> rest) do
+  defp decode_type("DateTime('" <> rest, _original_type) do
     [timezone] = :binary.split(rest, ["'", ")"], [:global, :trim_all])
     {:datetime, timezone}
   end
 
-  defp decode_type("DateTime64(" <> rest) do
+  defp decode_type("DateTime64(" <> rest, _original_type) do
     case :binary.split(rest, [", ", ")", "'"], [:global, :trim_all]) do
       [precision, timezone] ->
         time_unit = round(:math.pow(10, String.to_integer(precision)))
@@ -414,46 +415,48 @@ defmodule Ch.RowBinary do
     end
   end
 
-  defp decode_type("DateTime" <> _), do: {:datetime, _timezone = nil}
-  defp decode_type("Date" <> _), do: :date
+  defp(decode_type("DateTime" <> _, _original_type), do: {:datetime, _timezone = nil})
+  defp decode_type("Date" <> _, _original_type), do: :date
 
-  defp decode_type("FixedString(" <> rest) do
+  defp decode_type("FixedString(" <> rest, _original_type) do
     [size] = :binary.split(rest, ")", [:global, :trim])
     {:string, String.to_integer(size)}
   end
 
-  defp decode_type("Decimal(" <> rest) do
+  defp decode_type("Decimal(" <> rest, _original_type) do
     [precision, scale] = :binary.split(rest, [", ", ")"], [:global, :trim])
     {scale, _} = Integer.parse(scale)
     precision = String.to_integer(precision)
     {:decimal, decimal_size(precision), scale}
   end
 
-  defp decode_type("LowCardinality(" <> rest) do
-    decode_type(rest)
+  defp decode_type("LowCardinality(" <> rest, original_type) do
+    decode_type(rest, original_type)
   end
 
-  defp decode_type("SimpleAggregateFunction(" <> rest) do
-    # TODO would break on type with " ," in the name, like Enum or Map or Decimal, etc.
-    [_agg_fun, rest] = :binary.split(rest, [", ", ")"], [:global, :trim])
-    decode_type(rest)
+  defp decode_type("SimpleAggregateFunction(" <> rest, original_type) do
+    case :binary.split(rest, [", ", ")"], [:global, :trim]) do
+      [_agg_fun, rest] -> decode_type(rest, original_type)
+      _ -> raise ArgumentError, "#{original_type} type is not supported"
+    end
   end
 
-  defp decode_type("Array(" <> rest) do
-    {:array, decode_type(rest)}
+  defp decode_type("Array(" <> rest, original_type) do
+    {:array, decode_type(rest, original_type)}
   end
 
-  defp decode_type("Map(" <> rest) do
-    # TODO would break on Enum key
-    [k, v] = :binary.split(rest, [", "])
-    {:map, decode_type(k), decode_type(v)}
+  defp decode_type("Map(" <> rest, original_type) do
+    case :binary.split(rest, [", "], [:global, :trim]) do
+      [k, v] -> {:map, decode_type(k, original_type), decode_type(v, original_type)}
+      _ -> raise ArgumentError, "#{original_type} type is not supported"
+    end
   end
 
-  defp decode_type("Nullable(" <> rest) do
-    {:nullable, decode_type(rest)}
+  defp decode_type("Nullable(" <> rest, original_type) do
+    {:nullable, decode_type(rest, original_type)}
   end
 
-  defp decode_type("Enum8('" <> rest) do
+  defp decode_type("Enum8('" <> rest, _original_type) do
     mapping =
       rest
       |> :binary.split(["' = ", ", '", ")"], [:global, :trim_all])
@@ -463,7 +466,7 @@ defmodule Ch.RowBinary do
     {:enum8, mapping}
   end
 
-  defp decode_type("Enum16('" <> rest) do
+  defp decode_type("Enum16('" <> rest, _original_type) do
     mapping =
       rest
       |> :binary.split(["' = ", ", '", ")"], [:global, :trim_all])
@@ -473,8 +476,8 @@ defmodule Ch.RowBinary do
     {:enum16, mapping}
   end
 
-  defp decode_type(type) do
-    raise ArgumentError, "#{type} type is not supported"
+  defp decode_type(_type, original_type) do
+    raise ArgumentError, "#{original_type} type is not supported"
   end
 
   @compile inline: [decode_string_decode_rows: 5]

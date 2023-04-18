@@ -249,12 +249,18 @@ defmodule Ch.RowBinaryTest do
     end
 
     test "raises on unsupported types" do
-      assert_raise ArgumentError, "Tuple(UInt8, String) type is not supported", fn ->
-        decode_types(["Tuple(UInt8, String)"])
-      end
+      types = [
+        "Tuple(UInt8, String)",
+        "Tuple(UInt8, Nullable(Nothing))",
+        # TODO these values can be decoded already, just need to improve type decoding
+        "SimpleAggregateFunction(any, Map(String, UInt8))",
+        "Map(String, Enum8('hello' = 1, 'world' = 2))"
+      ]
 
-      assert_raise ArgumentError, "Tuple(UInt8, Nullable(Nothing)) type is not supported", fn ->
-        decode_types(["Tuple(UInt8, Nullable(Nothing))"])
+      for type <- types do
+        assert_raise ArgumentError, "#{type} type is not supported", fn ->
+          decode_types([type])
+        end
       end
     end
 
