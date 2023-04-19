@@ -12,6 +12,7 @@ Used in [Ecto ClickHouse adapter.](https://github.com/plausible/chto)
 - RowBinary
 - Native query parameters
 - Per query settings
+- Minimal API
 
 ## Installation
 
@@ -28,20 +29,17 @@ end
 #### Start [DBConnection](https://github.com/elixir-ecto/db_connection) pool
 
 ```elixir
-ch_defaults = [
+defaults = [
   scheme: "http",
   hostname: "localhost",
   port: 8123,
   database: "default",
-  settings: []
-]
-
-db_connection_defaults = [
+  settings: [],
   pool_size: 1,
-  timeout: 15_000
+  timeout: :timer.seconds(15)
 ]
 
-{:ok, pid} = Ch.start_link(ch_defaults ++ db_connection_defaults)
+{:ok, pid} = Ch.start_link(defaults)
 ```
 
 #### Select rows
@@ -63,7 +61,7 @@ Note on datetime encoding in query parameters:
 
 - `%NaiveDateTime{}` is encoded as text to make it assume the column's or ClickHouse server's timezone
 - `%DateTime{time_zone: "Etc/UTC"}` is encoded as unix timestamp and is treated as UTC timestamp by ClickHouse
-- `%DateTime{}` (non UTC) raises an error
+- encoding non UTC `%DateTime{}` raises `ArgumentError`
 
 #### Insert rows
 
@@ -85,15 +83,21 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 2})
 ```
 
-#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary) (recommended)
+#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary) (efficient)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
 
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
+types = ["UInt64"]
+# or
+types = [Ch.Types.u64()]
+# or
+types = [:u64]
+
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", [[0], [1]], types: [:u64])
+  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", [[0], [1]], types: types)
 ```
 
 Note that RowBinary format encoding requires `:types` option to be provided.
@@ -155,7 +159,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
 stream = Stream.repeatedly(fn -> [:rand.uniform(100)] end)
 chunked = Stream.chunk_every(stream, 100)
-encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, [:u64]) end)
+encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
 ten_encoded_chunks = Stream.take(encoded, 10)
 
 %Ch.Result{num_rows: 1000} =
@@ -194,10 +198,10 @@ CREATE TABLE ch_nulls (
   a UInt8 NULL,
   b UInt8 DEFAULT 10,
   c UInt8 NOT NULL
-) ENGINE = Memory
+) ENGINE Memory
 """)
 
-types = [{:nullable, :u8}, :u8, :u8]
+types = ["Nullable(UInt8)", "UInt8", "UInt8"]
 inserted_rows = [[nil, nil, nil]]
 selected_rows = [[nil, 0, 0]]
 
@@ -208,22 +212,22 @@ selected_rows = [[nil, 0, 0]]
   Ch.query!(pid, "SELECT * FROM ch_nulls")
 ```
 
-Note that in this example `DEFAULT 10` is ignored and `0` (the default value for `UInt8`) is stored instead.
+Note that in this example `DEFAULT 10` is ignored and `0` (the default value for `UInt8`) is persisted instead.
 
 #### UTF-8 in RowBinary
 
-When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types/string) columns or `:string` types (if manually provided in `:types` option), non UTF-8 characters are replaced with `�` (U+FFFD). This behaviour is similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and [JSON formats.](https://clickhouse.com/docs/en/interfaces/formats#json)
+When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types/string) columns non UTF-8 characters are replaced with `�` (U+FFFD). This behaviour is similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and [JSON format.](https://clickhouse.com/docs/en/interfaces/formats#json)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
 
-Ch.query!(pid, "CREATE TABLE ch_utf8(str String) ENGINE = Memory")
+Ch.query!(pid, "CREATE TABLE ch_utf8(str String) ENGINE Memory")
 
-raw = "\x61\xF0\x80\x80\x80b"
+bin = "\x61\xF0\x80\x80\x80b"
 utf8 = "a�b"
 
 %Ch.Result{num_rows: 1} =
-  Ch.query!(pid, "INSERT INTO ch_utf8(str) FORMAT RowBinary", [[raw]], types: [:string])
+  Ch.query!(pid, "INSERT INTO ch_utf8(str) FORMAT RowBinary", [[bin]], types: ["String"])
 
 %Ch.Result{rows: [[^utf8]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8")
@@ -232,10 +236,10 @@ utf8 = "a�b"
   pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact") |> Map.update!(:rows, &Jason.decode!/1)
 ```
 
-To get raw binary use `:binary` type that skips UTF-8 checks.
+To get raw binary from `String` columns use `:binary` type that skips UTF-8 checks.
 
 ```elixir
-%Ch.Result{rows: [[^raw]]} =
+%Ch.Result{rows: [[^bin]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8", [], types: [:binary])
 ```
 

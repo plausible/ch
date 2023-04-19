@@ -76,4 +76,32 @@ defmodule Ch do
   def run(conn, f, opts \\ []) when is_function(f, 1) do
     DBConnection.run(conn, f, opts)
   end
+
+  # if Code.ensure_loaded?(Ecto.ParametirizedType) do
+  #   @behaviour Ecto.ParametirizedType
+
+  #   @impl true
+  #   def type(params), do: {:parametirized, Ch, params}
+
+  #   @impl true
+  #   def init(opts) do
+  #     clickhouse_type = Keyword.fetch!(opts, :type)
+  #     Ch.Types.decode(clickhouse_type)
+  #   end
+
+  #   @impl true
+  #   def load(value, params), do: Ecto.Type.load(base_type(params), value)
+
+  #   @impl true
+  #   def dump(value, params), do: Ecto.Type.dump(base_type(params), value)
+
+  #   @impl true
+  #   def cast(value, params), do: Ecto.Type.cast(base_type(params), value)
+
+  #   @impl true
+  #   def embed_as(_, _), do: :self
+
+  #   @impl true
+  #   def equal?(a, b, _), do: a == b
+  # end
 end
