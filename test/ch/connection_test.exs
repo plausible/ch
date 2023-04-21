@@ -197,7 +197,7 @@ defmodule Ch.ConnectionTest do
       data = [
         2,
         Enum.map(["a", "b"], fn col -> RowBinary.encode(:string, col) end),
-        Enum.map(types, fn type -> RowBinary.encode(:string, RowBinary.encode_type(type)) end),
+        Enum.map(types, fn type -> RowBinary.encode(:string, Ch.Types.encode(type)) end),
         RowBinary.encode_rows(rows, types)
       ]
 
@@ -448,11 +448,8 @@ defmodule Ch.ConnectionTest do
       Ch.query!(conn, "CREATE TABLE json(o JSON) ENGINE = Memory")
       Ch.query!(conn, ~s|INSERT INTO json VALUES ('{"a": 1, "b": { "c": 2, "d": [1, 2, 3] }}')|)
 
-      assert {:ok, %{num_rows: 1, rows: [[1, 2, 3]]}} =
-               Ch.query(conn, "SELECT o.a, o.b.c, o.b.d[3] FROM json")
-
-      # TODO
-      Ch.query(conn, "SELECT o FROM json")
+      assert Ch.query!(conn, "SELECT o.a, o.b.c, o.b.d[3] FROM json").rows == [[1, 2, 3]]
+      assert Ch.query!(conn, "SELECT o FROM json").rows == nil
     end
 
     test "enum", %{conn: conn} do
@@ -467,7 +464,7 @@ defmodule Ch.ConnectionTest do
                     _
               }} = Ch.query(conn, "INSERT INTO t_enum values('a')")
 
-      assert {:ok, %{num_rows: 3, rows: [[:hello], [:world], [:hello]]}} =
+      assert {:ok, %{num_rows: 3, rows: [["hello"], ["world"], ["hello"]]}} =
                Ch.query(conn, "SELECT * FROM t_enum")
 
       assert {:ok, %{num_rows: 3, rows: [[1], [2], [1]]}} =
@@ -476,16 +473,16 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 1, rows: [["Enum8('a' = 1, 'b' = 2)"]]}} =
                Ch.query(conn, "SELECT toTypeName(CAST('a', 'Enum(\\'a\\' = 1, \\'b\\' = 2)'))")
 
-      assert {:ok, %{num_rows: 1, rows: [[:a]]}} =
+      assert {:ok, %{num_rows: 1, rows: [["a"]]}} =
                Ch.query(conn, "SELECT CAST('a', 'Enum(\\'a\\' = 1, \\'b\\' = 2)')")
 
-      assert {:ok, %{num_rows: 1, rows: [[:b]]}} =
+      assert {:ok, %{num_rows: 1, rows: [["b"]]}} =
                Ch.query(conn, "select {enum:Enum('a' = 1, 'b' = 2)}", %{"enum" => "b"})
 
-      assert {:ok, %{num_rows: 1, rows: [[:b]]}} =
+      assert {:ok, %{num_rows: 1, rows: [["b"]]}} =
                Ch.query(conn, "select {enum:Enum('a' = 1, 'b' = 2)}", %{"enum" => 2})
 
-      assert {:ok, %{num_rows: 1, rows: [[:b]]}} =
+      assert {:ok, %{num_rows: 1, rows: [["b"]]}} =
                Ch.query(conn, "select {enum:Enum16('a' = 1, 'b' = 2)}", %{"enum" => 2})
     end
 
@@ -545,6 +542,43 @@ defmodule Ch.ConnectionTest do
                [%{"key10" => 20, "key20" => 40}],
                [%{"key3" => 100}],
                [%{"key50" => 100}]
+             ]
+    end
+
+    test "tuple", %{conn: conn} do
+      assert Ch.query!(conn, "SELECT tuple(1,'a') AS x, toTypeName(x)").rows == [
+               [{1, "a"}, "Tuple(UInt8, String)"]
+             ]
+
+      assert Ch.query!(conn, "SELECT {$0:Tuple(Int8, String)}", [{-1, "abs"}]).rows == [
+               [{-1, "abs"}]
+             ]
+
+      assert Ch.query!(conn, "SELECT tuple('a') AS x").rows == [[{"a"}]]
+
+      assert Ch.query!(conn, "SELECT tuple(1, NULL) AS x, toTypeName(x)").rows == [
+               [{1, nil}, "Tuple(UInt8, Nullable(Nothing))"]
+             ]
+
+      # TODO named tuples
+      Ch.query!(conn, "CREATE TABLE tuples_t (`a` Tuple(String, Int64)) ENGINE = Memory")
+
+      assert %{num_rows: 2} =
+               Ch.query!(conn, "INSERT INTO tuples_t VALUES (('y', 10)), (('x',-10))")
+
+      assert %{num_rows: 2} =
+               Ch.query!(
+                 conn,
+                 "INSERT INTO tuples_t FORMAT RowBinary",
+                 _rows = [[{"a", 20}], [{"b", 30}]],
+                 types: ["Tuple(String, Int64)"]
+               )
+
+      assert Ch.query!(conn, "SELECT a FROM tuples_t ORDER BY a.1 ASC").rows == [
+               [{"a", 20}],
+               [{"b", 30}],
+               [{"x", -10}],
+               [{"y", 10}]
              ]
     end
 

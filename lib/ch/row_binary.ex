@@ -18,16 +18,19 @@ defmodule Ch.RowBinary do
       iex> encode_row([], [])
       []
 
-      iex> encode_row([1], [:u8])
+      iex> encode_row([1], ["UInt8"])
       [<<1>>]
 
-      iex> encode_row([3, "hello"], [:u8, :string])
+      iex> encode_row([3, "hello"], ["UInt8", "String"])
       [<<3>>, [<<5>> | "hello"]]
 
   """
-  def encode_row(row, types)
-  def encode_row([el | els], [type | types]), do: [encode(type, el) | encode_row(els, types)]
-  def encode_row([] = done, []), do: done
+  def encode_row(row, types) do
+    _encode_row(row, encoding_types(types))
+  end
+
+  defp _encode_row([el | els], [type | types]), do: [encode(type, el) | _encode_row(els, types)]
+  defp _encode_row([] = done, []), do: done
 
   @doc """
   Encodes multiple rows to [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) as iodata.
@@ -37,22 +40,116 @@ defmodule Ch.RowBinary do
       iex> encode_rows([], [])
       []
 
-      iex> encode_rows([[1]], [:u8])
+      iex> encode_rows([[1]], ["UInt8"])
       [<<1>>]
 
-      iex> encode_rows([[3, "hello"], [4, "hi"]], [:u8, :string])
+      iex> encode_rows([[3, "hello"], [4, "hi"]], ["UInt8", "String"])
       [<<3>>, ["\x05" | "hello"], <<4>>, [<<2>> | "hi"]]
 
   """
-  def encode_rows(rows, types)
-  def encode_rows([row | rows], types), do: encode_rows(row, types, rows, types)
-  def encode_rows([] = done, _types), do: done
-
-  defp encode_rows([el | els], [t | ts], rows, types) do
-    [encode(t, el) | encode_rows(els, ts, rows, types)]
+  def encode_rows(rows, types) do
+    _encode_rows(rows, encoding_types(types))
   end
 
-  defp encode_rows([], [], rows, types), do: encode_rows(rows, types)
+  def _encode_rows([row | rows], types), do: _encode_rows(row, types, rows, types)
+  def _encode_rows([] = done, _types), do: done
+
+  defp _encode_rows([el | els], [t | ts], rows, types) do
+    [encode(t, el) | _encode_rows(els, ts, rows, types)]
+  end
+
+  defp _encode_rows([], [], rows, types), do: _encode_rows(rows, types)
+
+  defp encoding_types([type | types]) do
+    [encoding_type(type) | encoding_types(types)]
+  end
+
+  defp encoding_types([] = done), do: done
+
+  defp encoding_type(type) when is_binary(type) do
+    encoding_type(Ch.Types.decode(type))
+  end
+
+  defp encoding_type(t)
+       when t in [
+              :string,
+              :binary,
+              :boolean,
+              :uuid,
+              :date,
+              :datetime,
+              :date32,
+              :ipv4,
+              :ipv6,
+              :point,
+              :nothing
+            ],
+       do: t
+
+  defp encoding_type({:datetime = d, "UTC"}), do: d
+
+  defp encoding_type({:datetime, tz}) do
+    raise ArgumentError, "can't encode DateTime with non-UTC timezone: #{inspect(tz)}"
+  end
+
+  defp encoding_type({:fixed_string, _len} = t), do: t
+
+  for size <- [8, 16, 32, 64, 128, 256] do
+    defp encoding_type(unquote(:"u#{size}") = u), do: u
+    defp encoding_type(unquote(:"i#{size}") = i), do: i
+  end
+
+  for size <- [32, 64] do
+    defp encoding_type(unquote(:"f#{size}") = f), do: f
+  end
+
+  defp encoding_type({:array = a, t}), do: {a, encoding_type(t)}
+
+  defp encoding_type({:tuple = t, ts}) do
+    {t, Enum.map(ts, &encoding_type/1)}
+  end
+
+  defp encoding_type({:map = m, kt, vt}) do
+    {m, encoding_type(kt), encoding_type(vt)}
+  end
+
+  defp encoding_type({:nullable = n, t}), do: {n, encoding_type(t)}
+  defp encoding_type({:low_cardinality, t}), do: encoding_type(t)
+
+  defp encoding_type({:decimal, p, s}) do
+    case decimal_size(p) do
+      32 -> {:decimal32, s}
+      64 -> {:decimal64, s}
+      128 -> {:decimal128, s}
+      256 -> {:decimal256, s}
+    end
+  end
+
+  defp encoding_type({d, _scale} = t)
+       when d in [:decimal32, :decimal64, :decimal128, :decimal256],
+       do: t
+
+  defp encoding_type({:datetime64 = t, p}), do: {t, time_unit(p)}
+
+  defp encoding_type({:datetime64 = t, p, "UTC"}), do: {t, time_unit(p)}
+
+  defp encoding_type({:datetime64, _, tz}) do
+    raise ArgumentError, "can't encode DateTime64 with non-UTC timezone: #{inspect(tz)}"
+  end
+
+  defp encoding_type({e, mappings}) when e in [:enum8, :enum16] do
+    {e, Map.new(mappings)}
+  end
+
+  defp encoding_type({:simple_aggregate_function, _f, t}), do: encoding_type(t)
+
+  defp encoding_type(:ring), do: {:array, :point}
+  defp encoding_type(:polygon), do: {:array, {:array, :point}}
+  defp encoding_type(:multipolygon), do: {:array, {:array, {:array, :point}}}
+
+  defp encoding_type(type) do
+    raise ArgumentError, "unsupported type for encoding: #{inspect(type)}"
+  end
 
   @doc false
   def encode(:varint, num) when is_integer(num) and num < 128, do: <<num>>
@@ -103,7 +200,6 @@ defmodule Ch.RowBinary do
     def encode(unquote(type), nil), do: <<0::unquote(size)>>
   end
 
-  # TODO do once
   def encode({:decimal, precision, scale}, decimal) do
     type =
       case decimal_size(precision) do
@@ -156,7 +252,18 @@ defmodule Ch.RowBinary do
   def encode({:map, _k, _v}, []), do: <<0>>
   def encode({:map, _k, _v}, nil), do: <<0>>
 
-  # TODO it's forced to UTC on server, so it's equivalent to inserting utc datetime, doc it
+  def encode({:tuple, _types} = t, v) when is_tuple(v) do
+    encode(t, Tuple.to_list(v))
+  end
+
+  def encode({:tuple, types}, values) when is_list(types) and is_list(values) do
+    encode_row(values, types)
+  end
+
+  def encode({:tuple, types}, nil) when is_list(types) do
+    Enum.map(types, fn type -> encode(type, nil) end)
+  end
+
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
   end
@@ -171,13 +278,12 @@ defmodule Ch.RowBinary do
 
   def encode(:datetime, nil), do: <<0::32>>
 
-  # TODO it's forced to UTC on server, so it's equivalent to inserting utc datetime, doc it
-  def encode({:datetime64, precision}, %NaiveDateTime{} = datetime) do
-    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, time_unit(precision))::64-little-signed>>
+  def encode({:datetime64, time_unit}, %NaiveDateTime{} = datetime) do
+    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, time_unit)::64-little-signed>>
   end
 
-  def encode({:datetime64, precision}, %DateTime{time_zone: "Etc/UTC"} = datetime) do
-    <<DateTime.diff(datetime, @epoch_utc_datetime, time_unit(precision))::64-little-signed>>
+  def encode({:datetime64, time_unit}, %DateTime{time_zone: "Etc/UTC"} = datetime) do
+    <<DateTime.diff(datetime, @epoch_utc_datetime, time_unit)::64-little-signed>>
   end
 
   def encode({:datetime64, _precision}, %DateTime{} = datetime) do
@@ -263,73 +369,6 @@ defmodule Ch.RowBinary do
   defp d(?e), do: 14
   defp d(?f), do: 15
 
-  scalar_types = [
-    {"String", :string},
-    {"UUID", :uuid},
-    {"UInt8", :u8},
-    {"UInt16", :u16},
-    {"UInt32", :u32},
-    {"UInt64", :u64},
-    {"UInt128", :u128},
-    {"UInt256", :u256},
-    {"Int8", :i8},
-    {"Int16", :i16},
-    {"Int32", :i32},
-    {"Int64", :i64},
-    {"Int128", :i128},
-    {"Int256", :i256},
-    {"Float32", :f32},
-    {"Float64", :f64},
-    {"Date32", :date32},
-    {"Bool", :boolean},
-    {"IPv4", :ipv4},
-    {"IPv6", :ipv6},
-    {"Nothing", :nothing},
-    {"Point", :point},
-    {"Ring", {:array, :point}},
-    {"Polygon", {:array, {:array, :point}}},
-    {"MultiPolygon", {:array, {:array, {:array, :point}}}}
-  ]
-
-  @doc false
-  def encode_type(type)
-
-  for {encoded, decoded} <- scalar_types do
-    for decoded <- List.wrap(decoded) do
-      def encode_type(unquote(decoded)), do: unquote(encoded)
-    end
-  end
-
-  def encode_type(:binary), do: "String"
-
-  def encode_type({:nullable, type}), do: ["Nullable(", encode_type(type), ?)]
-  def encode_type({:array, type}), do: ["Array(", encode_type(type), ?)]
-
-  def encode_type({:map, key_type, value_type}) do
-    ["Map(", encode_type(key_type), ", ", encode_type(value_type), ?)]
-  end
-
-  def encode_type(:datetime), do: "DateTime"
-
-  def encode_type({:fixed_string, size}) do
-    ["FixedString(", String.Chars.Integer.to_string(size), ?)]
-  end
-
-  def encode_type(:date), do: "Date"
-
-  # TODO verify with custom precision Decimals
-  for {size, precision} <- [{32, 9}, {64, 18}, {128, 38}, {256, 76}] do
-    def encode_type({unquote(:"decimal#{size}"), scale}) do
-      [
-        unquote("Decimal(#{precision}, "),
-        String.Chars.Integer.to_string(scale),
-        ?)
-      ]
-    end
-  end
-
-  # TODO datetime64, enum, etc.
-
   @doc """
   Decodes [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinarywithnamesandtypes) into rows.
 
@@ -348,7 +387,7 @@ defmodule Ch.RowBinary do
 
   Example:
 
-      iex> decode_rows(<<1>>, [:u8])
+      iex> decode_rows(<<1>>, ["UInt8"])
       [[1]]
 
   """
@@ -356,32 +395,84 @@ defmodule Ch.RowBinary do
   def decode_rows(<<>>, _types), do: []
 
   def decode_rows(<<data::bytes>>, types) do
-    types = prepare_types_for_decoding(types)
+    types = decoding_types(types)
     decode_rows(types, data, [], [], types)
   end
 
-  defp prepare_types_for_decoding([type | types]) do
-    [maybe_remap_type_for_decoding(type) | types]
+  defp decoding_types([type | types]) do
+    [decoding_type(type) | types]
   end
 
-  defp prepare_types_for_decoding([] = done), do: done
+  defp decoding_types([] = done), do: done
 
-  defp maybe_remap_type_for_decoding(:datetime = t), do: {t, _tz = nil}
+  defp decoding_type(t) when is_binary(t) do
+    decoding_type(Ch.Types.decode(t))
+  end
 
-  defp maybe_remap_type_for_decoding({:decimal = t, p, s}), do: {t, decimal_size(p), s}
+  defp decoding_type(t)
+       when t in [
+              :string,
+              :binary,
+              :boolean,
+              :uuid,
+              :date,
+              :date32,
+              :ipv4,
+              :ipv6,
+              :point,
+              :nothing
+            ],
+       do: t
 
-  defp maybe_remap_type_for_decoding({:decimal32 = t, s}), do: {t, 32, s}
-  defp maybe_remap_type_for_decoding({:decimal64 = t, s}), do: {t, 64, s}
-  defp maybe_remap_type_for_decoding({:decimal128 = t, s}), do: {t, 128, s}
-  defp maybe_remap_type_for_decoding({:decimal256 = t, s}), do: {t, 256, s}
+  defp decoding_type({:datetime, _tz} = t), do: t
+  defp decoding_type({:fixed_string, _len} = t), do: t
 
-  defp maybe_remap_type_for_decoding({:datetime64 = t, p}), do: {t, time_unit(p), _tz = nil}
+  for size <- [8, 16, 32, 64, 128, 256] do
+    defp decoding_type(unquote(:"u#{size}") = u), do: u
+    defp decoding_type(unquote(:"i#{size}") = i), do: i
+  end
 
-  defp maybe_remap_type_for_decoding({e, mappings}) when e in [:enum8, :enum16] do
+  for size <- [32, 64] do
+    defp decoding_type(unquote(:"f#{size}") = f), do: f
+  end
+
+  defp decoding_type(:datetime = t), do: {t, _tz = nil}
+
+  defp decoding_type({:array = a, t}), do: {a, decoding_type(t)}
+
+  defp decoding_type({:tuple = t, ts}) do
+    {t, Enum.map(ts, &decoding_type/1)}
+  end
+
+  defp decoding_type({:map = m, kt, vt}) do
+    {m, decoding_type(kt), decoding_type(vt)}
+  end
+
+  defp decoding_type({:nullable = n, t}), do: {n, decoding_type(t)}
+  defp decoding_type({:low_cardinality, t}), do: decoding_type(t)
+
+  defp decoding_type({:decimal = t, p, s}), do: {t, decimal_size(p), s}
+  defp decoding_type({:decimal32, s}), do: {:decimal, 32, s}
+  defp decoding_type({:decimal64, s}), do: {:decimal, 64, s}
+  defp decoding_type({:decimal128, s}), do: {:decimal, 128, s}
+  defp decoding_type({:decimal256, s}), do: {:decimal, 256, s}
+
+  defp decoding_type({:datetime64 = t, p}), do: {t, time_unit(p), _tz = nil}
+  defp decoding_type({:datetime64 = t, p, tz}), do: {t, time_unit(p), tz}
+
+  defp decoding_type({e, mappings}) when e in [:enum8, :enum16] do
     {e, Map.new(mappings, fn {k, v} -> {v, k} end)}
   end
 
-  defp maybe_remap_type_for_decoding(type), do: type
+  defp decoding_type({:simple_aggregate_function, _f, t}), do: decoding_type(t)
+
+  defp decoding_type(:ring), do: {:array, :point}
+  defp decoding_type(:polygon), do: {:array, {:array, :point}}
+  defp decoding_type(:multipolygon), do: {:array, {:array, {:array, :point}}}
+
+  defp decoding_type(type) do
+    raise ArgumentError, "unsupported type for decoding: #{inspect(type)}"
+  end
 
   defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
 
@@ -432,95 +523,10 @@ defmodule Ch.RowBinary do
 
   @doc false
   def decode_types([type | types]) do
-    [decode_type(type, type) | decode_types(types)]
+    [decoding_type(Ch.Types.decode(type)) | decode_types(types)]
   end
 
   def decode_types([] = done), do: done
-
-  for {encoded, decoded} <- scalar_types do
-    defp decode_type(<<unquote(encoded)::bytes, _rest::bytes>>, _original_type),
-      do: unquote(decoded)
-  end
-
-  defp decode_type("DateTime('" <> rest, _original_type) do
-    [timezone] = :binary.split(rest, ["'", ")"], [:global, :trim_all])
-    {:datetime, timezone}
-  end
-
-  defp decode_type("DateTime64(" <> rest, _original_type) do
-    case :binary.split(rest, [", ", ")", "'"], [:global, :trim_all]) do
-      [precision, timezone] ->
-        {:datetime64, time_unit(String.to_integer(precision)), timezone}
-
-      [precision] ->
-        {:datetime64, time_unit(String.to_integer(precision)), nil}
-    end
-  end
-
-  defp(decode_type("DateTime" <> _, _original_type), do: {:datetime, _timezone = nil})
-  defp decode_type("Date" <> _, _original_type), do: :date
-
-  defp decode_type("FixedString(" <> rest, _original_type) do
-    [size] = :binary.split(rest, ")", [:global, :trim])
-    {:fixed_string, String.to_integer(size)}
-  end
-
-  defp decode_type("Decimal(" <> rest, _original_type) do
-    [precision, scale] = :binary.split(rest, [", ", ")"], [:global, :trim])
-    {scale, _} = Integer.parse(scale)
-    precision = String.to_integer(precision)
-    {:decimal, decimal_size(precision), scale}
-  end
-
-  defp decode_type("LowCardinality(" <> rest, original_type) do
-    decode_type(rest, original_type)
-  end
-
-  defp decode_type("SimpleAggregateFunction(" <> rest, original_type) do
-    case :binary.split(rest, [", ", ")"], [:global, :trim]) do
-      [_agg_fun, rest] -> decode_type(rest, original_type)
-      _ -> raise ArgumentError, "#{original_type} type is not supported"
-    end
-  end
-
-  defp decode_type("Array(" <> rest, original_type) do
-    {:array, decode_type(rest, original_type)}
-  end
-
-  defp decode_type("Map(" <> rest, original_type) do
-    case :binary.split(rest, [", "], [:global, :trim]) do
-      [k, v] -> {:map, decode_type(k, original_type), decode_type(v, original_type)}
-      _ -> raise ArgumentError, "#{original_type} type is not supported"
-    end
-  end
-
-  defp decode_type("Nullable(" <> rest, original_type) do
-    {:nullable, decode_type(rest, original_type)}
-  end
-
-  defp decode_type("Enum8('" <> rest, _original_type) do
-    mapping =
-      rest
-      |> :binary.split(["' = ", ", '", ")"], [:global, :trim_all])
-      |> Enum.chunk_every(2)
-      |> Map.new(fn [k, v] -> {String.to_integer(v), String.to_atom(k)} end)
-
-    {:enum8, mapping}
-  end
-
-  defp decode_type("Enum16('" <> rest, _original_type) do
-    mapping =
-      rest
-      |> :binary.split(["' = ", ", '", ")"], [:global, :trim_all])
-      |> Enum.chunk_every(2)
-      |> Map.new(fn [k, v] -> {String.to_integer(v), String.to_atom(k)} end)
-
-    {:enum16, mapping}
-  end
-
-  defp decode_type(_type, original_type) do
-    raise ArgumentError, "#{original_type} type is not supported"
-  end
 
   @compile inline: [decode_string_decode_rows: 5]
 
@@ -782,6 +788,13 @@ defmodule Ch.RowBinary do
         map = row |> Enum.chunk_every(2) |> Enum.map(fn [v, k] -> {k, v} end) |> Map.new()
         decode_rows(types_rest, bin, [map | original_row], rows, types)
 
+      {:tuple, tuple_types} ->
+        decode_rows(tuple_types ++ [{:tuple_over, row} | types_rest], bin, [], rows, types)
+
+      {:tuple_over, original_row} ->
+        tuple = row |> :lists.reverse() |> List.to_tuple()
+        decode_rows(types_rest, bin, [tuple | original_row], rows, types)
+
       {:datetime64, time_unit, timezone} ->
         <<s::64-little-signed, bin::bytes>> = bin
 
@@ -843,7 +856,6 @@ defmodule Ch.RowBinary do
     end
   end
 
-  # TODO do it once
   @compile inline: [time_unit: 1]
   for precision <- 0..9 do
     time_unit = round(:math.pow(10, precision))

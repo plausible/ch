@@ -12,6 +12,7 @@ Used in [Ecto ClickHouse adapter.](https://github.com/plausible/chto)
 - RowBinary
 - Native query parameters
 - Per query settings
+- Minimal API
 
 ## Installation
 
@@ -28,20 +29,17 @@ end
 #### Start [DBConnection](https://github.com/elixir-ecto/db_connection) pool
 
 ```elixir
-ch_defaults = [
+defaults = [
   scheme: "http",
   hostname: "localhost",
   port: 8123,
   database: "default",
-  settings: []
-]
-
-db_connection_defaults = [
+  settings: [],
   pool_size: 1,
-  timeout: 15_000
+  timeout: :timer.seconds(15)
 ]
 
-{:ok, pid} = Ch.start_link(ch_defaults ++ db_connection_defaults)
+{:ok, pid} = Ch.start_link(defaults)
 ```
 
 #### Select rows
@@ -63,7 +61,7 @@ Note on datetime encoding in query parameters:
 
 - `%NaiveDateTime{}` is encoded as text to make it assume the column's or ClickHouse server's timezone
 - `%DateTime{time_zone: "Etc/UTC"}` is encoded as unix timestamp and is treated as UTC timestamp by ClickHouse
-- `%DateTime{}` (non UTC) raises an error
+- encoding non UTC `%DateTime{}` raises `ArgumentError`
 
 #### Insert rows
 
@@ -85,48 +83,24 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 2})
 ```
 
-#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary) (recommended)
+#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary) (efficient)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
 
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
+types = ["UInt64"]
+# or
+types = [Ch.Types.u64()]
+# or
+types = [:u64]
+
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", [[0], [1]], types: [:u64])
+  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", [[0], [1]], types: types)
 ```
 
 Note that RowBinary format encoding requires `:types` option to be provided.
-
-#### Types
-
-| ClickHouse                                                                                                                                                                           | Ch                                                                                                                     | Elixir                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| [UInt8<br>UInt16<br>UInt32<br>UInt64<br>UInt128<br>UInt256<br>Int8<br>Int16<br>Int32<br>Int64<br>Int128<br>Int256](https://clickhouse.com/docs/en/sql-reference/data-types/int-uint) | `:u8`<br>`:u16`<br>`:u32`<br>`:u64`<br>`:u128`<br>`:u256`<br>`:i8`<br>`:i16`<br>`:i32`<br>`:i64`<br>`:i128`<br>`:i256` | `42`                                              |
-| [Float32<br>Float64](https://clickhouse.com/docs/en/sql-reference/data-types/float)                                                                                                  | `:f32`<br>`:f64`                                                                                                       | `42.0`                                            |
-| [Decimal(P, S)<br>Decimal32(S)<br>Decimal64(S)<br>Decimal128(S)<br>Decimal256(S)](https://clickhouse.com/docs/en/sql-reference/data-types/decimal)                                   | `{:decimal, p, s}`<br>`{:decimal32, s}`<br>`{:decimal64, s}`<br>`{:decimal128, s}`<br>`{:decimal256, s}`               | [`%Decimal{}`](https://github.com/ericmj/decimal) |
-| [Bool](https://clickhouse.com/docs/en/sql-reference/data-types/boolean)                                                                                                              | `:boolean`                                                                                                             | `true`                                            |
-| [String](https://clickhouse.com/docs/en/sql-reference/data-types/string)                                                                                                             | `:string`                                                                                                              | `"José"`                                          |
-| [FixedString(N)](https://clickhouse.com/docs/en/sql-reference/data-types/fixedstring)                                                                                                | `{:fixed_string, n}`                                                                                                   | `"BR"`                                            |
-| [UUID](https://clickhouse.com/docs/en/sql-reference/data-types/uuid)                                                                                                                 | `:uuid`                                                                                                                | `<<0::128>>`                                      |
-| [Date](https://clickhouse.com/docs/en/sql-reference/data-types/date)                                                                                                                 | `:date`                                                                                                                | `%Date{}`                                         |
-| [Date32](https://clickhouse.com/docs/en/sql-reference/data-types/date32)                                                                                                             | `:date32`                                                                                                              | `%Date{}`                                         |
-| [DateTime](https://clickhouse.com/docs/en/sql-reference/data-types/datetime)                                                                                                         | `:datetime`                                                                                                            | `%NaiveDateTime{}`                                |
-| [DateTime(timezone)](https://clickhouse.com/docs/en/sql-reference/data-types/datetime)                                                                                               | `:datetime` \*                                                                                                         | `%DateTime{}`                                     |
-| [DateTime64(precision)]()                                                                                                                                                            | `{:datetime64, precision}`                                                                                             | `%NaiveDateTime{}`                                |
-| [DateTime64(precision, timezone)]()                                                                                                                                                  | `{:datetime64, precision}` \*                                                                                          | `%DateTime{}`                                     |
-| [Enum('hello' = 1, 'world' = 2)<br>Enum8('hello' = 1, 'world' = 2)<br>Enum16('hello' = 1, 'world' = 2)](https://clickhouse.com/docs/en/sql-reference/data-types/enum)                | `{:enum8, hello: 1, world: 2}`<br>`{:enum16, hello: 1, world: 2}`                                                      | `:hello`                                          |
-| [Array(T)](https://clickhouse.com/docs/en/sql-reference/data-types/array)                                                                                                            | `{:array, t}`                                                                                                          | `[1,2,3]`                                         |
-| [Nullable(T)](https://clickhouse.com/docs/en/sql-reference/data-types/nullable)                                                                                                      | `{:nullable, t}`                                                                                                       | `nil`                                             |
-| [IPv4](https://clickhouse.com/docs/en/sql-reference/data-types/domains/ipv4)                                                                                                         | `:ipv4`                                                                                                                | `{127,0,0,1}`                                     |
-| [IPv6](https://clickhouse.com/docs/en/sql-reference/data-types/domains/ipv6)                                                                                                         | `:ipv6`                                                                                                                | `{0,0,0,0,0,0,0,1}`                               |
-| [Map(key, value)](https://clickhouse.com/docs/en/sql-reference/data-types/map)                                                                                                       | `{:map, key_t, value_t}`                                                                                               | `%{}`                                             |
-| [Point](https://clickhouse.com/docs/en/sql-reference/data-types/geo#point)                                                                                                           | `:point`                                                                                                               | `{4,2}`                                           |
-| [Ring](https://clickhouse.com/docs/en/sql-reference/data-types/geo#ring)                                                                                                             | `:ring`                                                                                                                | `[{4,2}]`                                         |
-| [Polygon](https://clickhouse.com/docs/en/sql-reference/data-types/geo#polygon)                                                                                                       | `:polygon`                                                                                                             | `[[{4,2}]]`                                       |
-| [MultiPolygon](https://clickhouse.com/docs/en/sql-reference/data-types/geo#multipolygon)                                                                                             | `:multipolygon`                                                                                                        | `[[[{4,2}]]]`                                     |
-
-\* decoding requires a [timezone database](https://hexdocs.pm/elixir/DateTime.html#module-time-zone-database)
 
 #### Insert rows in custom [format](https://clickhouse.com/docs/en/interfaces/formats)
 
@@ -150,7 +124,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
 stream = Stream.repeatedly(fn -> [:rand.uniform(100)] end)
 chunked = Stream.chunk_every(stream, 100)
-encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, [:u64]) end)
+encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
 ten_encoded_chunks = Stream.take(encoded, 10)
 
 %Ch.Result{num_rows: 1000} =
@@ -189,10 +163,10 @@ CREATE TABLE ch_nulls (
   a UInt8 NULL,
   b UInt8 DEFAULT 10,
   c UInt8 NOT NULL
-) ENGINE = Memory
+) ENGINE Memory
 """)
 
-types = [{:nullable, :u8}, :u8, :u8]
+types = ["Nullable(UInt8)", "UInt8", "UInt8"]
 inserted_rows = [[nil, nil, nil]]
 selected_rows = [[nil, 0, 0]]
 
@@ -203,22 +177,22 @@ selected_rows = [[nil, 0, 0]]
   Ch.query!(pid, "SELECT * FROM ch_nulls")
 ```
 
-Note that in this example `DEFAULT 10` is ignored and `0` (the default value for `UInt8`) is stored instead.
+Note that in this example `DEFAULT 10` is ignored and `0` (the default value for `UInt8`) is persisted instead.
 
 #### UTF-8 in RowBinary
 
-When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types/string) columns or `:string` types (if manually provided in `:types` option), non UTF-8 characters are replaced with `�` (U+FFFD). This behaviour is similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and [JSON formats.](https://clickhouse.com/docs/en/interfaces/formats#json)
+When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types/string) columns non UTF-8 characters are replaced with `�` (U+FFFD). This behaviour is similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and [JSON format.](https://clickhouse.com/docs/en/interfaces/formats#json)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
 
-Ch.query!(pid, "CREATE TABLE ch_utf8(str String) ENGINE = Memory")
+Ch.query!(pid, "CREATE TABLE ch_utf8(str String) ENGINE Memory")
 
-raw = "\x61\xF0\x80\x80\x80b"
+bin = "\x61\xF0\x80\x80\x80b"
 utf8 = "a�b"
 
 %Ch.Result{num_rows: 1} =
-  Ch.query!(pid, "INSERT INTO ch_utf8(str) FORMAT RowBinary", [[raw]], types: [:string])
+  Ch.query!(pid, "INSERT INTO ch_utf8(str) FORMAT RowBinary", [[bin]], types: ["String"])
 
 %Ch.Result{rows: [[^utf8]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8")
@@ -227,12 +201,18 @@ utf8 = "a�b"
   pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact") |> Map.update!(:rows, &Jason.decode!/1)
 ```
 
-To get raw binary use `:binary` type that skips UTF-8 checks.
+To get raw binary from `String` columns use `:binary` type that skips UTF-8 checks.
 
 ```elixir
-%Ch.Result{rows: [[^raw]]} =
+%Ch.Result{rows: [[^bin]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8", [], types: [:binary])
 ```
+
+#### Timezones
+
+Decoding non-UTC datetimes like `DateTime('Asia/Taipei')` requires a [timezone database.](https://hexdocs.pm/elixir/DateTime.html#module-time-zone-database)
+
+Encoding non-UTC datetimes like `DateTime.new(~D[..], ~T[..], "Asia/Taipei")` raises an `ArgumentError`.
 
 ## Benchmarks
 

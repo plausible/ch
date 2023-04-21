@@ -76,4 +76,67 @@ defmodule Ch do
   def run(conn, f, opts \\ []) when is_function(f, 1) do
     DBConnection.run(conn, f, opts)
   end
+
+  if Code.ensure_loaded?(Ecto.ParameterizedType) do
+    @behaviour Ecto.ParameterizedType
+
+    @impl true
+    def type(params), do: {:parameterized, Ch, params}
+
+    @impl true
+    def init(opts) do
+      clickhouse_type = Keyword.fetch!(opts, :type)
+      Ch.Types.decode(clickhouse_type)
+    end
+
+    @impl true
+    def load(value, _loader, params), do: Ecto.Type.load(base_type(params), value)
+
+    @impl true
+    def dump(value, _dumper, params), do: Ecto.Type.dump(base_type(params), value)
+
+    @impl true
+    def cast(value, params), do: Ecto.Type.cast(base_type(params), value)
+
+    @doc false
+    def base_type(type)
+
+    def base_type(t) when t in [:string, :boolean, :date], do: t
+    def base_type(:date32), do: :date
+    def base_type(:datetime), do: :naive_datetime
+    # TODO
+    def base_type({:enum8, _mappings}), do: :string
+    def base_type({:enum16, _mappings}), do: :string
+
+    # TODO
+    def base_type(:ipv4), do: :integer
+    def base_type(:ipv6), do: :string
+    def base_type(:uuid), do: Ecto.UUID
+
+    for size <- [8, 16, 32, 64, 128, 256] do
+      def base_type(unquote(:"i#{size}")), do: :integer
+      def base_type(unquote(:"u#{size}")), do: :integer
+    end
+
+    for size <- [32, 64] do
+      def base_type(unquote(:"f#{size}")), do: :float
+    end
+
+    def base_type({:array, type}), do: {:array, base_type(type)}
+    def base_type({:nullable, type}), do: base_type(type)
+    def base_type({:low_cardinality, type}), do: base_type(type)
+    def base_type({:simple_aggregate_function, _name, type}), do: base_type(type)
+    def base_type({:fixed_string, _size}), do: :string
+    def base_type({:datetime, _timezone}), do: :utc_datetime
+    def base_type({:datetime64, _precision}), do: :naive_datetime_usec
+    def base_type({:datetime64, _precision, _timezone}), do: :utc_datetime_usec
+
+    def base_type({:parameterized, Ch, params}), do: base_type(params)
+
+    @impl true
+    def embed_as(_, _), do: :self
+
+    @impl true
+    def equal?(a, b, _), do: a == b
+  end
 end
