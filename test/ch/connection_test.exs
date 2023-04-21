@@ -103,6 +103,34 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {$0:UInt8}", [1])
   end
 
+  test "utc datetime query param encoding", %{conn: conn} do
+    utc = ~U[2021-01-01 12:00:00Z]
+    msk = DateTime.new!(~D[2021-01-01], ~T[15:00:00], "Europe/Moscow")
+
+    assert Ch.query!(conn, "select {$0:DateTime} as d, toString(d)", [utc]).rows ==
+             [[~N[2021-01-01 12:00:00], "2021-01-01 12:00:00"]]
+
+    assert Ch.query!(conn, "select {$0:DateTime('UTC')} as d, toString(d)", [utc]).rows ==
+             [[utc, "2021-01-01 12:00:00"]]
+
+    assert Ch.query!(conn, "select {$0:DateTime('Europe/Moscow')} as d, toString(d)", [utc]).rows ==
+             [[msk, "2021-01-01 15:00:00"]]
+  end
+
+  test "utc datetime64 query param encoding", %{conn: conn} do
+    utc = ~U[2021-01-01 12:00:00.123456Z]
+    msk = DateTime.new!(~D[2021-01-01], ~T[15:00:00.123456], "Europe/Moscow")
+
+    assert Ch.query!(conn, "select {$0:DateTime64(6)} as d, toString(d)", [utc]).rows ==
+             [[~N[2021-01-01 12:00:00.123456], "2021-01-01 12:00:00.123456"]]
+
+    assert Ch.query!(conn, "select {$0:DateTime64(6, 'UTC')} as d, toString(d)", [utc]).rows ==
+             [[utc, "2021-01-01 12:00:00.123456"]]
+
+    assert Ch.query!(conn, "select {$0:DateTime64(6,'Europe/Moscow')} as d, toString(d)", [utc]).rows ==
+             [[msk, "2021-01-01 15:00:00.123456"]]
+  end
+
   test "select with options", %{conn: conn} do
     assert {:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "1"]]}} =
              Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 1])
