@@ -85,7 +85,10 @@ defmodule Ch do
 
     @impl true
     def init(opts) do
-      clickhouse_type = Keyword.fetch!(opts, :type)
+      clickhouse_type =
+        opts[:type] || opts[:ch_type] ||
+          raise "key :type or :ch_type not found in: #{inspect(opts)}"
+
       Ch.Types.decode(clickhouse_type)
     end
 
