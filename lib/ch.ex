@@ -130,6 +130,11 @@ defmodule Ch do
     def base_type({:datetime, _timezone}), do: :utc_datetime
     def base_type({:datetime64, _precision}), do: :naive_datetime_usec
     def base_type({:datetime64, _precision, _timezone}), do: :utc_datetime_usec
+    def base_type({:decimal = d, _precision, _scale}), do: d
+
+    for size <- [32, 64, 128, 256] do
+      def base_type({unquote(:"decimal#{size}"), _scale}), do: :decimal
+    end
 
     def base_type({:parameterized, Ch, params}), do: base_type(params)
 

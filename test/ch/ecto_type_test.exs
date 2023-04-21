@@ -256,4 +256,30 @@ defmodule Ch.EctoTypeTest do
 
   @tag skip: true
   test "IPv6"
+
+  test "Decimal(18, 4)" do
+    assert {:parameterized, Ch, {:decimal, 18, 4}} =
+             type = Ecto.ParameterizedType.init(Ch, type: unquote("Decimal(18, 4)"))
+
+    assert Ecto.Type.type(type) == type
+    assert Ch.base_type(type) == :decimal
+
+    assert {:ok, %Decimal{}} = Ecto.Type.cast(type, 1.0)
+    assert {:ok, %Decimal{}} = Ecto.Type.dump(type, 1.0)
+    assert {:ok, %Decimal{}} = Ecto.Type.load(type, 1.0)
+  end
+
+  for size <- [32, 64, 128, 256] do
+    test "Decimal#{size}(4)" do
+      assert {:parameterized, Ch, {unquote(:"decimal#{size}"), 4}} =
+               type = Ecto.ParameterizedType.init(Ch, type: unquote("Decimal#{size}(4)"))
+
+      assert Ecto.Type.type(type) == type
+      assert Ch.base_type(type) == :decimal
+
+      assert {:ok, %Decimal{}} = Ecto.Type.cast(type, 1.0)
+      assert {:ok, %Decimal{}} = Ecto.Type.dump(type, 1.0)
+      assert {:ok, %Decimal{}} = Ecto.Type.load(type, 1.0)
+    end
+  end
 end
