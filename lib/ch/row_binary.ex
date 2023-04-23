@@ -19,10 +19,10 @@ defmodule Ch.RowBinary do
       []
 
       iex> encode_row([1], ["UInt8"])
-      [<<1>>]
+      [1]
 
       iex> encode_row([3, "hello"], ["UInt8", "String"])
-      [<<3>>, [<<5>> | "hello"]]
+      [3, [5 | "hello"]]
 
   """
   def encode_row(row, types) do
@@ -41,10 +41,10 @@ defmodule Ch.RowBinary do
       []
 
       iex> encode_rows([[1]], ["UInt8"])
-      [<<1>>]
+      [1]
 
       iex> encode_rows([[3, "hello"], [4, "hi"]], ["UInt8", "String"])
-      [<<3>>, ["\x05" | "hello"], <<4>>, [<<2>> | "hi"]]
+      [3, [5 | "hello"], 4, [2 | "hi"]]
 
   """
   def encode_rows(rows, types) do
@@ -152,17 +152,16 @@ defmodule Ch.RowBinary do
   end
 
   @doc false
-  def encode(:varint, num) when is_integer(num) and num < 128, do: <<num>>
+  def encode(type, value)
 
-  def encode(:varint, num) when is_integer(num) do
-    [<<1::1, num::7>> | encode(:varint, num >>> 7)]
-  end
+  def encode(:varint, i) when is_integer(i) and i < 128, do: i
+  def encode(:varint, i) when is_integer(i), do: encode_varint_cont(i)
 
   def encode(type, str) when type in [:string, :binary] do
     case str do
       _ when is_binary(str) -> [encode(:varint, byte_size(str)) | str]
       _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
-      nil -> <<0>>
+      nil -> 0
     end
   end
 
@@ -177,9 +176,16 @@ defmodule Ch.RowBinary do
 
   def encode({:fixed_string, size}, nil), do: <<0::size(size * 8)>>
 
-  for size <- [8, 16, 32, 64, 128, 256] do
-    def encode(unquote(:"u#{size}"), i) when is_integer(i) do
-      <<i::unquote(size)-little>>
+  def encode(:u8, u) when is_integer(u), do: u
+  def encode(:u8, nil), do: 0
+
+  def encode(:i8, i) when is_integer(i) and i >= 0, do: i
+  def encode(:i8, i) when is_integer(i), do: <<i::signed>>
+  def encode(:i8, nil), do: 0
+
+  for size <- [16, 32, 64, 128, 256] do
+    def encode(unquote(:"u#{size}"), u) when is_integer(u) do
+      <<u::unquote(size)-little>>
     end
 
     def encode(unquote(:"i#{size}"), i) when is_integer(i) do
@@ -233,24 +239,24 @@ defmodule Ch.RowBinary do
     def encode({unquote(type), _scale}, nil), do: <<0::unquote(size)>>
   end
 
-  def encode(:boolean, true), do: <<1>>
-  def encode(:boolean, false), do: <<0>>
-  def encode(:boolean, nil), do: <<0>>
+  def encode(:boolean, true), do: 1
+  def encode(:boolean, false), do: 0
+  def encode(:boolean, nil), do: 0
 
   def encode({:array, type}, [_ | _] = l) do
     [encode(:varint, length(l)) | encode_many(l, type)]
   end
 
-  def encode({:array, _type}, []), do: <<0>>
-  def encode({:array, _type}, nil), do: <<0>>
+  def encode({:array, _type}, []), do: 0
+  def encode({:array, _type}, nil), do: 0
 
   def encode({:map, k, v}, [_ | _] = m) do
     [encode(:varint, length(m)) | encode_many_kv(m, k, v)]
   end
 
   def encode({:map, _k, _v} = t, m) when is_map(m), do: encode(t, Map.to_list(m))
-  def encode({:map, _k, _v}, []), do: <<0>>
-  def encode({:map, _k, _v}, nil), do: <<0>>
+  def encode({:map, _k, _v}, []), do: 0
+  def encode({:map, _k, _v}, nil), do: 0
 
   def encode({:tuple, _types} = t, v) when is_tuple(v) do
     encode(t, Tuple.to_list(v))
@@ -329,7 +335,16 @@ defmodule Ch.RowBinary do
   def encode(:multipolygon, polygons), do: encode({:array, :polygon}, polygons)
 
   def encode({:nullable, _type}, nil), do: 1
-  def encode({:nullable, type}, value), do: [0 | encode(type, value)]
+
+  def encode({:nullable, type}, value) do
+    case encode(type, value) do
+      e when is_list(e) or is_binary(e) -> [0 | e]
+      e -> [0, e]
+    end
+  end
+
+  def encode_varint_cont(i) when i < 128, do: <<i>>
+  def encode_varint_cont(i), do: [i &&& 0xFF | encode_varint_cont(i >>> 7)]
 
   defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
   defp encode_many([] = done, _type), do: done
