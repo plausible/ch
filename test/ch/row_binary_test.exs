@@ -123,8 +123,8 @@ defmodule Ch.RowBinaryTest do
     end
 
     test "map" do
-      assert encode({:map, :string, :string}, []) == <<0>>
-      assert encode({:map, :string, :string}, %{}) == <<0>>
+      assert encode({:map, :string, :string}, []) == 0
+      assert encode({:map, :string, :string}, %{}) == 0
 
       assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
                encode({:map, :string, :string}, [{"hello", "world"}])
@@ -132,20 +132,20 @@ defmodule Ch.RowBinaryTest do
 
     test "nil" do
       assert encode({:nullable, :string}, nil) == 1
-      assert encode(:string, nil) == <<0>>
+      assert encode(:string, nil) == 0
       assert encode({:fixed_string, _size = 2}, nil) == <<0, 0>>
-      assert encode(:u8, nil) == <<0>>
+      assert encode(:u8, nil) == 0
       assert encode(:u16, nil) == <<0, 0>>
       assert encode(:u32, nil) == <<0, 0, 0, 0>>
       assert encode(:u64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-      assert encode(:i8, nil) == <<0>>
+      assert encode(:i8, nil) == 0
       assert encode(:i16, nil) == <<0, 0>>
       assert encode(:i32, nil) == <<0, 0, 0, 0>>
       assert encode(:i64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
       assert encode(:f32, nil) == <<0, 0, 0, 0>>
       assert encode(:f64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-      assert encode(:boolean, nil) == <<0>>
-      assert encode({:array, :string}, nil) == <<0>>
+      assert encode(:boolean, nil) == 0
+      assert encode({:array, :string}, nil) == 0
       assert encode(:date, nil) == <<0, 0>>
       assert encode(:date32, nil) == <<0, 0, 0, 0>>
       assert encode(:datetime, nil) == <<0, 0, 0, 0>>
@@ -156,10 +156,10 @@ defmodule Ch.RowBinaryTest do
       assert encode({:decimal128, _scale = 4}, nil) == <<0::128>>
       assert encode({:decimal256, _scale = 4}, nil) == <<0::256>>
       assert encode(:point, nil) == <<0::128>>
-      assert encode(:ring, nil) == <<0>>
-      assert encode(:polygon, nil) == <<0>>
-      assert encode(:multipolygon, nil) == <<0>>
-      assert encode({:map, :string, :string}, nil) == <<0>>
+      assert encode(:ring, nil) == 0
+      assert encode(:polygon, nil) == 0
+      assert encode(:multipolygon, nil) == 0
+      assert encode({:map, :string, :string}, nil) == 0
     end
   end
 

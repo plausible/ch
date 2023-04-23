@@ -1,4 +1,4 @@
-IO.puts("This benchmarks is based on https://github.com/ClickHouse/clickhouse-go#benchmark\n")
+IO.puts("This benchmark is based on https://github.com/ClickHouse/clickhouse-go#benchmark\n")
 
 port = String.to_integer(System.get_env("CH_PORT") || "8123")
 hostname = System.get_env("CH_HOSTNAME") || "localhost"
