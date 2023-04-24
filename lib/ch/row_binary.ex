@@ -334,6 +334,13 @@ defmodule Ch.RowBinary do
   def encode(:polygon, rings), do: encode({:array, :ring}, rings)
   def encode(:multipolygon, polygons), do: encode({:array, :polygon}, polygons)
 
+  # TODO enum8 and enum16 nil
+  def encode({:enum8, _mapping}, i) when is_integer(i), do: i
+  def encode({:enum8, mapping}, name) when is_binary(name), do: Map.fetch!(mapping, name)
+
+  def encode({:enum16, _mapping}, i) when is_integer(i), do: <<i::16>>
+  def encode({:enum16, mapping}, name) when is_binary(name), do: <<Map.fetch!(mapping, name)::16>>
+
   def encode({:nullable, _type}, nil), do: 1
 
   def encode({:nullable, type}, value) do
