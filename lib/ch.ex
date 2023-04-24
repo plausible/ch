@@ -99,6 +99,7 @@ defmodule Ch do
     def load(value, _loader, :ipv4) do
       case value do
         {_, _, _, _} -> {:ok, value}
+        nil -> {:ok, nil}
         _other -> :error
       end
     end
@@ -106,6 +107,7 @@ defmodule Ch do
     def load(value, _loader, :ipv6) do
       case value do
         {_, _, _, _, _, _, _, _} -> {:ok, value}
+        nil -> {:ok, nil}
         _other -> :error
       end
     end
@@ -120,6 +122,7 @@ defmodule Ch do
     def dump(value, _dumper, :ipv4) do
       case value do
         {_, _, _, _} -> {:ok, value}
+        nil -> {:ok, nil}
         _ -> :error
       end
     end
@@ -127,6 +130,7 @@ defmodule Ch do
     def dump(value, _loader, :ipv6) do
       case value do
         {_, _, _, _, _, _, _, _} -> {:ok, value}
+        nil -> {:ok, nil}
         _other -> :error
       end
     end
@@ -145,6 +149,7 @@ defmodule Ch do
         {_, _, _, _} -> {:ok, value}
         _ when is_binary(value) -> :inet.parse_ipv4_address(to_charlist(value))
         _ when is_list(value) -> :inet.parse_ipv4_address(value)
+        nil -> {:ok, nil}
         _ -> :error
       end
     end
@@ -154,6 +159,7 @@ defmodule Ch do
         {_, _, _, _, _, _, _, _} -> {:ok, value}
         _ when is_binary(value) -> :inet.parse_ipv6_address(to_charlist(value))
         _ when is_list(value) -> :inet.parse_ipv6_address(value)
+        nil -> {:ok, nil}
         _ -> :error
       end
     end
