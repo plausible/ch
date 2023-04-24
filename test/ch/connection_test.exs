@@ -488,7 +488,10 @@ defmodule Ch.ConnectionTest do
     end
 
     test "json", %{conn: conn} do
-      Ch.query!(conn, "CREATE TABLE json(o JSON) ENGINE = Memory")
+      settings = [allow_experimental_object_type: 1]
+
+      Ch.query!(conn, "CREATE TABLE json(o JSON) ENGINE = Memory", [], settings: settings)
+
       Ch.query!(conn, ~s|INSERT INTO json VALUES ('{"a": 1, "b": { "c": 2, "d": [1, 2, 3] }}')|)
 
       assert Ch.query!(conn, "SELECT o.a, o.b.c, o.b.d[3] FROM json").rows == [[1, 2, 3]]
