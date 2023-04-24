@@ -335,13 +335,19 @@ defmodule Ch.RowBinary do
   def encode(:multipolygon, polygons), do: encode({:array, :polygon}, polygons)
 
   # TODO enum8 and enum16 nil
-  def encode({:enum8, _mapping}, i) when is_integer(i), do: i
-  def encode({:enum8, mapping}, name) when is_binary(name), do: Map.fetch!(mapping, name)
+  for size <- [8, 16] do
+    enum_t = :"enum#{size}"
+    int_t = :"i#{size}"
 
-  def encode({:enum16, _mapping}, i) when is_integer(i), do: <<i::16-little>>
+    def encode({unquote(enum_t), mapping}, e) do
+      i =
+        case e do
+          _ when is_integer(e) -> e
+          _ when is_binary(e) -> Map.fetch!(mapping, e)
+        end
 
-  def encode({:enum16, mapping}, name) when is_binary(name) do
-    <<Map.fetch!(mapping, name)::16-little>>
+      encode(unquote(int_t), i)
+    end
   end
 
   def encode({:nullable, _type}, nil), do: 1
@@ -840,11 +846,11 @@ defmodule Ch.RowBinary do
         decode_rows(types_rest, bin, [dt | row], rows, types)
 
       {:enum8, mapping} ->
-        <<v, bin::bytes>> = bin
+        <<v::signed, bin::bytes>> = bin
         decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
 
       {:enum16, mapping} ->
-        <<v::16-little, bin::bytes>> = bin
+        <<v::16-little-signed, bin::bytes>> = bin
         decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
 
       :ipv4 ->
