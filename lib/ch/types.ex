@@ -320,8 +320,8 @@ defmodule Ch.Types do
       decode([:type], type, [])
     rescue
       e ->
-        message = "failed to decode #{inspect(type)} as ClickHouse type:\n\t"
-        reraise(message <> Exception.message(e), __STACKTRACE__)
+        message = "failed to decode #{inspect(type)} as ClickHouse type (#{Exception.message(e)})"
+        reraise(ArgumentError, message, __STACKTRACE__)
     end
   end
 
