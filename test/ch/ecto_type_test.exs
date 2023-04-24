@@ -61,11 +61,9 @@ defmodule Ch.EctoTypeTest do
 
     assert :error = Ecto.Type.cast(type, {"something"})
     assert :error = Ecto.Type.dump(type, {"something"})
-    assert :error = Ecto.Type.load(type, {"something"})
 
     assert :error = Ecto.Type.cast(type, {"something", 42, true})
     assert :error = Ecto.Type.dump(type, {"something", 42, true})
-    assert :error = Ecto.Type.load(type, {"something", 42, true})
   end
 
   for size <- [8, 16, 32, 64, 128, 256] do
@@ -291,6 +289,63 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} = Ecto.Type.cast(type, {0, 0, 0, 0, 0, 0, 0, 1})
     assert {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} = Ecto.Type.dump(type, {0, 0, 0, 0, 0, 0, 0, 1})
     assert {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} = Ecto.Type.load(type, {0, 0, 0, 0, 0, 0, 0, 1})
+  end
+
+  test "Point" do
+    assert {:parameterized, Ch, :point} = type = Ecto.ParameterizedType.init(Ch, type: "Point")
+
+    assert Ecto.Type.type(type) == type
+
+    point = {10, 10}
+    assert {:ok, point} == Ecto.Type.cast(type, point)
+    assert {:ok, point} == Ecto.Type.dump(type, point)
+    assert {:ok, point} == Ecto.Type.load(type, point)
+  end
+
+  test "Ring" do
+    assert {:parameterized, Ch, :ring} = type = Ecto.ParameterizedType.init(Ch, type: "Ring")
+
+    assert Ecto.Type.type(type) == type
+    assert Ch.base_type(type) == {:array, {:parameterized, Ch, :point}}
+
+    ring = [{0, 0}, {10, 0}, {10, 10}, {0, 10}]
+    assert {:ok, ring} == Ecto.Type.cast(type, ring)
+    assert {:ok, ring} == Ecto.Type.dump(type, ring)
+    assert {:ok, ring} == Ecto.Type.load(type, ring)
+  end
+
+  test "Polygon" do
+    assert {:parameterized, Ch, :polygon} =
+             type = Ecto.ParameterizedType.init(Ch, type: "Polygon")
+
+    assert Ecto.Type.type(type) == type
+    assert Ch.base_type(type) == {:array, {:array, {:parameterized, Ch, :point}}}
+
+    polygon = [
+      [{20, 20}, {50, 20}, {50, 50}, {20, 50}],
+      [{30, 30}, {50, 50}, {50, 30}]
+    ]
+
+    assert {:ok, polygon} == Ecto.Type.cast(type, polygon)
+    assert {:ok, polygon} == Ecto.Type.dump(type, polygon)
+    assert {:ok, polygon} == Ecto.Type.load(type, polygon)
+  end
+
+  test "MultiPolygon" do
+    assert {:parameterized, Ch, :multipolygon} =
+             type = Ecto.ParameterizedType.init(Ch, type: "MultiPolygon")
+
+    assert Ecto.Type.type(type) == type
+    assert Ch.base_type(type) == {:array, {:array, {:array, {:parameterized, Ch, :point}}}}
+
+    multipolygon = [
+      [[{0, 0}, {10, 0}, {10, 10}, {0, 10}]],
+      [[{20, 20}, {50, 20}, {50, 50}, {20, 50}], [{30, 30}, {50, 50}, {50, 30}]]
+    ]
+
+    assert {:ok, multipolygon} == Ecto.Type.cast(type, multipolygon)
+    assert {:ok, multipolygon} == Ecto.Type.dump(type, multipolygon)
+    assert {:ok, multipolygon} == Ecto.Type.load(type, multipolygon)
   end
 
   test "Decimal(18, 4)" do

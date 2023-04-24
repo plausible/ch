@@ -90,26 +90,10 @@ defmodule Ch do
     end
 
     @impl true
-    def load(value, _loader, {:tuple, types}) do
-      with {:ok, value} <- process_tuple(types, value, &Ecto.Type.load/2) do
-        {:ok, List.to_tuple(value)}
-      end
-    end
+    def load(value, _loader, {:tuple, _types}), do: {:ok, value}
 
-    def load(value, _loader, :ipv4) do
-      case value do
-        {_, _, _, _} -> {:ok, value}
-        nil -> {:ok, nil}
-        _other -> :error
-      end
-    end
-
-    def load(value, _loader, :ipv6) do
-      case value do
-        {_, _, _, _, _, _, _, _} -> {:ok, value}
-        nil -> {:ok, nil}
-        _other -> :error
-      end
+    for type <- [:ipv4, :ipv6, :point, :ring, :polygon, :multipolygon] do
+      def load(value, _loader, unquote(type)), do: {:ok, value}
     end
 
     def load(value, _loader, params), do: Ecto.Type.load(base_type(params), value)
@@ -122,15 +106,23 @@ defmodule Ch do
     def dump(value, _dumper, :ipv4) do
       case value do
         {_, _, _, _} -> {:ok, value}
-        nil -> {:ok, nil}
-        _ -> :error
+        nil = n -> {:ok, n}
+        _other -> :error
       end
     end
 
     def dump(value, _loader, :ipv6) do
       case value do
         {_, _, _, _, _, _, _, _} -> {:ok, value}
-        nil -> {:ok, nil}
+        nil = n -> {:ok, n}
+        _other -> :error
+      end
+    end
+
+    def dump(value, _loader, :point) do
+      case value do
+        {x, y} when is_number(x) and is_number(y) -> {:ok, value}
+        nil = n -> {:ok, n}
         _other -> :error
       end
     end
@@ -149,7 +141,7 @@ defmodule Ch do
         {_, _, _, _} -> {:ok, value}
         _ when is_binary(value) -> :inet.parse_ipv4_address(to_charlist(value))
         _ when is_list(value) -> :inet.parse_ipv4_address(value)
-        nil -> {:ok, nil}
+        nil = n -> {:ok, n}
         _ -> :error
       end
     end
@@ -159,7 +151,15 @@ defmodule Ch do
         {_, _, _, _, _, _, _, _} -> {:ok, value}
         _ when is_binary(value) -> :inet.parse_ipv6_address(to_charlist(value))
         _ when is_list(value) -> :inet.parse_ipv6_address(value)
-        nil -> {:ok, nil}
+        nil = n -> {:ok, n}
+        _ -> :error
+      end
+    end
+
+    def cast(value, :point) do
+      case value do
+        {x, y} when is_number(x) and is_number(y) -> {:ok, value}
+        nil = n -> {:ok, n}
         _ -> :error
       end
     end
@@ -200,6 +200,11 @@ defmodule Ch do
     for size <- [32, 64, 128, 256] do
       def base_type({unquote(:"decimal#{size}"), _scale}), do: :decimal
     end
+
+    def base_type(:point = p), do: {:parameterized, Ch, p}
+    def base_type(:ring), do: {:array, base_type(:point)}
+    def base_type(:polygon), do: {:array, base_type(:ring)}
+    def base_type(:multipolygon), do: {:array, base_type(:polygon)}
 
     def base_type({:parameterized, Ch, params}), do: base_type(params)
 
