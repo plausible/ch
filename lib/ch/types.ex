@@ -377,7 +377,7 @@ defmodule Ch.Types do
   end
 
   defp decode([:int | stack], <<rest::bytes>>, acc) do
-    decode_int(rest, nil, stack, acc)
+    decode_int(rest, stack, acc)
   end
 
   defp decode([:identifier | stack], <<rest::bytes>>, acc) do
@@ -445,19 +445,19 @@ defmodule Ch.Types do
 
   defguardp is_numeric(char) when char >= ?0 and char <= ?9
 
-  defp decode_int(<<c, rest::bytes>>, acc, stack, outer_acc) when is_numeric(c) do
-    i = c - ?0
-
-    acc =
-      case acc do
-        _ when is_number(acc) -> acc * 10 + i
-        nil -> i
-      end
-
-    decode_int(rest, acc, stack, outer_acc)
+  defp decode_int(<<?-, i, rest::bytes>>, stack, outer_acc) when is_numeric(i) do
+    decode_int_cont(rest, -(i - ?0), stack, outer_acc)
   end
 
-  defp decode_int(<<rest::bytes>>, int, stack, acc) when is_number(int) do
+  defp decode_int(<<i, rest::bytes>>, stack, outer_acc) when is_numeric(i) do
+    decode_int_cont(rest, i - ?0, stack, outer_acc)
+  end
+
+  defp decode_int_cont(<<i, rest::bytes>>, acc, stack, outer_acc) when is_numeric(i) do
+    decode_int_cont(rest, acc * 10 + i - ?0, stack, outer_acc)
+  end
+
+  defp decode_int_cont(<<rest::bytes>>, int, stack, acc) do
     decode(stack, rest, [int | acc])
   end
 
