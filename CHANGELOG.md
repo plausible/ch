@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5 (2023-04-23)
+
+- fix query param encoding like Array(Date)
+- add more types support in Ch Ecto type: tuples, ipv4, ipv6, geo
+
 ## 0.1.4 (2023-04-23)
 
 - actually support negative `Enum` values
