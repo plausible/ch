@@ -43,8 +43,8 @@ jobs:
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
       - run: mkdir results
-      - run: mix run bench/insert_stream.exs > results/insert-stream.txt
-      - run: mix run bench/stream.exs > results/stream.txt
+      - run: mix run bench/insert.exs | tee results/insert.txt
+      - run: mix run bench/stream.exs | tee results/stream.txt
       - uses: actions/upload-artifact@v3
         with:
           name: results

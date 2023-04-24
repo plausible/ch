@@ -220,7 +220,7 @@ Encoding non-UTC datetimes like `DateTime.new(~D[..], ~T[..], "Asia/Taipei")` ra
 <summary><code>INSERT</code> 1 million rows <a href="https://github.com/ClickHouse/clickhouse-go#benchmark">(original)</a></summary>
 
 <pre><code>
-$ MIX_ENV=bench mix run bench/insert_stream.exs
+$ MIX_ENV=bench mix run bench/insert.exs
 
 This benchmark is based on https://github.com/ClickHouse/clickhouse-go#benchmark
 
@@ -237,23 +237,26 @@ time: 5 s
 memory time: 0 ns
 reduction time: 0 ns
 parallel: 1
-inputs: medium (1_000_000 rows)
-Estimated total run time: 21 s
+inputs: 1_000_000 rows
+Estimated total run time: 28 s
 
-Benchmarking control with input medium (1_000_000 rows) ...
-Benchmarking encode with input medium (1_000_000 rows) ...
-Benchmarking insert with input medium (1_000_000 rows) ...
+Benchmarking encode with input 1_000_000 rows ...
+Benchmarking encode stream with input 1_000_000 rows ...
+Benchmarking insert with input 1_000_000 rows ...
+Benchmarking insert stream with input 1_000_000 rows ...
 
-##### With input medium (1_000_000 rows) #####
-Name              ips        average  deviation         median         99th %
-control          2.62      381.00 ms     ±4.13%      376.77 ms      412.36 ms
-encode           1.03      969.49 ms     ±4.00%      965.70 ms     1030.67 ms
-insert           0.89     1127.15 ms     ±3.52%     1110.76 ms     1183.62 ms
+##### With input 1_000_000 rows #####
+Name                    ips        average  deviation         median         99th %
+encode stream          1.63      612.96 ms    ±11.30%      583.03 ms      773.01 ms
+insert stream          1.22      819.82 ms     ±9.41%      798.94 ms      973.45 ms
+encode                 1.09      915.75 ms    ±44.13%      750.98 ms     1637.02 ms
+insert                 0.73     1373.84 ms    ±31.01%     1331.86 ms     1915.76 ms
 
-Comparison:
-control          2.62
-encode           1.03 - 2.54x slower +588.49 ms
-insert           0.89 - 2.96x slower +746.15 ms</code>
+Comparison: 
+encode stream          1.63
+insert stream          1.22 - 1.34x slower +206.87 ms
+encode                 1.09 - 1.49x slower +302.79 ms
+insert                 0.73 - 2.24x slower +760.88 ms</code>
 </pre>
 
 </details>

@@ -63,6 +63,21 @@ defmodule Ch.Types do
   end
 
   @doc """
+  Helper for `DateTime` ClickHouse type:
+
+      iex> datetime()
+      :datetime
+
+      iex> to_string(encode(datetime()))
+      "DateTime"
+
+      iex> decode("DateTime")
+      datetime()
+
+  """
+  def datetime, do: :datetime
+
+  @doc """
   Helper for `DateTime(timezone)` ClickHouse type:
 
       iex> datetime("Europe/Vienna")
