@@ -185,9 +185,10 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
   defp encode_param(f) when is_float(f), do: Float.to_string(f)
   defp encode_param(b) when is_binary(b), do: b
-  defp encode_param(b) when is_boolean(b), do: b
+  defp encode_param(true), do: "1"
+  defp encode_param(false), do: "0"
   defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
-  defp encode_param(%Date{} = date), do: date
+  defp encode_param(%Date{} = date), do: Date.to_iso8601(date)
   defp encode_param(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
 
   defp encode_param(%DateTime{time_zone: "Etc/UTC", microsecond: microsecond} = dt) do
@@ -235,11 +236,13 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   defp encode_map_params([] = empty), do: empty
 
-  defp encode_array_param(s) when is_binary(s) do
+  defp encode_array_param(i) when is_integer(i), do: encode_param(i)
+  defp encode_array_param(xs) when is_list(xs), do: encode_param(xs)
+
+  defp encode_array_param(s) do
+    s = encode_param(s)
     [?', to_iodata(s, 0, s, []), ?']
   end
-
-  defp encode_array_param(v), do: encode_param(v)
 
   defp encode_map_param({k, v}) do
     [encode_array_param(k), ?:, encode_array_param(v)]

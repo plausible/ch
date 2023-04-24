@@ -189,6 +189,12 @@ defmodule Ch.QueryTest do
       assert [[[1]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1]]).rows
       assert [[[1, 2]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1, 2]]).rows
 
+      assert [[["1", "2"]]] = Ch.query!(conn, "SELECT {$0:Array(String)}", [["1", "2"]]).rows
+      assert [[[true, false]]] = Ch.query!(conn, "SELECT {$0:Array(Bool)}", [[true, false]]).rows
+
+      assert [[[~D[2023-01-01], ~D[2023-01-02]]]] =
+               Ch.query!(conn, "SELECT {$0:Array(Date)}", [[~D[2023-01-01], ~D[2023-01-02]]]).rows
+
       assert [[[[0], [1]]]] =
                Ch.query!(conn, "SELECT {$0:Array(Array(integer))}", [[[0], [1]]]).rows
 
