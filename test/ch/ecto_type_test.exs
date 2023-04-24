@@ -48,6 +48,26 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, ["something"]} = Ecto.Type.load(type, ["something"])
   end
 
+  test "Tuple(String, Int64)" do
+    assert {:parameterized, Ch, {:tuple, [:string, :i64]}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "Tuple(String, Int64)")
+
+    assert Ecto.Type.type(type) == type
+
+    assert {:ok, {"something", 42}} = Ecto.Type.cast(type, {"something", 42})
+    assert {:ok, {"something", 42}} = Ecto.Type.cast(type, ["something", 42])
+    assert {:ok, ["something", 42]} = Ecto.Type.dump(type, {"something", 42})
+    assert {:ok, {"something", 42}} = Ecto.Type.load(type, {"something", 42})
+
+    assert :error = Ecto.Type.cast(type, {"something"})
+    assert :error = Ecto.Type.dump(type, {"something"})
+    assert :error = Ecto.Type.load(type, {"something"})
+
+    assert :error = Ecto.Type.cast(type, {"something", 42, true})
+    assert :error = Ecto.Type.dump(type, {"something", 42, true})
+    assert :error = Ecto.Type.load(type, {"something", 42, true})
+  end
+
   for size <- [8, 16, 32, 64, 128, 256] do
     for {encoded, decoded} <- [{"Int#{size}", :"i#{size}"}, {"UInt#{size}", :"u#{size}"}] do
       test encoded do
