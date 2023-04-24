@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4 (2023-04-23)
+
+- actually support negative `Enum` values
+
 ## 0.1.3 (2023-04-23)
 
 - support negative `Enum` values, fix `Enum16` encoding
