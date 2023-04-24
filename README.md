@@ -19,7 +19,7 @@ Used in [Ecto ClickHouse adapter.](https://github.com/plausible/chto)
 ```elixir
 defp deps do
   [
-    {:ch, github: "plausible/ch"}
+    {:ch, "~> 0.1.0"}
   ]
 end
 ```
