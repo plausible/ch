@@ -331,7 +331,10 @@ defmodule Ch.RowBinary do
   def encode(:ipv4, {a, b, c, d}), do: [d, c, b, a]
   def encode(:ipv4, nil), do: <<0::32>>
 
-  def encode(:ipv6, {b1, b2, b3, b4, b5, b6, b7, b8}), do: [b1, b2, b3, b4, b5, b6, b7, b8]
+  def encode(:ipv6, {b1, b2, b3, b4, b5, b6, b7, b8}) do
+    <<b1::16, b2::16, b3::16, b4::16, b5::16, b6::16, b7::16, b8::16>>
+  end
+
   def encode(:ipv6, <<_::128>> = encoded), do: encoded
   def encode(:ipv6, nil), do: <<0::128>>
 
