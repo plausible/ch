@@ -237,7 +237,9 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp encode_map_params([] = empty), do: empty
 
   defp encode_array_param(i) when is_integer(i), do: encode_param(i)
+  defp encode_array_param(f) when is_float(f), do: encode_param(f)
   defp encode_array_param(xs) when is_list(xs), do: encode_param(xs)
+  defp encode_array_param(xs) when is_tuple(xs), do: encode_param(xs)
 
   defp encode_array_param(s) do
     s = encode_param(s)
