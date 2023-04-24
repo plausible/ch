@@ -91,6 +91,7 @@ defmodule Ch do
 
     @impl true
     def load(value, _loader, {:tuple, _types}), do: {:ok, value}
+    def load(value, _loader, {:map, _key_type, _value_type}), do: {:ok, value}
 
     for type <- [:ipv4, :ipv6, :point, :ring, :polygon, :multipolygon] do
       def load(value, _loader, unquote(type)), do: {:ok, value}
@@ -101,6 +102,10 @@ defmodule Ch do
     @impl true
     def dump(value, _dumper, {:tuple, types}) do
       process_tuple(types, value, &Ecto.Type.dump/2)
+    end
+
+    def dump(value, _dumper, {:map, key_type, value_type}) do
+      process_map(value, key_type, value_type, &Ecto.Type.dump/2)
     end
 
     def dump(value, _dumper, :ipv4) do
@@ -164,6 +169,12 @@ defmodule Ch do
       end
     end
 
+    def cast(value, {:map, key_type, value_type}) do
+      with {:ok, value} <- process_map(value, key_type, value_type, &Ecto.Type.cast/2) do
+        {:ok, Map.new(value)}
+      end
+    end
+
     def cast(value, params), do: Ecto.Type.cast(base_type(params), value)
 
     @doc false
@@ -217,6 +228,7 @@ defmodule Ch do
     end
 
     defp process_tuple(_types, nil = n, _mapper), do: {:ok, n}
+    defp process_tuple(_types, _values, _napper), do: :error
 
     defp process_tuple([t | types], [v | values], mapper, acc) do
       case mapper.(base_type(t), v) do
@@ -227,6 +239,28 @@ defmodule Ch do
 
     defp process_tuple([], [], _mapper, acc), do: {:ok, :lists.reverse(acc)}
     defp process_tuple(_types, _values, _mapper, _acc), do: :error
+
+    defp process_map(value, key_type, value_type, mapper) when is_map(value) do
+      process_map(Map.to_list(value), key_type, value_type, mapper)
+    end
+
+    defp process_map(value, key_type, value_type, mapper) when is_list(value) do
+      process_map(value, base_type(key_type), base_type(value_type), mapper, [])
+    end
+
+    defp process_map(_value, _key_type, _value_type, _mapper), do: :error
+
+    defp process_map([{k, v} | kvs], key_type, value_type, mapper, acc) do
+      with {:ok, k} <- mapper.(key_type, k),
+           {:ok, v} <- mapper.(value_type, v) do
+        process_map(kvs, key_type, value_type, mapper, [{k, v} | acc])
+      else
+        :error = e -> e
+      end
+    end
+
+    defp process_map([], _key_type, _value_type, _mapper, acc), do: {:ok, :lists.reverse(acc)}
+    defp process_map(_kvs, _key_type, _value_type, _mapper, _acc), do: :error
 
     @impl true
     def embed_as(_, _), do: :self
