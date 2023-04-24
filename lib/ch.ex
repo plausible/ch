@@ -96,11 +96,39 @@ defmodule Ch do
       end
     end
 
+    def load(value, _loader, :ipv4) do
+      case value do
+        {_, _, _, _} -> {:ok, value}
+        _other -> :error
+      end
+    end
+
+    def load(value, _loader, :ipv6) do
+      case value do
+        {_, _, _, _, _, _, _, _} -> {:ok, value}
+        _other -> :error
+      end
+    end
+
     def load(value, _loader, params), do: Ecto.Type.load(base_type(params), value)
 
     @impl true
     def dump(value, _dumper, {:tuple, types}) do
       process_tuple(types, value, &Ecto.Type.dump/2)
+    end
+
+    def dump(value, _dumper, :ipv4) do
+      case value do
+        {_, _, _, _} -> {:ok, value}
+        _ -> :error
+      end
+    end
+
+    def dump(value, _loader, :ipv6) do
+      case value do
+        {_, _, _, _, _, _, _, _} -> {:ok, value}
+        _other -> :error
+      end
     end
 
     def dump(value, _dumper, params), do: Ecto.Type.dump(base_type(params), value)
@@ -112,6 +140,24 @@ defmodule Ch do
       end
     end
 
+    def cast(value, :ipv4) do
+      case value do
+        {_, _, _, _} -> {:ok, value}
+        _ when is_binary(value) -> :inet.parse_ipv4_address(to_charlist(value))
+        _ when is_list(value) -> :inet.parse_ipv4_address(value)
+        _ -> :error
+      end
+    end
+
+    def cast(value, :ipv6) do
+      case value do
+        {_, _, _, _, _, _, _, _} -> {:ok, value}
+        _ when is_binary(value) -> :inet.parse_ipv6_address(to_charlist(value))
+        _ when is_list(value) -> :inet.parse_ipv6_address(value)
+        _ -> :error
+      end
+    end
+
     def cast(value, params), do: Ecto.Type.cast(base_type(params), value)
 
     @doc false
@@ -120,14 +166,11 @@ defmodule Ch do
     def base_type(t) when t in [:string, :boolean, :date], do: t
     def base_type(:date32), do: :date
     def base_type(:datetime), do: :naive_datetime
+    def base_type(:uuid), do: Ecto.UUID
+
     # TODO
     def base_type({:enum8, _mappings}), do: :string
     def base_type({:enum16, _mappings}), do: :string
-
-    # TODO
-    def base_type(:ipv4), do: :integer
-    def base_type(:ipv6), do: :string
-    def base_type(:uuid), do: Ecto.UUID
 
     for size <- [8, 16, 32, 64, 128, 256] do
       def base_type(unquote(:"i#{size}")), do: :integer
@@ -143,9 +186,9 @@ defmodule Ch do
     def base_type({:low_cardinality, type}), do: base_type(type)
     def base_type({:simple_aggregate_function, _name, type}), do: base_type(type)
     def base_type({:fixed_string, _size}), do: :string
-    def base_type({:datetime, _timezone}), do: :utc_datetime
+    def base_type({:datetime, "UTC"}), do: :utc_datetime
     def base_type({:datetime64, _precision}), do: :naive_datetime_usec
-    def base_type({:datetime64, _precision, _timezone}), do: :utc_datetime_usec
+    def base_type({:datetime64, _precision, "UTC"}), do: :utc_datetime_usec
     def base_type({:decimal = d, _precision, _scale}), do: d
 
     for size <- [32, 64, 128, 256] do

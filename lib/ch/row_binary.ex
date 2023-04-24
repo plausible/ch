@@ -328,6 +328,13 @@ defmodule Ch.RowBinary do
 
   def encode(:uuid, nil), do: <<0::128>>
 
+  def encode(:ipv4, {a, b, c, d}), do: [d, c, b, a]
+  def encode(:ipv4, nil), do: <<0::32>>
+
+  def encode(:ipv6, {b1, b2, b3, b4, b5, b6, b7, b8}), do: [b1, b2, b3, b4, b5, b6, b7, b8]
+  def encode(:ipv6, <<_::128>> = encoded), do: encoded
+  def encode(:ipv6, nil), do: <<0::128>>
+
   def encode(:point, {x, y}), do: [encode(:f64, x) | encode(:f64, y)]
   def encode(:point, nil), do: <<0::128>>
   def encode(:ring, points), do: encode({:array, :point}, points)

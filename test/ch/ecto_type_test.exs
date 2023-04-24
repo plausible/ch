@@ -271,11 +271,27 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, ^uuid} = Ecto.Type.load(type, bin_uuid)
   end
 
-  @tag skip: true
-  test "IPv4"
+  test "IPv4" do
+    assert {:parameterized, Ch, :ipv4} = type = Ecto.ParameterizedType.init(Ch, type: "IPv4")
 
-  @tag skip: true
-  test "IPv6"
+    assert Ecto.Type.type(type) == type
+
+    assert {:ok, {127, 0, 0, 1}} = Ecto.Type.cast(type, "127.0.0.1")
+    assert {:ok, {127, 0, 0, 1}} = Ecto.Type.cast(type, {127, 0, 0, 1})
+    assert {:ok, {127, 0, 0, 1}} = Ecto.Type.dump(type, {127, 0, 0, 1})
+    assert {:ok, {127, 0, 0, 1}} = Ecto.Type.load(type, {127, 0, 0, 1})
+  end
+
+  test "IPv6" do
+    assert {:parameterized, Ch, :ipv6} = type = Ecto.ParameterizedType.init(Ch, type: "IPv6")
+
+    assert Ecto.Type.type(type) == type
+
+    assert {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} = Ecto.Type.cast(type, "::1")
+    assert {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} = Ecto.Type.cast(type, {0, 0, 0, 0, 0, 0, 0, 1})
+    assert {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} = Ecto.Type.dump(type, {0, 0, 0, 0, 0, 0, 0, 1})
+    assert {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} = Ecto.Type.load(type, {0, 0, 0, 0, 0, 0, 0, 1})
+  end
 
   test "Decimal(18, 4)" do
     assert {:parameterized, Ch, {:decimal, 18, 4}} =
