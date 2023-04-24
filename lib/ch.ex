@@ -90,12 +90,28 @@ defmodule Ch do
     end
 
     @impl true
+    def load(value, _loader, {:tuple, types}) do
+      with {:ok, value} <- process_tuple(types, value, &Ecto.Type.load/2) do
+        {:ok, List.to_tuple(value)}
+      end
+    end
+
     def load(value, _loader, params), do: Ecto.Type.load(base_type(params), value)
 
     @impl true
+    def dump(value, _dumper, {:tuple, types}) do
+      process_tuple(types, value, &Ecto.Type.dump/2)
+    end
+
     def dump(value, _dumper, params), do: Ecto.Type.dump(base_type(params), value)
 
     @impl true
+    def cast(value, {:tuple, types}) do
+      with {:ok, value} <- process_tuple(types, value, &Ecto.Type.cast/2) do
+        {:ok, List.to_tuple(value)}
+      end
+    end
+
     def cast(value, params), do: Ecto.Type.cast(base_type(params), value)
 
     @doc false
@@ -137,6 +153,26 @@ defmodule Ch do
     end
 
     def base_type({:parameterized, Ch, params}), do: base_type(params)
+
+    defp process_tuple(types, values, mapper) when is_tuple(values) do
+      process_tuple(types, Tuple.to_list(values), mapper, [])
+    end
+
+    defp process_tuple(types, values, mapper) when is_list(values) do
+      process_tuple(types, values, mapper, [])
+    end
+
+    defp process_tuple(_types, nil = n, _mapper), do: {:ok, n}
+
+    defp process_tuple([t | types], [v | values], mapper, acc) do
+      case mapper.(base_type(t), v) do
+        {:ok, v} -> process_tuple(types, values, mapper, [v | acc])
+        :error = e -> e
+      end
+    end
+
+    defp process_tuple([], [], _mapper, acc), do: {:ok, :lists.reverse(acc)}
+    defp process_tuple(_types, _values, _mapper, _acc), do: :error
 
     @impl true
     def embed_as(_, _), do: :self
