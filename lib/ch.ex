@@ -111,7 +111,7 @@ defmodule Ch do
     def dump(value, _dumper, :ipv4) do
       case value do
         {_, _, _, _} -> {:ok, value}
-        nil = n -> {:ok, n}
+        nil -> {:ok, value}
         _other -> :error
       end
     end
@@ -119,7 +119,7 @@ defmodule Ch do
     def dump(value, _loader, :ipv6) do
       case value do
         {_, _, _, _, _, _, _, _} -> {:ok, value}
-        nil = n -> {:ok, n}
+        nil -> {:ok, value}
         _other -> :error
       end
     end
@@ -127,7 +127,7 @@ defmodule Ch do
     def dump(value, _loader, :point) do
       case value do
         {x, y} when is_number(x) and is_number(y) -> {:ok, value}
-        nil = n -> {:ok, n}
+        nil -> {:ok, value}
         _other -> :error
       end
     end
@@ -146,7 +146,7 @@ defmodule Ch do
         {_, _, _, _} -> {:ok, value}
         _ when is_binary(value) -> :inet.parse_ipv4_address(to_charlist(value))
         _ when is_list(value) -> :inet.parse_ipv4_address(value)
-        nil = n -> {:ok, n}
+        nil -> {:ok, value}
         _ -> :error
       end
     end
@@ -156,7 +156,7 @@ defmodule Ch do
         {_, _, _, _, _, _, _, _} -> {:ok, value}
         _ when is_binary(value) -> :inet.parse_ipv6_address(to_charlist(value))
         _ when is_list(value) -> :inet.parse_ipv6_address(value)
-        nil = n -> {:ok, n}
+        nil -> {:ok, value}
         _ -> :error
       end
     end
@@ -164,7 +164,7 @@ defmodule Ch do
     def cast(value, :point) do
       case value do
         {x, y} when is_number(x) and is_number(y) -> {:ok, value}
-        nil = n -> {:ok, n}
+        nil -> {:ok, value}
         _ -> :error
       end
     end
@@ -227,7 +227,7 @@ defmodule Ch do
       process_tuple(types, values, mapper, [])
     end
 
-    defp process_tuple(_types, nil = n, _mapper), do: {:ok, n}
+    defp process_tuple(_types, nil = value, _mapper), do: {:ok, value}
     defp process_tuple(_types, _values, _napper), do: :error
 
     defp process_tuple([t | types], [v | values], mapper, acc) do
@@ -247,6 +247,8 @@ defmodule Ch do
     defp process_map(value, key_type, value_type, mapper) when is_list(value) do
       process_map(value, base_type(key_type), base_type(value_type), mapper, [])
     end
+
+    defp process_map(nil = value, _key_type, _value_type, _mapper), do: {:ok, value}
 
     defp process_map(_value, _key_type, _value_type, _mapper), do: :error
 
