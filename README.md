@@ -228,7 +228,7 @@ Mix.install([:ch, :tz])
 %Ch.Result{rows: [[%DateTime{time_zone: "Asia/Taipei"} = taipei]]} = 
   Ch.query!(pid, "SELECT CAST(now() as DateTime('Asia/Taipei'))")
 
-"2023-04-26T01:45:12+08:00" = DateTime.to_iso8601(taipei)
+"2023-04-26 01:45:12+08:00 CST Asia/Taipei" = to_string(taipei)
 ```
 
 Encoding non-UTC datetimes raises an `ArgumentError`
