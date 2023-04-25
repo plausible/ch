@@ -82,6 +82,17 @@ defmodule Ch.EctoTypeTest do
     end
   end
 
+  test "Map(String, UInt64)" do
+    assert {:parameterized, Ch, {:map, :string, :u64}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "Map(String, UInt64)")
+
+    assert Ecto.Type.type(type) == type
+
+    assert {:ok, %{"answer" => 42}} = Ecto.Type.cast(type, %{"answer" => 42})
+    assert {:ok, [{"answer", 42}]} = Ecto.Type.dump(type, %{"answer" => 42})
+    assert {:ok, %{"answer" => 42}} = Ecto.Type.load(type, %{"answer" => 42})
+  end
+
   for size <- [32, 64] do
     test "Float#{size}" do
       assert {:parameterized, Ch, unquote(:"f#{size}")} =
