@@ -212,7 +212,35 @@ To get raw binary from `String` columns use `:binary` type that skips UTF-8 chec
 
 Decoding non-UTC datetimes like `DateTime('Asia/Taipei')` requires a [timezone database.](https://hexdocs.pm/elixir/DateTime.html#module-time-zone-database)
 
-Encoding non-UTC datetimes like `DateTime.new(~D[..], ~T[..], "Asia/Taipei")` raises an `ArgumentError`.
+```elixir
+Mix.install [:ch, :tz]
+
+:ok = Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
+
+{:ok, pid} = Ch.start_link()
+
+%Ch.Result{rows: [[~N[2023-04-25 17:45:09]]]} = 
+  Ch.query!(pid, "SELECT CAST(now() as DateTime)")
+
+%Ch.Result{rows: [[~U[2023-04-25 17:45:11Z]]]} = 
+  Ch.query!(pid, "SELECT CAST(now() as DateTime('UTC'))")
+
+%Ch.Result{rows: [[#DateTime<2023-04-26 01:45:12+08:00 CST Asia/Taipei>]]} = 
+  Ch.query!(pid, "SELECT CAST(now() as DateTime('Asia/Taipei'))")
+```
+
+Encoding non-UTC datetimes like `DateTime.new(~D[..], ~T[..], "Asia/Taipei")` raises an `ArgumentError`
+
+```elixir
+Ch.query!(pid, "CREATE TABLE ch_datetimes(datetime DateTime) ENGINE Null")
+
+naive = NaiveDateTime.utc_now()
+utc = DateTime.utc_now()
+taipei = DateTime.shift_zone!(utc, "Asia/Taipei")
+
+# ** (ArgumentError) non-UTC timezones are not supported for encoding: 2023-04-26 01:49:43.044569+08:00 CST Asia/Taipei
+Ch.query!(pid, "INSERT INTO ch_datetimes(datetime) FORMAT RowBinary", [[naive], [utc], [taipei]], types: ["DateTime"])
+```
 
 ## Benchmarks
 
