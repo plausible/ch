@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7 (2023-04-24)
+
+- support RowBinaryWithNamesAndTypes
+
 ## 0.1.6 (2023-04-24)
 
 - add Map(K,V) support in Ch Ecto type
