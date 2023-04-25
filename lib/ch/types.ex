@@ -159,6 +159,15 @@ defmodule Ch.Types do
   for size <- [32, 64, 128, 256] do
     name = :"decimal#{size}"
 
+    # `select toTypeName(cast(1 as Decimal32(2)))` etc.
+    precision =
+      case size do
+        32 -> 9
+        64 -> 18
+        128 -> 38
+        256 -> 76
+      end
+
     @doc """
     Helper for `Decimal#{size}(S)` ClickHouse type:
 
@@ -166,7 +175,7 @@ defmodule Ch.Types do
         {:#{name}, 4}
 
         iex> to_string(encode(#{name}(4)))
-        "Decimal#{size}(4)"
+        "Decimal(#{precision}, 4)"
 
         iex> decode("Decimal#{size}(4)")
         {:#{name}, 4}
@@ -489,10 +498,18 @@ defmodule Ch.Types do
 
   def encode({:low_cardinality, type}), do: ["LowCardinality(", encode(type), ?)]
 
-  # TODO ClickHouse won't probably accept this, needs to be Decimal(P, S)
   for size <- [32, 64, 128, 256] do
+    # `select toTypeName(cast(1 as Decimal32(2)))` etc.
+    precision =
+      case size do
+        32 -> 9
+        64 -> 18
+        128 -> 38
+        256 -> 76
+      end
+
     def encode({unquote(:"decimal#{size}"), scale}) do
-      [unquote("Decimal#{size}("), String.Chars.Integer.to_string(scale), ?)]
+      encode({:decimal, unquote(precision), scale})
     end
   end
 
