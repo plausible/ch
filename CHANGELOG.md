@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6 (2023-04-24)
+
+- add Map(K,V) support in Ch Ecto type
+
 ## 0.1.5 (2023-04-23)
 
 - fix query param encoding like Array(Date)
