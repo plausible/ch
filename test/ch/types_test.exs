@@ -104,15 +104,15 @@ defmodule Ch.TypesTest do
     end
 
     test "enum" do
-      assert decode("Enum8('hello' = 1, 'world' = 2)") == {:enum8, [{"world", 2}, {"hello", 1}]}
+      assert decode("Enum8('hello' = 1, 'world' = 2)") == {:enum8, [{"hello", 1}, {"world", 2}]}
 
       assert decode("Enum16('hello' = -1, 'world' = 2)") ==
-               {:enum16, [{"world", 2}, {"hello", -1}]}
+               {:enum16, [{"hello", -1}, {"world", 2}]}
 
-      assert decode("Enum8('hello'=1,'world'=2)") == {:enum8, [{"world", 2}, {"hello", 1}]}
+      assert decode("Enum8('hello'=1,'world'=2)") == {:enum8, [{"hello", 1}, {"world", 2}]}
 
       assert decode(" Enum8 ( 'hello' = 1 , 'world' = 2 ) ") ==
-               {:enum8, [{"world", 2}, {"hello", 1}]}
+               {:enum8, [{"hello", 1}, {"world", 2}]}
     end
 
     test "simple aggregate function" do

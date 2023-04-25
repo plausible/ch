@@ -239,7 +239,7 @@ defmodule Ch.EctoTypeTest do
     full_encoded = encoded <> "('hello' = 1, 'world' = 2)"
 
     test full_encoded do
-      assert {:parameterized, Ch, {unquote(decoded), [{"world", 2}, {"hello", 1}]}} =
+      assert {:parameterized, Ch, {unquote(decoded), [{"hello", 1}, {"world", 2}]}} =
                type = Ecto.ParameterizedType.init(Ch, type: unquote(full_encoded))
 
       assert Ecto.Type.type(type) == type

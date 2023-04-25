@@ -292,9 +292,8 @@ defmodule Ch.Types do
         iex> to_string(encode(#{name}([{"hello", 1}, {"world", 2}])))
         "Enum#{size}('hello' = 1, 'world' = 2)"
 
-        # note that the order is reversed
         iex> decode("Enum#{size}('hello' = 1, 'world' = 2)")
-        #{name}([{"world", 2}, {"hello", 1}])
+        #{name}([{"hello", 1}, {"world", 2}])
 
     """
     def unquote(name)(mapping) when is_list(mapping), do: {unquote(name), mapping}
@@ -310,7 +309,7 @@ defmodule Ch.Types do
       {:array, :string}
 
       iex> decode("Enum8('hello' = 1, 'world' = 2)")
-      {:enum8, [{"world", 2}, {"hello", 1}]}
+      {:enum8, [{"hello", 1}, {"world", 2}]}
 
       iex> decode("Nullable(Decimal(18, 4))")
       {:nullable, {:decimal, 18, 4}}
@@ -421,7 +420,7 @@ defmodule Ch.Types do
   defp build_type(:decimal = d, [s, p]), do: {d, p, s}
 
   defp build_enum_mapping(mapping) do
-    mapping |> Enum.chunk_every(2) |> Enum.map(fn [v, k] -> {k, v} end)
+    mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)
   end
 
   # TODO '', \'
