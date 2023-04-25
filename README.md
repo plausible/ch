@@ -208,12 +208,12 @@ To get raw binary from `String` columns use `:binary` type that skips UTF-8 chec
   Ch.query!(pid, "SELECT * FROM ch_utf8", [], types: [:binary])
 ```
 
-#### Timezones
+#### Timezones in RowBinary
 
 Decoding non-UTC datetimes like `DateTime('Asia/Taipei')` requires a [timezone database.](https://hexdocs.pm/elixir/DateTime.html#module-time-zone-database)
 
 ```elixir
-Mix.install [:ch, :tz]
+Mix.install([:ch, :tz])
 
 :ok = Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
 
@@ -225,11 +225,13 @@ Mix.install [:ch, :tz]
 %Ch.Result{rows: [[~U[2023-04-25 17:45:11Z]]]} = 
   Ch.query!(pid, "SELECT CAST(now() as DateTime('UTC'))")
 
-%Ch.Result{rows: [[#DateTime<2023-04-26 01:45:12+08:00 CST Asia/Taipei>]]} = 
+%Ch.Result{rows: [[%DateTime{time_zone: "Asia/Taipei"} = taipei]]} = 
   Ch.query!(pid, "SELECT CAST(now() as DateTime('Asia/Taipei'))")
+
+"2023-04-26T01:45:12+08:00" = DateTime.to_iso8601(taipei)
 ```
 
-Encoding non-UTC datetimes like `DateTime.new(~D[..], ~T[..], "Asia/Taipei")` raises an `ArgumentError`
+Encoding non-UTC datetimes raises an `ArgumentError`
 
 ```elixir
 Ch.query!(pid, "CREATE TABLE ch_datetimes(datetime DateTime) ENGINE Null")
