@@ -10,6 +10,17 @@ defmodule Ch.RowBinary do
   @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
   @epoch_utc_datetime DateTime.new!(@epoch_date, ~T[00:00:00])
 
+  @doc false
+  def encode_names_and_types(names, types) do
+    [encode(:varint, length(names)), encode_many(names, :string), encode_types(types)]
+  end
+
+  defp encode_types([type | types]) do
+    [encode(:string, Ch.Types.encode(type)) | encode_types(types)]
+  end
+
+  defp encode_types([] = done), do: done
+
   @doc """
   Encodes a single row to [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) as iodata.
 

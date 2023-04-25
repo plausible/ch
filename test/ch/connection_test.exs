@@ -1227,4 +1227,66 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
     end
   end
+
+  describe "RowBinaryWithNamesAndTypes" do
+    setup %{conn: conn} do
+      Ch.query!(conn, """
+      create table if not exists row_binary_names_and_types_t (
+        country_code FixedString(2),
+        rare_string LowCardinality(String),
+        maybe_int32 Nullable(Int32)
+      ) engine Memory
+      """)
+
+      on_exit(fn -> Ch.Test.sql_exec("truncate row_binary_names_and_types_t") end)
+    end
+
+    test "error on type mismatch", %{conn: conn} do
+      stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes"
+      rows = [["AB", "rare", -42]]
+      format = "RowBinaryWithNamesAndTypes"
+      names = ["country_code", "rare_string", "maybe_int32"]
+
+      opts = [
+        format: format,
+        names: names,
+        types: [Ch.Types.fixed_string(2), Ch.Types.string(), Ch.Types.nullable(Ch.Types.u32())]
+      ]
+
+      assert {:error, %Ch.Error{code: 117, message: message}} = Ch.query(conn, stmt, rows, opts)
+      assert message =~ "Type of 'rare_string' must be LowCardinality(String), not String"
+
+      opts = [
+        format: format,
+        names: names,
+        types: [
+          Ch.Types.fixed_string(2),
+          Ch.Types.low_cardinality(Ch.Types.string()),
+          Ch.Types.nullable(Ch.Types.u32())
+        ]
+      ]
+
+      assert {:error, %Ch.Error{code: 117, message: message}} = Ch.query(conn, stmt, rows, opts)
+      assert message =~ "Type of 'maybe_int32' must be Nullable(Int32), not Nullable(UInt32)"
+    end
+
+    test "ok on valid types", %{conn: conn} do
+      stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes"
+      rows = [["AB", "rare", -42]]
+      format = "RowBinaryWithNamesAndTypes"
+      names = ["country_code", "rare_string", "maybe_int32"]
+
+      opts = [
+        format: format,
+        names: names,
+        types: [
+          Ch.Types.fixed_string(2),
+          Ch.Types.low_cardinality(Ch.Types.string()),
+          Ch.Types.nullable(Ch.Types.i32())
+        ]
+      ]
+
+      assert {:ok, %{num_rows: 1}} = Ch.query(conn, stmt, rows, opts)
+    end
+  end
 end

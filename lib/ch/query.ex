@@ -84,12 +84,24 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   def encode(%Query{command: :insert, statement: statement}, params, opts) do
-    if format_row_binary?(statement) do
-      types = Keyword.fetch!(opts, :types)
-      data = RowBinary.encode_rows(params, types)
-      {_query_params = [], _extra_headers = [], [statement, ?\n | data]}
-    else
-      {query_params(params), _extra_headers = [], statement}
+    format = Keyword.get(opts, :format)
+
+    cond do
+      # Ecto adapter uses this format
+      format == "RowBinaryWithNamesAndTypes" ->
+        types = Keyword.fetch!(opts, :types)
+        names = Keyword.fetch!(opts, :names)
+        header = RowBinary.encode_names_and_types(names, types)
+        data = RowBinary.encode_rows(params, types)
+        {_query_params = [], _extra_headers = [], [statement, ?\n, header | data]}
+
+      format == "RowBinary" or format_row_binary?(statement) ->
+        types = Keyword.fetch!(opts, :types)
+        data = RowBinary.encode_rows(params, types)
+        {_query_params = [], _extra_headers = [], [statement, ?\n | data]}
+
+      true ->
+        {query_params(params), _extra_headers = [], statement}
     end
   end
 
@@ -100,16 +112,11 @@ defimpl DBConnection.Query, for: Ch.Query do
     {query_params(params), [{"x-clickhouse-format", format}], statement}
   end
 
-  # TODO is there a better way? force the user to provide :format option?
   defp format_row_binary?(statement) when is_binary(statement) do
     statement |> String.trim_trailing() |> String.ends_with?("RowBinary")
   end
 
-  # optimisation for `:chto`, consider :format option, for real
-  # https://github.com/plausible/chto/blob/07f79d6d6d971f0effc85a1b06625b87f9930efb/lib/ecto/adapters/clickhouse/schema.ex#L35
-  defp format_row_binary?([_ | " FORMAT RowBinary"]), do: true
-
-  defp format_row_binary?(statement) do
+  defp format_row_binary?(statement) when is_list(statement) do
     statement
     |> IO.iodata_to_binary()
     |> format_row_binary?()
