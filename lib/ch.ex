@@ -81,6 +81,9 @@ defmodule Ch do
     @behaviour Ecto.ParameterizedType
 
     @impl true
+    # TODO
+    # temp workaround for `def dumpers({:in, subtype}, _type), do: [{:array, subtype}]`
+    def type({:array, type}), do: {:array, {:parameterized, Ch, type}}
     def type(params), do: {:parameterized, Ch, params}
 
     @impl true
