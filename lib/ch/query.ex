@@ -84,18 +84,14 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   def encode(%Query{command: :insert, statement: statement}, params, opts) do
-    format = Keyword.get(opts, :format)
-
     cond do
-      # Ecto adapter uses this format
-      format == "RowBinaryWithNamesAndTypes" ->
+      names = Keyword.get(opts, :names) ->
         types = Keyword.fetch!(opts, :types)
-        names = Keyword.fetch!(opts, :names)
         header = RowBinary.encode_names_and_types(names, types)
         data = RowBinary.encode_rows(params, types)
         {_query_params = [], _extra_headers = [], [statement, ?\n, header | data]}
 
-      format == "RowBinary" or format_row_binary?(statement) ->
+      format_row_binary?(statement) ->
         types = Keyword.fetch!(opts, :types)
         data = RowBinary.encode_rows(params, types)
         {_query_params = [], _extra_headers = [], [statement, ?\n | data]}

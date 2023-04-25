@@ -1244,11 +1244,9 @@ defmodule Ch.ConnectionTest do
     test "error on type mismatch", %{conn: conn} do
       stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes"
       rows = [["AB", "rare", -42]]
-      format = "RowBinaryWithNamesAndTypes"
       names = ["country_code", "rare_string", "maybe_int32"]
 
       opts = [
-        format: format,
         names: names,
         types: [Ch.Types.fixed_string(2), Ch.Types.string(), Ch.Types.nullable(Ch.Types.u32())]
       ]
@@ -1257,7 +1255,6 @@ defmodule Ch.ConnectionTest do
       assert message =~ "Type of 'rare_string' must be LowCardinality(String), not String"
 
       opts = [
-        format: format,
         names: names,
         types: [
           Ch.Types.fixed_string(2),
@@ -1273,11 +1270,9 @@ defmodule Ch.ConnectionTest do
     test "ok on valid types", %{conn: conn} do
       stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes"
       rows = [["AB", "rare", -42]]
-      format = "RowBinaryWithNamesAndTypes"
       names = ["country_code", "rare_string", "maybe_int32"]
 
       opts = [
-        format: format,
         names: names,
         types: [
           Ch.Types.fixed_string(2),
