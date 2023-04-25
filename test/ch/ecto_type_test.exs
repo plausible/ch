@@ -40,7 +40,7 @@ defmodule Ch.EctoTypeTest do
     assert {:parameterized, Ch, {:array, :string}} =
              type = Ecto.ParameterizedType.init(Ch, type: "Array(String)")
 
-    assert Ecto.Type.type(type) == {:array, {:parameterized, Ch, :string}}
+    assert Ecto.Type.type(type) == type
     assert Ch.base_type(type) == {:array, :string}
 
     assert {:ok, ["something"]} = Ecto.Type.cast(type, ["something"])

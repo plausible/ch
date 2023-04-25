@@ -81,9 +81,6 @@ defmodule Ch do
     @behaviour Ecto.ParameterizedType
 
     @impl true
-    # TODO
-    # temp workaround for `def dumpers({:in, subtype}, _type), do: [{:array, subtype}]`
-    def type({:array, type}), do: {:array, {:parameterized, Ch, type}}
     def type(params), do: {:parameterized, Ch, params}
 
     @impl true
@@ -201,7 +198,7 @@ defmodule Ch do
       def base_type(unquote(:"f#{size}")), do: :float
     end
 
-    def base_type({:array, type}), do: {:array, base_type(type)}
+    def base_type({:array = a, type}), do: {a, base_type(type)}
     def base_type({:nullable, type}), do: base_type(type)
     def base_type({:low_cardinality, type}), do: base_type(type)
     def base_type({:simple_aggregate_function, _name, type}), do: base_type(type)
