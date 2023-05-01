@@ -14,6 +14,8 @@ Used in [Ecto ClickHouse adapter.](https://github.com/plausible/chto)
 - Per query settings
 - Minimal API
 
+Your ideas are welcome [here.](https://github.com/plausible/ch/issues/82)
+
 ## Installation
 
 ```elixir
