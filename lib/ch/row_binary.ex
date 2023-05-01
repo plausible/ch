@@ -381,7 +381,10 @@ defmodule Ch.RowBinary do
   end
 
   defp encode_varint_cont(i) when i < 128, do: <<i>>
-  defp encode_varint_cont(i), do: [i &&& 0xFF | encode_varint_cont(i >>> 7)]
+
+  defp encode_varint_cont(i) do
+    [(i &&& 0b0111_1111) ||| 0b1000_0000 | encode_varint_cont(i >>> 7)]
+  end
 
   defp encode_many([el | rest], type), do: [encode(type, el) | encode_many(rest, type)]
   defp encode_many([] = done, _type), do: done

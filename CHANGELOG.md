@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8 (2023-05-01)
+
+- fix varint encoding
+
 ## 0.1.7 (2023-04-24)
 
 - support RowBinaryWithNamesAndTypes
