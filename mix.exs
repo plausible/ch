@@ -33,15 +33,15 @@ defmodule Ch.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:mint, "~> 1.4"},
-      {:db_connection, "~> 2.4"},
-      {:jason, "~> 1.4"},
+      {:mint, "~> 1.0"},
+      {:db_connection, "~> 2.0"},
+      {:jason, "~> 1.0"},
       {:decimal, "~> 2.0"},
-      {:ecto, "~> 3.10", optional: true},
-      {:benchee, "~> 1.1", only: [:bench]},
-      {:dialyxir, "~> 1.2", only: [:dev], runtime: false},
+      {:ecto, "~> 3.5", optional: true},
+      {:benchee, "~> 1.0", only: [:bench]},
+      {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
-      {:tz, "~> 0.26.1", only: [:test]}
+      {:tz, "~> 0.26.0", only: [:test]}
     ]
   end
 
