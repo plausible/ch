@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9 (2023-05-02)
+
+- relax deps versions
+
 ## 0.1.8 (2023-05-01)
 
 - fix varint encoding
