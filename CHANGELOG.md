@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- support `:raw` option in `Ch` type https://github.com/plausible/ch/pull/84
+
 ## 0.1.9 (2023-05-02)
 
 - relax deps versions
