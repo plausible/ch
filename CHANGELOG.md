@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.10 (2023-05-05)
 
 - support `:raw` option in `Ch` type https://github.com/plausible/ch/pull/84
 
