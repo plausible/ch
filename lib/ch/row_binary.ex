@@ -372,7 +372,8 @@ defmodule Ch.RowBinary do
                 res
 
               :error ->
-                raise "The enum value #{e} was not present in the given enum mapping: #{inspect(mapping)}"
+                raise ArgumentError,
+                      "enum value #{inspect(e)} not found in mapping: #{inspect(mapping)}"
             end
         end
 
