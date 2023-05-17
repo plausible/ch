@@ -363,8 +363,17 @@ defmodule Ch.RowBinary do
     def encode({unquote(enum_t), mapping}, e) do
       i =
         case e do
-          _ when is_integer(e) -> e
-          _ when is_binary(e) -> Map.fetch!(mapping, e)
+          _ when is_integer(e) ->
+            e
+
+          _ when is_binary(e) ->
+            case Map.fetch(mapping, e) do
+              {:ok, res} ->
+                res
+
+              :error ->
+                raise "The enum value #{e} was not present in the given enum mapping: #{inspect(mapping)}"
+            end
         end
 
       encode(unquote(int_t), i)
