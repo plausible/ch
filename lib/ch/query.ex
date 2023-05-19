@@ -187,7 +187,7 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
   defp encode_param(f) when is_float(f), do: Float.to_string(f)
-  defp encode_param(b) when is_binary(b), do: b
+  defp encode_param(b) when is_binary(b), do: escape_param([{"\t", "\\t"}, {"\n", "\\n"}], b)
   defp encode_param(b) when is_boolean(b), do: Atom.to_string(b)
   defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
   defp encode_param(%Date{} = date), do: Date.to_iso8601(date)
@@ -239,7 +239,7 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp encode_map_params([] = empty), do: empty
 
   defp encode_array_param(s) when is_binary(s) do
-    [?', escape_array_param(s), ?']
+    [?', escape_param([{"'", "''"}, {"\\", "\\\\"}], s), ?']
   end
 
   defp encode_array_param(%s{} = param) when s in [Date, NaiveDateTime] do
@@ -252,51 +252,12 @@ defimpl DBConnection.Query, for: Ch.Query do
     [encode_array_param(k), ?:, encode_array_param(v)]
   end
 
-  @compile inline: [escape_array_param: 1]
-  defp escape_array_param(s) do
-    escape_array_param(s, 0, s, [])
+  defp escape_param([{pattern, replacement} | escapes], param) do
+    param = String.replace(param, pattern, replacement)
+    escape_param(escapes, param)
   end
 
-  @dialyzer {:no_improper_lists, escape_array_param: 4, escape_array_param: 5}
-
-  @doc false
-  # based on based on https://github.com/elixir-plug/plug/blob/main/lib/plug/html.ex#L41-L80
-  def escape_array_param(binary, skip, original, acc)
-
-  escapes = [{?', "\\'"}, {?\\, "\\\\"}]
-
-  for {match, insert} <- escapes do
-    def escape_array_param(<<unquote(match), rest::bits>>, skip, original, acc) do
-      escape_array_param(rest, skip + 1, original, [acc | unquote(insert)])
-    end
-  end
-
-  def escape_array_param(<<_char, rest::bits>>, skip, original, acc) do
-    escape_array_param(rest, skip, original, acc, 1)
-  end
-
-  def escape_array_param(<<>>, _skip, _original, acc) do
-    acc
-  end
-
-  for {match, insert} <- escapes do
-    defp escape_array_param(<<unquote(match), rest::bits>>, skip, original, acc, len) do
-      part = binary_part(original, skip, len)
-      escape_array_param(rest, skip + len + 1, original, [acc, part | unquote(insert)])
-    end
-  end
-
-  defp escape_array_param(<<_char, rest::bits>>, skip, original, acc, len) do
-    escape_array_param(rest, skip, original, acc, len + 1)
-  end
-
-  defp escape_array_param(<<>>, 0, original, _acc, _len) do
-    original
-  end
-
-  defp escape_array_param(<<>>, skip, original, acc, len) do
-    [acc | binary_part(original, skip, len)]
-  end
+  defp escape_param([], param), do: param
 end
 
 defimpl String.Chars, for: Ch.Query do

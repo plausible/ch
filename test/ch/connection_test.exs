@@ -89,6 +89,9 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} =
              Ch.query(conn, "select {a:Array(String)}", %{"a" => ["a", "b'", "\\'c"]})
 
+    assert {:ok, %{num_rows: 1, rows: [[["a\n", "b\tc"]]]}} =
+             Ch.query(conn, "select {a:Array(String)}", %{"a" => ["a\n", "b\tc"]})
+
     assert {:ok, %{num_rows: 1, rows: [[[1, 2, 3]]]}} =
              Ch.query(conn, "select {a:Array(UInt8)}", %{"a" => [1, 2, 3]})
 
