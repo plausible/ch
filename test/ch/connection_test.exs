@@ -29,6 +29,12 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [["a&b=c"]]}} =
              Ch.query(conn, "select {a:String}", %{"a" => "a&b=c"})
 
+    assert {:ok, %{num_rows: 1, rows: [["a\n"]]}} =
+             Ch.query(conn, "select {a:String}", %{"a" => "a\n"})
+
+    assert {:ok, %{num_rows: 1, rows: [["a\t"]]}} =
+             Ch.query(conn, "select {a:String}", %{"a" => "a\t"})
+
     assert {:ok, %{num_rows: 1, rows: [row]}} =
              Ch.query(conn, "select {a:Decimal(9,4)}", %{"a" => Decimal.new("2000.333")})
 
