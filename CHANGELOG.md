@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.11 (2023-05-19)
+
+- improve Enum error message invalid values during encoding: https://github.com/plausible/ch/pull/85
+- fix `\t` and `\n` in query params https://github.com/plausible/ch/pull/86
+
 ## 0.1.10 (2023-05-05)
 
 - support `:raw` option in `Ch` type https://github.com/plausible/ch/pull/84
