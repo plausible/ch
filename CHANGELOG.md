@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- replace `{:raw, data}` with `encode: false` option, add `:decode` option https://github.com/plausible/ch/pull/42
+
 ## 0.1.11 (2023-05-19)
 
 - improve Enum error message invalid values during encoding: https://github.com/plausible/ch/pull/85
