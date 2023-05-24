@@ -30,11 +30,11 @@ defmodule Ch.QueryTest do
     end
 
     test "with nil command provided" do
-      assert Query.build("select 1+2", nil).command == :select
+      assert Query.build("select 1+2", command: nil).command == :select
     end
 
     test "with command provided" do
-      assert Query.build("select 1+2", :custom).command == :custom
+      assert Query.build("select 1+2", command: :custom).command == :custom
     end
 
     @tag skip: true

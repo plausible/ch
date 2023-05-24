@@ -114,7 +114,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
 
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT CSV", {:raw, csv})
+  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT CSV", csv, encode: false)
 ```
 
 #### Insert rows as chunked RowBinary stream
@@ -130,7 +130,7 @@ encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, _types
 ten_encoded_chunks = Stream.take(encoded, 10)
 
 %Ch.Result{num_rows: 1000} =
-  Ch.query(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", {:raw, ten_encoded_chunks})
+  Ch.query(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", ten_encoded_chunks, encode: false)
 ```
 
 This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting in lower memory usage.

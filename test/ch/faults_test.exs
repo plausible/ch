@@ -360,7 +360,8 @@ defmodule Ch.FaultsTest do
                      Ch.query(
                        conn,
                        "insert into unknown_table(a,b) format RowBinary",
-                       {:raw, stream}
+                       stream,
+                       encode: false
                      )
           end)
 
@@ -376,7 +377,8 @@ defmodule Ch.FaultsTest do
                      Ch.query(
                        conn,
                        "insert into unknown_table(a,b) format RowBinary",
-                       {:raw, stream}
+                       stream,
+                       encode: false
                      )
 
             assert message =~ ~r/UNKNOWN_TABLE/
@@ -417,7 +419,8 @@ defmodule Ch.FaultsTest do
                      Ch.query(
                        conn,
                        "insert into unknown_table(a,b) format RowBinary",
-                       {:raw, stream}
+                       stream,
+                       encode: false
                      )
           end)
 
@@ -437,7 +440,8 @@ defmodule Ch.FaultsTest do
                      Ch.query(
                        conn,
                        "insert into unknown_table(a,b) format RowBinary",
-                       {:raw, stream}
+                       stream,
+                       encode: false
                      )
 
             assert message =~ ~r/UNKNOWN_TABLE/

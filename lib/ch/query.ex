@@ -1,13 +1,16 @@
 defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
-  defstruct [:statement, :command]
+  defstruct [:statement, :command, :encode, :decode]
 
   @type t :: %__MODULE__{statement: iodata, command: atom}
 
   @doc false
-  @spec build(iodata, atom) :: t
-  def build(statement, command \\ nil) when is_atom(command) do
-    %__MODULE__{statement: statement, command: command || extract_command(statement)}
+  @spec build(iodata, Keyword.t()) :: t
+  def build(statement, opts \\ []) do
+    command = Keyword.get(opts, :command) || extract_command(statement)
+    encode = Keyword.get(opts, :encode, true)
+    decode = Keyword.get(opts, :decode, true)
+    %__MODULE__{statement: statement, command: command, encode: encode, decode: decode}
   end
 
   statements = [
@@ -68,12 +71,11 @@ defimpl DBConnection.Query, for: Ch.Query do
   def describe(query, _opts), do: query
 
   @spec encode(Query.t(), params, Keyword.t()) :: {query_params, Mint.Types.headers(), body}
-        when raw: iodata | Enumerable.t(),
-             params: map | [term] | [row :: [term]] | {:raw, raw},
+        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t(),
              query_params: [{String.t(), String.t()}],
-             body: raw
+             body: iodata | Enumerable.t()
 
-  def encode(%Query{command: :insert, statement: statement}, {:raw, data}, _opts) do
+  def encode(%Query{command: :insert, encode: false, statement: statement}, data, _opts) do
     body =
       case data do
         _ when is_list(data) or is_binary(data) -> [statement, ?\n | data]
@@ -130,6 +132,12 @@ defimpl DBConnection.Query, for: Ch.Query do
       end
 
     %Result{num_rows: num_rows, rows: nil, command: :insert, headers: headers}
+  end
+
+  def decode(%Query{decode: false, command: command}, responses, _opts) when is_list(responses) do
+    # TODO potentially fails on x-progress-headers
+    [_status, headers | data] = responses
+    %Result{rows: data, command: command, headers: headers}
   end
 
   def decode(%Query{command: command}, responses, opts) when is_list(responses) do

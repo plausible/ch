@@ -44,9 +44,9 @@ defmodule Ch do
   """
   @spec query(DBConnection.conn(), iodata, params, Keyword.t()) ::
           {:ok, Result.t()} | {:error, Exception.t()}
-        when raw: iodata | Enumerable.t(), params: map | [term] | [row :: [term]] | {:raw, raw}
+        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
   def query(conn, statement, params \\ [], opts \\ []) do
-    query = Query.build(statement, Keyword.get(opts, :command))
+    query = Query.build(statement, opts)
 
     with {:ok, _query, result} <- DBConnection.execute(conn, query, params, opts) do
       {:ok, result}
@@ -58,16 +58,16 @@ defmodule Ch do
   there was an error. See `query/4`.
   """
   @spec query!(DBConnection.conn(), iodata, params, Keyword.t()) :: Result.t()
-        when raw: iodata | Enumerable.t(), params: map | [term] | [row :: [term]] | {:raw, raw}
+        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
   def query!(conn, statement, params \\ [], opts \\ []) do
-    query = Query.build(statement, Keyword.get(opts, :command))
+    query = Query.build(statement, opts)
     DBConnection.execute!(conn, query, params, opts)
   end
 
   @doc false
   @spec stream(DBConnection.t(), iodata, map | [term], Keyword.t()) :: DBConnection.Stream.t()
   def stream(conn, statement, params \\ [], opts \\ []) do
-    query = Query.build(statement, Keyword.get(opts, :command))
+    query = Query.build(statement, opts)
     DBConnection.stream(conn, query, params, opts)
   end
 
