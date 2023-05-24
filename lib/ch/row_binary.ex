@@ -62,6 +62,7 @@ defmodule Ch.RowBinary do
     _encode_rows(rows, encoding_types(types))
   end
 
+  @doc false
   def _encode_rows([row | rows], types), do: _encode_rows(row, types, rows, types)
   def _encode_rows([] = done, _types), do: done
 
@@ -71,11 +72,12 @@ defmodule Ch.RowBinary do
 
   defp _encode_rows([], [], rows, types), do: _encode_rows(rows, types)
 
-  defp encoding_types([type | types]) do
+  @doc false
+  def encoding_types([type | types]) do
     [encoding_type(type) | encoding_types(types)]
   end
 
-  defp encoding_types([] = done), do: done
+  def encoding_types([] = done), do: done
 
   defp encoding_type(type) when is_binary(type) do
     encoding_type(Ch.Types.decode(type))
