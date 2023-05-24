@@ -123,10 +123,11 @@ csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
 {:ok, pid} = Ch.start_link()
 
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
+types = Ch.RowBinary.encoding_types(["UInt64"])
 
 stream = Stream.repeatedly(fn -> [:rand.uniform(100)] end)
 chunked = Stream.chunk_every(stream, 100)
-encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
+encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, types) end)
 ten_encoded_chunks = Stream.take(encoded, 10)
 
 %Ch.Result{num_rows: 1000} =
@@ -221,13 +222,13 @@ Mix.install([:ch, :tz])
 
 {:ok, pid} = Ch.start_link()
 
-%Ch.Result{rows: [[~N[2023-04-25 17:45:09]]]} = 
+%Ch.Result{rows: [[~N[2023-04-25 17:45:09]]]} =
   Ch.query!(pid, "SELECT CAST(now() as DateTime)")
 
-%Ch.Result{rows: [[~U[2023-04-25 17:45:11Z]]]} = 
+%Ch.Result{rows: [[~U[2023-04-25 17:45:11Z]]]} =
   Ch.query!(pid, "SELECT CAST(now() as DateTime('UTC'))")
 
-%Ch.Result{rows: [[%DateTime{time_zone: "Asia/Taipei"} = taipei]]} = 
+%Ch.Result{rows: [[%DateTime{time_zone: "Asia/Taipei"} = taipei]]} =
   Ch.query!(pid, "SELECT CAST(now() as DateTime('Asia/Taipei'))")
 
 "2023-04-26 01:45:12+08:00 CST Asia/Taipei" = to_string(taipei)

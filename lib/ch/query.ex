@@ -90,12 +90,12 @@ defimpl DBConnection.Query, for: Ch.Query do
       names = Keyword.get(opts, :names) ->
         types = Keyword.fetch!(opts, :types)
         header = RowBinary.encode_names_and_types(names, types)
-        data = RowBinary.encode_rows(params, types)
+        data = RowBinary.encode_rows(params, RowBinary.encoding_types(types))
         {_query_params = [], _extra_headers = [], [statement, ?\n, header | data]}
 
       format_row_binary?(statement) ->
         types = Keyword.fetch!(opts, :types)
-        data = RowBinary.encode_rows(params, types)
+        data = RowBinary.encode_rows(params, RowBinary.encoding_types(types))
         {_query_params = [], _extra_headers = [], [statement, ?\n | data]}
 
       true ->

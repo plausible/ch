@@ -16,7 +16,13 @@ defmodule Ch.RowBinary do
   end
 
   defp encode_types([type | types]) do
-    [encode(:string, Ch.Types.encode(type)) | encode_types(types)]
+    encoded =
+      case type do
+        _ when is_binary(type) -> type
+        _ -> Ch.Types.encode(type)
+      end
+
+    [encode(:string, encoded) | encode_types(types)]
   end
 
   defp encode_types([] = done), do: done
@@ -51,28 +57,34 @@ defmodule Ch.RowBinary do
       iex> encode_rows([], [])
       []
 
-      iex> encode_rows([[1]], ["UInt8"])
+      iex> encode_rows([[1]], encoding_types(["UInt8"]))
       [1]
 
-      iex> encode_rows([[3, "hello"], [4, "hi"]], ["UInt8", "String"])
+      iex> encode_rows([[3, "hello"], [4, "hi"]], encoding_types(["UInt8", "String"]))
       [3, [5 | "hello"], 4, [2 | "hi"]]
 
   """
-  def encode_rows(rows, types) do
-    _encode_rows(rows, encoding_types(types))
-  end
-
-  @doc false
-  def _encode_rows([row | rows], types), do: _encode_rows(row, types, rows, types)
-  def _encode_rows([] = done, _types), do: done
+  def encode_rows([row | rows], types), do: _encode_rows(row, types, rows, types)
+  def encode_rows([] = done, _types), do: done
 
   defp _encode_rows([el | els], [t | ts], rows, types) do
     [encode(t, el) | _encode_rows(els, ts, rows, types)]
   end
 
-  defp _encode_rows([], [], rows, types), do: _encode_rows(rows, types)
+  defp _encode_rows([], [], rows, types), do: encode_rows(rows, types)
 
-  @doc false
+  @doc """
+  Prepares types for encoding.
+
+  Examples:
+
+      iex> encoding_types(["UInt8"])
+      [:u8]
+
+      iex> encoding_types(["UInt8", "String"])
+      [:u8, :string]
+
+  """
   def encoding_types([type | types]) do
     [encoding_type(type) | encoding_types(types)]
   end

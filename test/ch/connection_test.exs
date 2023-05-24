@@ -231,7 +231,7 @@ defmodule Ch.ConnectionTest do
 
       types = ["UInt8", "String"]
       rows = [[1, "a"], [2, "b"]]
-      data = RowBinary.encode_rows(rows, types)
+      data = RowBinary.encode_rows(rows, RowBinary.encoding_types(types))
 
       assert %{num_rows: 2} = Ch.query!(conn, stmt, data, encode: false)
 
@@ -242,7 +242,7 @@ defmodule Ch.ConnectionTest do
     end
 
     test "chunked", %{conn: conn, table: table} do
-      types = ["UInt8", "String"]
+      types = RowBinary.encoding_types(["UInt8", "String"])
 
       rows = [[1, "a"], [2, "b"], [3, "c"]]
 
