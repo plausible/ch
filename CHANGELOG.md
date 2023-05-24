@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.12 (2023-05-24)
 
 - replace `{:raw, data}` with `encode: false` option, add `:decode` option https://github.com/plausible/ch/pull/42
 
