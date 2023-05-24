@@ -233,7 +233,7 @@ defmodule Ch.ConnectionTest do
       rows = [[1, "a"], [2, "b"]]
       data = RowBinary.encode_rows(rows, types)
 
-      assert %{num_rows: 2} = Ch.query!(conn, stmt, {:raw, data})
+      assert %{num_rows: 2} = Ch.query!(conn, stmt, data, encode: false)
 
       assert %{rows: rows} =
                Ch.query!(conn, "select * from {table:Identifier}", %{"table" => table})
@@ -243,6 +243,7 @@ defmodule Ch.ConnectionTest do
 
     test "chunked", %{conn: conn, table: table} do
       types = ["UInt8", "String"]
+
       rows = [[1, "a"], [2, "b"], [3, "c"]]
 
       stream =
@@ -251,7 +252,7 @@ defmodule Ch.ConnectionTest do
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
 
       assert {:ok, %{num_rows: 3}} =
-               Ch.query(conn, "insert into #{table}(a, b) format RowBinary", {:raw, stream})
+               Ch.query(conn, "insert into #{table}(a, b) format RowBinary", stream, encode: false)
 
       assert {:ok, %{rows: rows}} =
                Ch.query(conn, "select * from {table:Identifier}", %{"table" => table})
@@ -900,7 +901,12 @@ defmodule Ch.ConnectionTest do
 
       # weird thing about nullables is that, similar to bool, in binary format, any byte larger than 0 is `null`
       assert {:ok, %{num_rows: 5}} =
-               Ch.query(conn, "insert into nullable format RowBinary", {:raw, <<1, 2, 3, 4, 5>>})
+               Ch.query(
+                 conn,
+                 "insert into nullable format RowBinary",
+                 <<1, 2, 3, 4, 5>>,
+                 encode: false
+               )
 
       assert %{num_rows: 1, rows: [[count]]} =
                Ch.query!(conn, "select count(*) from nullable where n is null")
