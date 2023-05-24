@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.14 (2023-05-24)
+
+- simplify types, again...
+
 ## 0.1.13 (2023-05-24)
 
 - refactor types in `Ch.RowBinary` https://github.com/plausible/ch/pull/88
