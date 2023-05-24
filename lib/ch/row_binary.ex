@@ -57,34 +57,28 @@ defmodule Ch.RowBinary do
       iex> encode_rows([], [])
       []
 
-      iex> encode_rows([[1]], encoding_types(["UInt8"]))
+      iex> encode_rows([[1]], ["UInt8"])
       [1]
 
-      iex> encode_rows([[3, "hello"], [4, "hi"]], encoding_types(["UInt8", "String"]))
+      iex> encode_rows([[3, "hello"], [4, "hi"]], ["UInt8", "String"])
       [3, [5 | "hello"], 4, [2 | "hi"]]
 
   """
-  def encode_rows([row | rows], types), do: _encode_rows(row, types, rows, types)
-  def encode_rows([] = done, _types), do: done
+  def encode_rows(rows, types) do
+    _encode_rows(rows, encoding_types(types))
+  end
+
+  @doc false
+  def _encode_rows([row | rows], types), do: _encode_rows(row, types, rows, types)
+  def _encode_rows([] = done, _types), do: done
 
   defp _encode_rows([el | els], [t | ts], rows, types) do
     [encode(t, el) | _encode_rows(els, ts, rows, types)]
   end
 
-  defp _encode_rows([], [], rows, types), do: encode_rows(rows, types)
+  defp _encode_rows([], [], rows, types), do: _encode_rows(rows, types)
 
-  @doc """
-  Prepares types for encoding.
-
-  Examples:
-
-      iex> encoding_types(["UInt8"])
-      [:u8]
-
-      iex> encoding_types(["UInt8", "String"])
-      [:u8, :string]
-
-  """
+  @doc false
   def encoding_types([type | types]) do
     [encoding_type(type) | encoding_types(types)]
   end
@@ -478,11 +472,12 @@ defmodule Ch.RowBinary do
     decode_rows(types, data, [], [], types)
   end
 
-  defp decoding_types([type | types]) do
+  @doc false
+  def decoding_types([type | types]) do
     [decoding_type(type) | types]
   end
 
-  defp decoding_types([] = done), do: done
+  def decoding_types([] = done), do: done
 
   defp decoding_type(t) when is_binary(t) do
     decoding_type(Ch.Types.decode(t))

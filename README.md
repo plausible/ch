@@ -123,11 +123,10 @@ csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
 {:ok, pid} = Ch.start_link()
 
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
-types = Ch.RowBinary.encoding_types(["UInt64"])
 
 stream = Stream.repeatedly(fn -> [:rand.uniform(100)] end)
 chunked = Stream.chunk_every(stream, 100)
-encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, types) end)
+encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
 ten_encoded_chunks = Stream.take(encoded, 10)
 
 %Ch.Result{num_rows: 1000} =
