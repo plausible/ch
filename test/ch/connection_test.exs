@@ -1211,6 +1211,20 @@ defmodule Ch.ConnectionTest do
 
       assert List.flatten(rows) == Enum.into(0..999, [])
     end
+
+    test "disconnects on early halt", %{conn: conn} do
+      logs =
+        ExUnit.CaptureLog.capture_log(fn ->
+          Ch.run(conn, fn conn ->
+            conn |> Ch.stream("select number from system.numbers") |> Enum.take(1)
+          end)
+
+          assert Ch.query!(conn, "select 1 + 1").rows == [[2]]
+        end)
+
+      assert logs =~
+               "disconnected: ** (Ch.Error) cannot stop stream before receiving full response"
+    end
   end
 
   describe "prepare" do
