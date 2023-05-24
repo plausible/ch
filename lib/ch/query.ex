@@ -2,7 +2,7 @@ defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
   defstruct [:statement, :command, :encode, :decode]
 
-  @type t :: %__MODULE__{statement: iodata, command: atom}
+  @type t :: %__MODULE__{statement: iodata, command: atom, encode: boolean, decode: boolean}
 
   @doc false
   @spec build(iodata, Keyword.t()) :: t
