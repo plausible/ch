@@ -384,4 +384,38 @@ defmodule Ch.EctoTypeTest do
       assert {:ok, %Decimal{}} = Ecto.Type.load(type, 1.0)
     end
   end
+
+  describe "as" do
+    test "UInt8 as :boolean" do
+      assert {:parameterized, Ch, {:as, "UInt8", :boolean}} =
+               type = Ecto.ParameterizedType.init(Ch, type: "UInt8", as: :boolean)
+
+      assert Ecto.Type.type(type) == type
+      assert Ch.base_type(type) == :boolean
+
+      assert {:ok, true} = Ecto.Type.cast(type, true)
+      assert {:ok, false} = Ecto.Type.cast(type, false)
+      assert {:ok, true} = Ecto.Type.dump(type, true)
+      assert {:ok, false} = Ecto.Type.dump(type, false)
+      assert {:ok, true} = Ecto.Type.load(type, true)
+      assert {:ok, false} = Ecto.Type.load(type, false)
+    end
+
+    test "AggregateFunction as Decimal" do
+      assert {:parameterized, Ch,
+              {:as, "AggregateFunction(argMin, Decimal(18, 4), DateTime)", {:decimal, 18, 4}}} =
+               type =
+               Ecto.ParameterizedType.init(Ch,
+                 type: "AggregateFunction(argMin, Decimal(18, 4), DateTime)",
+                 as: "Decimal(18, 4)"
+               )
+
+      assert Ecto.Type.type(type) == type
+      assert Ch.base_type(type) == :decimal
+
+      assert {:ok, %Decimal{}} = Ecto.Type.cast(type, 1.0)
+      assert {:ok, %Decimal{}} = Ecto.Type.dump(type, 1.0)
+      assert {:ok, %Decimal{}} = Ecto.Type.load(type, 1.0)
+    end
+  end
 end

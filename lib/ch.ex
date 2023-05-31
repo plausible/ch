@@ -89,7 +89,12 @@ defmodule Ch do
         opts[:raw] || opts[:type] ||
           raise ArgumentError, "keys :raw or :type not found in: #{inspect(opts)}"
 
-      Ch.Types.decode(clickhouse_type)
+      if as = opts[:as] do
+        as = if is_binary(as), do: Ch.Types.decode(as), else: as
+        {:as, clickhouse_type, as}
+      else
+        Ch.Types.decode(clickhouse_type)
+      end
     end
 
     @impl true
@@ -100,6 +105,7 @@ defmodule Ch do
       def load(value, _loader, unquote(type)), do: {:ok, value}
     end
 
+    def load(value, loader, {:as, _name, params}), do: load(value, loader, params)
     def load(value, _loader, params), do: Ecto.Type.load(base_type(params), value)
 
     @impl true
@@ -135,6 +141,7 @@ defmodule Ch do
       end
     end
 
+    def dump(value, dumper, {:as, _name, params}), do: dump(value, dumper, params)
     def dump(value, _dumper, params), do: Ecto.Type.dump(base_type(params), value)
 
     @impl true
@@ -178,6 +185,7 @@ defmodule Ch do
       end
     end
 
+    def cast(value, {:as, _name, params}), do: cast(value, params)
     def cast(value, params), do: Ecto.Type.cast(base_type(params), value)
 
     @doc false
@@ -220,6 +228,7 @@ defmodule Ch do
     def base_type(:polygon), do: {:array, base_type(:ring)}
     def base_type(:multipolygon), do: {:array, base_type(:polygon)}
 
+    def base_type({:as, _name, params}), do: base_type(params)
     def base_type({:parameterized, Ch, params}), do: base_type(params)
 
     defp process_tuple(types, values, mapper) when is_tuple(values) do
