@@ -172,7 +172,7 @@ types = ["Nullable(UInt8)", "UInt8", "UInt8"]
 inserted_rows = [[nil, nil, nil]]
 selected_rows = [[nil, 0, 0]]
 
-%Ch.Result{num_rows: 2} =
+%Ch.Result{num_rows: 1} =
   Ch.query!(pid, "INSERT INTO ch_nulls(a, b, c) FORMAT RowBinary", inserted_rows, types: types)
 
 %Ch.Result{rows: ^selected_rows} =
