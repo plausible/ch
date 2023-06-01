@@ -181,6 +181,18 @@ selected_rows = [[nil, 0, 0]]
 
 Note that in this example `DEFAULT 10` is ignored and `0` (the default value for `UInt8`) is persisted instead.
 
+However, there is a workaround with [`input()`](https://clickhouse.com/docs/en/sql-reference/table-functions/input) available:
+
+```elixir
+sql = "INSERT INTO ch_nulls SELECT * FROM input('a Nullable(UInt8), b Nullable(UInt8), c UInt8') FORMAT RowBinary"
+Ch.query!(pid, sql, inserted_rows, types: ["Nullable(UInt8)", "Nullable(UInt8)", "UInt8"])
+
+%Ch.Result{rows: [[0], [10]]} =
+  Ch.query!(pid, "SELECT b FROM ch_nulls ORDER BY b")
+```
+
+Note that when passed throught `input('..., b Nullable(UInt8), ...')` the default was evaludated and persisted as `10`.
+
 #### UTF-8 in RowBinary
 
 When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types/string) columns non UTF-8 characters are replaced with `�` (U+FFFD). This behaviour is similar to [`toValidUTF8`](https://clickhouse.com/docs/en/sql-reference/functions/string-functions#tovalidutf8) and [JSON format.](https://clickhouse.com/docs/en/interfaces/formats#json)

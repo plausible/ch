@@ -913,6 +913,55 @@ defmodule Ch.ConnectionTest do
       assert count == 2 + 5
     end
 
+    test "nullable + default", %{conn: conn} do
+      Ch.query!(conn, """
+      CREATE TABLE ch_nulls (
+        a UInt8,
+        b UInt8 NULL,
+        c UInt8 DEFAULT 10,
+        d Nullable(UInt8) DEFAULT 10,
+      ) ENGINE Memory
+      """)
+
+      Ch.query!(
+        conn,
+        "INSERT INTO ch_nulls(a, b, c, d) FORMAT RowBinary",
+        [[nil, nil, nil, nil]],
+        types: ["UInt8", "Nullable(UInt8)", "UInt8", "Nullable(UInt8)"]
+      )
+
+      # default is ignored...
+      assert Ch.query!(conn, "SELECT * FROM ch_nulls").rows == [[0, nil, 0, nil]]
+    end
+
+    # based on https://github.com/ClickHouse/clickhouse-java/pull/1345/files
+    test "nullable + input() + default", %{conn: conn} do
+      Ch.query!(conn, """
+      CREATE TABLE test_insert_default_value(
+        n Int32,
+        s String DEFAULT 'secret'
+      ) ENGINE Memory
+      """)
+
+      Ch.query!(
+        conn,
+        """
+        INSERT INTO test_insert_default_value
+          SELECT id, name
+          FROM input('id UInt32, name Nullable(String)')
+          FORMAT RowBinary\
+        """,
+        [[1, nil], [-1, nil]],
+        types: ["UInt32", "Nullable(String)"]
+      )
+
+      assert Ch.query!(conn, "SELECT * FROM test_insert_default_value ORDER BY n").rows ==
+               [
+                 [-1, "secret"],
+                 [1, "secret"]
+               ]
+    end
+
     test "can decode casted Point", %{conn: conn} do
       assert Ch.query!(conn, "select cast((0, 1) as Point)").rows == [
                _row = [_point = {0.0, 1.0}]
