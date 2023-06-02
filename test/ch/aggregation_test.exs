@@ -111,4 +111,104 @@ defmodule Ch.AggregationTest do
            GROUP BY uid
            """).rows == [[1, ~N[2020-01-02 00:00:00], "b"]]
   end
+
+  # https://kb.altinity.com/altinity-kb-schema-design/ingestion-aggregate-function/
+  describe "altinity examples" do
+    test "ephemeral column", %{conn: conn} do
+      Ch.query!(conn, """
+      CREATE TABLE test_users_ephemeral_column (
+        uid Int16,
+        updated SimpleAggregateFunction(max, DateTime),
+        name_stub String Ephemeral,
+        name AggregateFunction(argMax, String, DateTime) DEFAULT arrayReduce('argMaxState', [name_stub], [updated])
+      ) ENGINE AggregatingMergeTree ORDER BY uid
+      """)
+
+      Ch.query!(
+        conn,
+        "INSERT INTO test_users_ephemeral_column(uid, updated, name_stub) FORMAT RowBinary",
+        _rows = [
+          [1231, ~N[2020-01-02 00:00:00], "Jane"],
+          [1231, ~N[2020-01-01 00:00:00], "John"]
+        ],
+        types: ["Int16", "DateTime", "String"]
+      )
+
+      assert Ch.query!(conn, """
+             SELECT uid, max(updated) AS updated, argMaxMerge(name)
+             FROM test_users_ephemeral_column
+             GROUP BY uid
+             """).rows == [[1231, ~N[2020-01-02 00:00:00], "Jane"]]
+    end
+
+    test "input function", %{conn: conn} do
+      Ch.query!(conn, """
+      CREATE TABLE test_users_input_function (
+        uid Int16,
+        updated SimpleAggregateFunction(max, DateTime),
+        name AggregateFunction(argMax, String, DateTime)
+      ) ENGINE AggregatingMergeTree ORDER BY uid
+      """)
+
+      Ch.query!(
+        conn,
+        """
+        INSERT INTO test_users_input_function
+          SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
+          FROM input('uid Int16, updated DateTime, name String') FORMAT RowBinary\
+        """,
+        _rows = [
+          [1231, ~N[2020-01-02 00:00:00], "Jane"],
+          [1231, ~N[2020-01-01 00:00:00], "John"]
+        ],
+        types: ["Int16", "DateTime", "String"]
+      )
+
+      assert Ch.query!(conn, """
+             SELECT uid, max(updated) AS updated, argMaxMerge(name)
+             FROM test_users_input_function
+             GROUP BY uid
+             """).rows == [[1231, ~N[2020-01-02 00:00:00], "Jane"]]
+    end
+
+    test "materialized view and null engine", %{conn: conn} do
+      Ch.query!(conn, """
+      CREATE TABLE test_users_mv_ne (
+        uid Int16,
+        updated SimpleAggregateFunction(max, DateTime),
+        name AggregateFunction(argMax, String, DateTime)
+      ) ENGINE AggregatingMergeTree ORDER BY uid
+      """)
+
+      Ch.query!(conn, """
+      CREATE TABLE test_users_ne (
+        uid Int16,
+        updated DateTime,
+        name String
+      ) ENGINE Null
+      """)
+
+      Ch.query!(conn, """
+      CREATE MATERIALIZED VIEW test_users_mv TO test_users_mv_ne AS
+        SELECT uid, updated, arrayReduce('argMaxState', [name], [updated]) name
+        FROM test_users_ne
+      """)
+
+      Ch.query!(
+        conn,
+        "INSERT INTO test_users_ne FORMAT RowBinary",
+        _rows = [
+          [1231, ~N[2020-01-02 00:00:00], "Jane"],
+          [1231, ~N[2020-01-01 00:00:00], "John"]
+        ],
+        types: ["Int16", "DateTime", "String"]
+      )
+
+      assert Ch.query!(conn, """
+             SELECT uid, max(updated) AS updated, argMaxMerge(name)
+             FROM test_users_mv_ne
+             GROUP BY uid
+             """).rows == [[1231, ~N[2020-01-02 00:00:00], "Jane"]]
+    end
+  end
 end
