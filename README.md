@@ -185,11 +185,10 @@ However, [`input()`](https://clickhouse.com/docs/en/sql-reference/table-function
 
 ```elixir
 sql = """
-  INSERT INTO ch_nulls
-    SELECT *
-    FROM input('a Nullable(UInt8), b Nullable(UInt8), c UInt8')
-    FORMAT RowBinary\
-  """
+INSERT INTO ch_nulls
+  SELECT * FROM input('a Nullable(UInt8), b Nullable(UInt8), c UInt8')
+  FORMAT RowBinary\
+"""
 
 Ch.query!(pid, sql, inserted_rows, types: ["Nullable(UInt8)", "Nullable(UInt8)", "UInt8"])
 
