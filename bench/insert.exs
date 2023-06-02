@@ -46,7 +46,7 @@ Benchee.run(
         |> Stream.chunk_every(60_000)
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
 
-      Ch.query!(conn, statement, {:raw, stream})
+      Ch.query!(conn, statement, stream, encode: false)
     end
   },
   inputs: %{
