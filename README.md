@@ -104,6 +104,16 @@ types = [:u64]
 
 Note that RowBinary format encoding requires `:types` option to be provided.
 
+Similarly, you can use [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/interfaces/formats#rowbinarywithnamesandtypes) which would additionally do something like a type check.
+
+```elixir
+sql = "INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes"
+opts = [names: ["id"], types: ["UInt64"]]
+rows = [[0], [1]]
+
+%Ch.Result{num_rows: 2} = Ch.query!(pid, sql, rows, opts)
+```
+
 #### Insert rows in custom [format](https://clickhouse.com/docs/en/interfaces/formats)
 
 ```elixir
