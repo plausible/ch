@@ -26,7 +26,7 @@ jobs:
 
     strategy:
       matrix:
-        elixir: ["1.14"]
+        elixir: ["1.14", "1.15"]
         otp: ["25", "26"]
 
     steps:
