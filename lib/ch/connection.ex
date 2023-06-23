@@ -308,7 +308,7 @@ defmodule Ch.Connection do
     cond do
       expected_name && actual_name ->
         unless actual_name == expected_name do
-          Logger.warn(
+          Logger.warning(
             "Server mismatch detected. Expected #{inspect(expected_name)} but got #{inspect(actual_name)}!" <>
               " Connection pooling might be unstable."
           )
