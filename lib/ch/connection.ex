@@ -229,7 +229,7 @@ defmodule Ch.Connection do
               String.to_integer(code)
             end
 
-          {:error, Error.exception(code, message), conn}
+          {:error, Error.exception(code: code, message: message), conn}
       end
     end
   end
