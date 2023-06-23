@@ -42,10 +42,10 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
+          key: test-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-ref-${{ github.head_ref || github.ref }}-mix-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-${{ github.head_ref || github.ref }}-
-            ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-refs/heads/master-
+            test-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-ref-${{ github.head_ref || github.ref }}-mix-
+            test-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-ref-refs/heads/master-mix-
 
       - run: mix deps.get --only $MIX_ENV
       - run: mix format --check-formatted
