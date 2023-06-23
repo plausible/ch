@@ -34,10 +34,10 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-bench-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
+          key: bench-ref-${{ github.head_ref || github.ref }}-mix-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-bench-${{ github.head_ref || github.ref }}-
-            ${{ runner.os }}-mix-bench-refs/heads/master-
+            bench-ref-${{ github.head_ref || github.ref }}-mix-
+            bench-ref-refs/heads/master-mix-
 
       - run: mix deps.get --only $MIX_ENV
       - run: mix format --check-formatted
