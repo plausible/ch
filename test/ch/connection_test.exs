@@ -251,7 +251,12 @@ defmodule Ch.ConnectionTest do
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
 
       assert {:ok, %{num_rows: 3}} =
-               Ch.query(conn, "insert into #{table}(a, b) format RowBinary", stream, encode: false)
+               Ch.query(
+                 conn,
+                 "insert into #{table}(a, b) format RowBinary",
+                 stream,
+                 encode: false
+               )
 
       assert {:ok, %{rows: rows}} =
                Ch.query(conn, "select * from {table:Identifier}", %{"table" => table})

@@ -50,7 +50,7 @@ defmodule Ch.QueryTest do
     end
 
     test "iodata", %{conn: conn} do
-      assert [[123]] = Ch.query!(conn, ["S", ?E, ["LEC" | "T"], " ", '123']).rows
+      assert [[123]] = Ch.query!(conn, ["S", ?E, ["LEC" | "T"], " ", ~c"123"]).rows
     end
 
     test "decode basic types", %{conn: conn} do
@@ -101,13 +101,13 @@ defmodule Ch.QueryTest do
 
     test "decode network types", %{conn: conn} do
       assert [[{127, 0, 0, 1} = ipv4]] = Ch.query!(conn, "SELECT '127.0.0.1'::inet4").rows
-      assert :inet.ntoa(ipv4) == '127.0.0.1'
+      assert :inet.ntoa(ipv4) == ~c"127.0.0.1"
 
       assert [[{0, 0, 0, 0, 0, 0, 0, 1} = ipv6]] = Ch.query!(conn, "SELECT '::1'::inet6").rows
-      assert :inet.ntoa(ipv6) == '::1'
+      assert :inet.ntoa(ipv6) == ~c"::1"
 
       assert [[ipv6]] = Ch.query!(conn, "SELECT '2001:44c8:129:2632:33:0:252:2'::inet6").rows
-      assert :inet.ntoa(ipv6) == '2001:44c8:129:2632:33:0:252:2'
+      assert :inet.ntoa(ipv6) == ~c"2001:44c8:129:2632:33:0:252:2"
     end
 
     test "decoded binaries copy behaviour", %{conn: conn} do
