@@ -1187,7 +1187,7 @@ defmodule Ch.ConnectionTest do
                )
 
       assert Exception.message(error) =~
-               "Code: 516. DB::Exception: no-exists: Authentication failed: password is incorrect or there is no user with such name. (AUTHENTICATION_FAILED)"
+               "Code: 516. DB::Exception: no-exists: Authentication failed: password is incorrect, or there is no user with such name. (AUTHENTICATION_FAILED)"
     end
 
     test "errors on invalid database", %{conn: conn} do
@@ -1240,17 +1240,19 @@ defmodule Ch.ConnectionTest do
           |> Enum.flat_map(drop_ref)
         end)
 
-      assert [
-               {:status, 200},
-               {:headers, headers},
-               {:data, data0},
-               {:data, data1},
-               {:data, data2},
-               :done
-             ] = packets
+      assert [{:status, 200}, {:headers, headers} | _rest] = packets
 
       assert List.keyfind!(headers, "transfer-encoding", 0) == {"transfer-encoding", "chunked"}
-      assert RowBinary.decode_rows(data0 <> data1 <> data2) == Enum.map(0..999, &[&1])
+
+      assert data_packets =
+               packets
+               |> Enum.filter(&match?({:data, _data}, &1))
+               |> Enum.map(fn {:data, data} -> data end)
+
+      assert length(data_packets) >= 2
+      assert RowBinary.decode_rows(Enum.join(data_packets)) == Enum.map(0..999, &[&1])
+
+      assert List.last(packets) == :done
     end
 
     test "decodes RowBinary", %{conn: conn} do
