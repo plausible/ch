@@ -275,7 +275,7 @@ defmodule Ch.EctoTypeTest do
 
     assert {:ok, ^uuid} = Ecto.Type.cast(type, uuid)
     assert {:ok, ^uuid} = Ecto.Type.cast(type, bin_uuid)
-    assert {:ok, ^bin_uuid} = Ecto.Type.dump(type, uuid)
+    assert {:ok, ^uuid} = Ecto.Type.dump(type, uuid)
     # assert {:ok, ^uuid} = Ecto.Type.load(type, uuid)
     assert {:ok, ^uuid} = Ecto.Type.load(type, bin_uuid)
   end

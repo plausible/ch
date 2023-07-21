@@ -135,7 +135,12 @@ defmodule Ch do
       end
     end
 
-    def dump(value, _dumper, params), do: Ecto.Type.dump(base_type(params), value)
+    def dump(value, _dumper, params) do
+      case base_type(params) do
+        Ecto.UUID = uuid -> Ecto.Type.cast(uuid, value)
+        base_type -> Ecto.Type.dump(base_type, value)
+      end
+    end
 
     @impl true
     def cast(value, {:tuple, types}) do

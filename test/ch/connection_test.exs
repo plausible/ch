@@ -98,18 +98,23 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[[[1], [2, 3], []]]]}} =
              Ch.query(conn, "select {a:Array(Array(UInt8))}", %{"a" => [[1], [2, 3], []]})
 
+    # pseudo-positional bind
+    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {$0:UInt8}", [1])
+  end
+
+  test "uuid", %{conn: conn} do
     uuid = "9B29BD20-924C-4DE5-BDB3-8C2AA1FCE1FC"
     uuid_bin = uuid |> String.replace("-", "") |> Base.decode16!()
 
     assert {:ok, %{num_rows: 1, rows: [[^uuid_bin]]}} =
              Ch.query(conn, "select {a:UUID}", %{"a" => uuid})
 
+    assert {:ok, %{num_rows: 1, rows: [[^uuid_bin]]}} =
+             Ch.query(conn, "select {a:Nullable(UUID)}", %{"a" => uuid})
+
     # TODO
     # assert {:ok, %{num_rows: 1, rows: [[^uuid_bin]]}} =
     #          Ch.query(conn, "select {a:UUID}", %{"a" => uuid_bin})
-
-    # pseudo-positional bind
-    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {$0:UInt8}", [1])
   end
 
   test "utc datetime query param encoding", %{conn: conn} do
