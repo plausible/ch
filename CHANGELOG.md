@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0 (2023-07-28)
+
+- move loading and dumping from `Ch` type to the adapter https://github.com/plausible/ch/pull/112
+
 ## 0.1.14 (2023-05-24)
 
 - simplify types, again...
