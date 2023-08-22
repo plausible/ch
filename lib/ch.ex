@@ -127,7 +127,7 @@ defmodule Ch do
       end
     end
 
-    def cast(value, {:array, _type} = array), do: Ecto.Type.cast(array, value)
+    def cast(value, {:array, type}), do: Ecto.Type.cast({:array, type(type)}, value)
     def cast(value, {:nullable, type}), do: cast(value, type)
     def cast(value, {:low_cardinality, type}), do: cast(value, type)
     def cast(value, {:simple_aggregate_function, _name, type}), do: cast(value, type)

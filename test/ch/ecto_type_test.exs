@@ -330,6 +330,33 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, "something"} = Ecto.Type.load(type, "something")
   end
 
+  test "SimpleAggregateFunction(groupArrayArray, Array(DateTime('UTC')))" do
+    assert {:parameterized, Ch,
+            {:simple_aggregate_function, "groupArrayArray", {:array, {:datetime, "UTC"}}}} =
+             type =
+             Ecto.ParameterizedType.init(Ch,
+               type: "SimpleAggregateFunction(groupArrayArray, Array(DateTime('UTC')))"
+             )
+
+    assert Ecto.Type.type(type) == type
+
+    assert Ecto.Type.format(type) ==
+             "#Ch<SimpleAggregateFunction(groupArrayArray, Array(DateTime('UTC')))>"
+
+    assert {:ok, [~U[2022-11-24 11:57:23Z]]} = Ecto.Type.cast(type, [~U[2022-11-24 11:57:23Z]])
+    assert {:ok, [~U[2022-11-24 11:57:23Z]]} = Ecto.Type.cast(type, ["2022-11-24 11:57:23Z"])
+    assert {:ok, []} = Ecto.Type.cast(type, [])
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, [~c"something"])
+    assert :error = Ecto.Type.cast(type, [:something])
+    assert :error = Ecto.Type.cast(type, [123])
+    assert :error = Ecto.Type.cast(type, 123)
+
+    assert {:ok, "no-op"} = Ecto.Type.dump(type, "no-op")
+    assert {:ok, "no-op"} = Ecto.Type.load(type, "no-op")
+  end
+
   # TODO check size?
   test "FixedString(3)" do
     assert {:parameterized, Ch, {:fixed_string, 3}} =
