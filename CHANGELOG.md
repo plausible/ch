@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- fix array casts with `Ch` subtype https://github.com/plausible/ch/pull/118
+
 ## 0.2.0 (2023-07-28)
 
 - move loading and dumping from `Ch` type to the adapter https://github.com/plausible/ch/pull/112
