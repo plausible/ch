@@ -75,14 +75,14 @@ defimpl DBConnection.Query, for: Ch.Query do
              query_params: [{String.t(), String.t()}],
              body: iodata | Enumerable.t()
 
-  def encode(%Query{command: :insert, encode: false, statement: statement}, data, _opts) do
+  def encode(%Query{command: :insert, encode: false, statement: statement}, data, opts) do
     body =
       case data do
         _ when is_list(data) or is_binary(data) -> [statement, ?\n | data]
         _ -> Stream.concat([[statement, ?\n]], data)
       end
 
-    {_query_params = [], _extra_headers = [], body}
+    {_query_params = [], headers(opts), body}
   end
 
   def encode(%Query{command: :insert, statement: statement}, params, opts) do
@@ -91,15 +91,15 @@ defimpl DBConnection.Query, for: Ch.Query do
         types = Keyword.fetch!(opts, :types)
         header = RowBinary.encode_names_and_types(names, types)
         data = RowBinary.encode_rows(params, types)
-        {_query_params = [], _extra_headers = [], [statement, ?\n, header | data]}
+        {_query_params = [], headers(opts), [statement, ?\n, header | data]}
 
       format_row_binary?(statement) ->
         types = Keyword.fetch!(opts, :types)
         data = RowBinary.encode_rows(params, types)
-        {_query_params = [], _extra_headers = [], [statement, ?\n | data]}
+        {_query_params = [], headers(opts), [statement, ?\n | data]}
 
       true ->
-        {query_params(params), _extra_headers = [], statement}
+        {query_params(params), headers(opts), statement}
     end
   end
 
@@ -107,7 +107,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     types = Keyword.get(opts, :types)
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
-    {query_params(params), [{"x-clickhouse-format", format}], statement}
+    {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
   end
 
   defp format_row_binary?(statement) when is_binary(statement) do
@@ -266,6 +266,9 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   defp escape_param([], param), do: param
+
+  @spec headers(Keyword.t()) :: Mint.Types.headers()
+  defp headers(opts), do: Keyword.get(opts, :headers, [])
 end
 
 defimpl String.Chars, for: Ch.Query do
