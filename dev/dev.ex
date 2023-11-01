@@ -1,9 +1,101 @@
 defmodule Dev do
   import Bitwise
 
-  @comment "Created by Plausible"
+  # @comment "Created by Plausible"
 
-  def encode_central_directory(entries) do
+  def zip_start_entry(name, _opts \\ []) do
+    mtime = NaiveDateTime.from_erl!(:calendar.local_time())
+    nsize = byte_size(name)
+
+    # see 4.4 in https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
+    local_header = <<
+      # local file header signature
+      0x04034B50::32-little,
+      # version needed to extract
+      20::16-little,
+      # general purpose bit flag (bit 3: data descriptor, bit 11: utf8 name)
+      0x0008 ||| 0x0800::16-little,
+      # compression method (always 0, we aren't compressing currently)
+      # TODO zstd = 93
+      0::16-little,
+      # last mod time
+      dos_time(mtime)::16-little,
+      # last mod date
+      dos_date(mtime)::16-little,
+      # crc-32
+      0::32,
+      # compressed size
+      0::32,
+      # uncompressed size
+      0::32,
+      # file name length
+      nsize::16-little,
+      # extra field length
+      0::16,
+      # file name
+      name::bytes
+    >>
+
+    entry = %{
+      header: %{
+        size: byte_size(local_header),
+        name: name,
+        nsize: nsize
+      },
+      entity: %{
+        crc: nil,
+        size: nil,
+        usize: 0,
+        csize: 0
+      },
+      size: nil
+    }
+
+    {entry, local_header}
+  end
+
+  def zip_grow_entry(entry, data) do
+    %{entity: %{crc: crc, usize: usize, csize: csize} = entity} = entry
+    size = IO.iodata_length(data)
+
+    crc =
+      if crc do
+        :erlang.crc32(crc, data)
+      else
+        :erlang.crc32(data)
+      end
+
+    %{entry | entity: %{entity | crc: crc, usize: usize + size, csize: csize + size}}
+  end
+
+  def zip_end_entry(entry) do
+    %{
+      header: %{size: header_size},
+      entity: %{crc: crc, usize: usize, csize: csize} = entity
+    } =
+      entry
+
+    data_descriptor = <<
+      # local file entry signature
+      0x08074B50::32-little,
+      # crc-32 for the entity
+      crc::32-little,
+      # compressed size, just the size since we aren't compressing
+      csize::32-little,
+      # uncompressed size
+      usize::32-little
+    >>
+
+    entry = %{
+      entry
+      | entity: %{entity | size: byte_size(data_descriptor) + csize},
+        size: byte_size(data_descriptor) + csize + header_size
+    }
+
+    {entry, data_descriptor}
+  end
+
+  def zip_encode_central_directory(entries) do
     context =
       Enum.reduce(entries, %{frames: [], count: 0, offset: 0, size: 0}, fn entry, acc ->
         header = encode_central_file_header(acc, entry)
@@ -30,8 +122,7 @@ defmodule Dev do
       # offset central directory
       context.offset::32-little,
       # comment length
-      byte_size(@comment)::16-little,
-      @comment::bytes
+      0::16
     >>
 
     [:lists.reverse(context.frames), frame]
@@ -85,6 +176,7 @@ defmodule Dev do
   def make_entry(name, data) do
     mtime = NaiveDateTime.from_erl!(:calendar.local_time())
     crc = :erlang.crc32(data)
+    data_size = IO.iodata_length(data)
 
     # see 4.4 in https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
     local_header = <<
@@ -121,10 +213,10 @@ defmodule Dev do
       # crc-32 for the entity
       crc::32-little,
       # compressed size, just the size since we aren't compressing
-      byte_size(data)::32-little,
+      data_size::32-little,
       # TODO
       # uncompressed size
-      byte_size(data)::32-little
+      data_size::32-little
     >>
 
     encoded = [local_header, data, data_descriptor]
@@ -137,9 +229,9 @@ defmodule Dev do
       },
       entity: %{
         crc: crc,
-        size: byte_size(data) + byte_size(data_descriptor),
-        usize: byte_size(data),
-        csize: byte_size(data)
+        size: data_size + byte_size(data_descriptor),
+        usize: data_size,
+        csize: data_size
       },
       size: IO.iodata_length(encoded)
     }
