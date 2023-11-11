@@ -12,22 +12,30 @@ jobs:
     env:
       MIX_ENV: test
 
+    strategy:
+      matrix:
+        elixir: ["1.14", "1.15"]
+        otp: ["25", "26"]
+        clickhouse: ["23.3.7.5"]
+        timezone: ["UTC"]
+        include:
+          - elixir: "1.15"
+            otp: "26"
+            clickhouse: "23.3.7.5"
+            timezone: "Europe/Berlin"
+
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:23.3.7.5-alpine
+        image: clickhouse/clickhouse-server:${{ matrix.clickhouse }}-alpine
         ports:
           - 8123:8123
         env:
+          TZ: ${{ matrix.timezone }}
           options: >-
             --health-cmd nc -zw3 localhost 8124
             --health-interval 10s
             --health-timeout 5s
             --health-retries 5
-
-    strategy:
-      matrix:
-        elixir: ["1.14", "1.15"]
-        otp: ["25", "26"]
 
     steps:
       - uses: actions/checkout@v4
@@ -42,10 +50,10 @@ jobs:
           path: |
             deps
             _build
-          key: test-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-ref-${{ github.head_ref || github.ref }}-mix-${{ hashFiles('**/mix.lock') }}
+          key: test-${{ matrix.otp }}-${{ matrix.elixir }}-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            test-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-ref-${{ github.head_ref || github.ref }}-mix-
-            test-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-ref-refs/heads/master-mix-
+            test-${{ matrix.otp }}-${{ matrix.elixir }}-${{ github.head_ref || github.ref }}-
+            test-${{ matrix.otp }}-${{ matrix.elixir }}-refs/heads/master-
 
       - run: mix deps.get --only $MIX_ENV
       - run: mix format --check-formatted
