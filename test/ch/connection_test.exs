@@ -115,9 +115,10 @@ defmodule Ch.ConnectionTest do
   test "utc datetime query param encoding", %{conn: conn} do
     utc = ~U[2021-01-01 12:00:00Z]
     msk = DateTime.new!(~D[2021-01-01], ~T[15:00:00], "Europe/Moscow")
+    naive = utc |> DateTime.shift_zone!(Ch.Test.clickhouse_tz(conn)) |> DateTime.to_naive()
 
     assert Ch.query!(conn, "select {$0:DateTime} as d, toString(d)", [utc]).rows ==
-             [[~N[2021-01-01 12:00:00], "2021-01-01 12:00:00"]]
+             [[~N[2021-01-01 12:00:00], to_string(naive)]]
 
     assert Ch.query!(conn, "select {$0:DateTime('UTC')} as d, toString(d)", [utc]).rows ==
              [[utc, "2021-01-01 12:00:00"]]
@@ -129,9 +130,10 @@ defmodule Ch.ConnectionTest do
   test "utc datetime64 query param encoding", %{conn: conn} do
     utc = ~U[2021-01-01 12:00:00.123456Z]
     msk = DateTime.new!(~D[2021-01-01], ~T[15:00:00.123456], "Europe/Moscow")
+    naive = utc |> DateTime.shift_zone!(Ch.Test.clickhouse_tz(conn)) |> DateTime.to_naive()
 
     assert Ch.query!(conn, "select {$0:DateTime64(6)} as d, toString(d)", [utc]).rows ==
-             [[~N[2021-01-01 12:00:00.123456], "2021-01-01 12:00:00.123456"]]
+             [[~N[2021-01-01 12:00:00.123456], to_string(naive)]]
 
     assert Ch.query!(conn, "select {$0:DateTime64(6, 'UTC')} as d, toString(d)", [utc]).rows ==
              [[utc, "2021-01-01 12:00:00.123456"]]
