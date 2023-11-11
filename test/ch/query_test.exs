@@ -195,8 +195,17 @@ defmodule Ch.QueryTest do
       assert [[[~D[2023-01-01]]]] =
                Ch.query!(conn, "SELECT {$0:Array(Date)}", [[~D[2023-01-01]]]).rows
 
-      assert [[[~N[2023-01-01 12:00:00]]]] =
+      assert [[[Ch.Test.to_clickhouse_naive(conn, ~N[2023-01-01 12:00:00])]]] ==
                Ch.query!(conn, "SELECT {$0:Array(DateTime)}", [[~N[2023-01-01 12:00:00]]]).rows
+
+      assert [[[~U[2023-01-01 12:00:00Z]]]] ==
+               Ch.query!(conn, "SELECT {$0:Array(DateTime('UTC'))}", [[~N[2023-01-01 12:00:00]]]).rows
+
+      assert [[[~N[2023-01-01 12:00:00]]]] ==
+               Ch.query!(conn, "SELECT {$0:Array(DateTime)}", [[~U[2023-01-01 12:00:00Z]]]).rows
+
+      assert [[[~U[2023-01-01 12:00:00Z]]]] ==
+               Ch.query!(conn, "SELECT {$0:Array(DateTime('UTC'))}", [[~U[2023-01-01 12:00:00Z]]]).rows
 
       assert [[[[0], [1]]]] =
                Ch.query!(conn, "SELECT {$0:Array(Array(integer))}", [[[0], [1]]]).rows
