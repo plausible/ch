@@ -504,6 +504,12 @@ defmodule Ch.RowBinary do
         <<d::32-little-signed, bin::bytes>> = bin
         decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
 
+      :datetime -> 
+      <<s::32-little, bin::bytes>> = bin
+      dt =NaiveDateTime.add(@epoch_naive_datetime, s)
+      decode_rows(types_rest, bin, [dt | row], rows, types)
+
+
       {:datetime, timezone} ->
         <<s::32-little, bin::bytes>> = bin
 

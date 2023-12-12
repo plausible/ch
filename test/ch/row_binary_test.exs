@@ -102,6 +102,13 @@ defmodule Ch.RowBinaryTest do
     end
   end
 
+  test "encode/decode NaiveDateTime" do
+    dt = ~N[2023-12-11 15:22:28]
+    encoded = encode(:datetime, dt)
+    decoded = decode_rows(encoded, [:datetime])
+    assert decoded == [[dt]]
+  end
+
   describe "encode/2" do
     test "decimal" do
       type = decimal(size: 32, scale: 4)
