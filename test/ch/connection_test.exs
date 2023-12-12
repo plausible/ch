@@ -427,11 +427,11 @@ defmodule Ch.ConnectionTest do
 
       assert {:error,
               %Ch.Error{
-                code: 36,
-                message:
-                  "Code: 36. DB::Exception: Unknown element 'a' for enum: While executing ValuesBlockInputFormat. (BAD_ARGUMENTS)" <>
-                    _
+                code: 691,
+                message: error
               }} = Ch.query(conn, "INSERT INTO t_enum values('a')")
+
+      assert error =~ "Unknown element 'a' for enum"
 
       assert {:ok, %{num_rows: 3, rows: [["hello"], ["world"], ["hello"]]}} =
                Ch.query(conn, "SELECT * FROM t_enum")
@@ -711,8 +711,9 @@ defmodule Ch.ConnectionTest do
                  password: "wrong"
                )
 
-      assert Exception.message(error) =~
-               "Code: 516. DB::Exception: no-exists: Authentication failed: password is incorrect or there is no user with such name. (AUTHENTICATION_FAILED)"
+      error = Exception.message(error)
+      assert error =~ "AUTHENTICATION_FAILED"
+      assert error =~ "Code: 516"
     end
 
     test "errors on invalid database", %{conn: conn} do
