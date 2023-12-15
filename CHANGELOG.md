@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- fix query encoding for datetimes with zeroed microseconds `~U[****-**-** **:**:**.000000]` https://github.com/plausible/ch/pull/138
+
 ## 0.2.1 (2023-08-22)
 
 - fix array casts with `Ch` subtype https://github.com/plausible/ch/pull/118
