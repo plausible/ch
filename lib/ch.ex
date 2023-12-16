@@ -29,6 +29,19 @@ defmodule Ch do
     DBConnection.child_spec(Connection, opts)
   end
 
+  @type statement :: iodata | Enumerable.t()
+  @type params :: %{String.t() => term} | [{String.t(), term}]
+  @type option ::
+          {:settings, Keyword.t()}
+          | {:database, String.t()}
+          | {:username, String.t()}
+          | {:password, String.t()}
+          | {:command, Ch.Query.command()}
+          | {:decode, boolean}
+          | {:headers, String.t()}
+
+  @type options :: [option | DBConnection.connection_option()]
+
   @doc """
   Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
   `{:error, Exception.t()}` if there was a database error.
@@ -42,9 +55,8 @@ defmodule Ch do
     * `:password` - User password
 
   """
-  @spec query(DBConnection.conn(), iodata, params, Keyword.t()) ::
+  @spec query(DBConnection.conn(), statement, params, options) ::
           {:ok, Result.t()} | {:error, Exception.t()}
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
   def query(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
 
@@ -57,24 +69,17 @@ defmodule Ch do
   Runs a query and returns the result or raises `Ch.Error` if
   there was an error. See `query/4`.
   """
-  @spec query!(DBConnection.conn(), iodata, params, Keyword.t()) :: Result.t()
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
+  @spec query!(DBConnection.conn(), statement, params, options) :: Result.t()
   def query!(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     DBConnection.execute!(conn, query, params, opts)
   end
 
   @doc false
-  @spec stream(DBConnection.t(), iodata, map | [term], Keyword.t()) :: DBConnection.Stream.t()
+  @spec stream(DBConnection.t(), statement, params, options) :: DBConnection.Stream.t()
   def stream(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     DBConnection.stream(conn, query, params, opts)
-  end
-
-  @doc false
-  @spec run(DBConnection.conn(), (DBConnection.t() -> any), Keyword.t()) :: any
-  def run(conn, f, opts \\ []) when is_function(f, 1) do
-    DBConnection.run(conn, f, opts)
   end
 
   if Code.ensure_loaded?(Ecto.ParameterizedType) do
