@@ -202,16 +202,16 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp encode_param(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
 
   defp encode_param(%DateTime{time_zone: "Etc/UTC", microsecond: microsecond} = dt) do
-    seconds = DateTime.to_unix(dt, :second)
-
     case microsecond do
-      {val, precision} when precision > 0 ->
+      {val, precision} when val > 0 and precision > 0 ->
         size = round(:math.pow(10, precision))
-        unix_seconds_float = (seconds * size + val) / size
-        :erlang.float_to_binary(unix_seconds_float, decimals: precision)
+        unix = DateTime.to_unix(dt, size)
+        seconds = div(unix, size)
+        fractional = rem(unix, size)
+        IO.iodata_to_binary([Integer.to_string(seconds), ?.,  String.pad_leading(Integer.to_string(fractional), precision)])
 
       _ ->
-        Integer.to_string(seconds)
+        dt |> DateTime.to_unix(:second) |> Integer.to_string()
     end
   end
 
