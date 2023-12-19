@@ -146,7 +146,7 @@ defmodule Ch.ConnectionTest do
     # this test case guards against a previous bug where DateTimes with a microsecond value of 0 and precision > 0 would
     # get encoded as a val like "1.6095024e9" which ClickHouse would be unable to parse to a DateTime.
     utc = ~U[2021-01-01 12:00:00.000000Z]
-    naive = DateTime.to_naive(utc)
+    naive = utc |> DateTime.shift_zone!(Ch.Test.clickhouse_tz(conn)) |> DateTime.to_naive()
 
     assert Ch.query!(conn, "select {$0:DateTime64(6)} as d, toString(d)", [utc]).rows ==
              [[~N[2021-01-01 12:00:00.000000], to_string(naive)]]

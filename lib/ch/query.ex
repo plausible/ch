@@ -208,7 +208,12 @@ defimpl DBConnection.Query, for: Ch.Query do
         unix = DateTime.to_unix(dt, size)
         seconds = div(unix, size)
         fractional = rem(unix, size)
-        IO.iodata_to_binary([Integer.to_string(seconds), ?.,  String.pad_leading(Integer.to_string(fractional), precision)])
+
+        IO.iodata_to_binary([
+          Integer.to_string(seconds),
+          ?.,
+          String.pad_leading(Integer.to_string(fractional), precision)
+        ])
 
       _ ->
         dt |> DateTime.to_unix(:second) |> Integer.to_string()
