@@ -2,8 +2,7 @@
 
 ## Unreleased
 
-- move rows payload (RowBinary, CSV, etc.) to SQL statement
-- remove pseudo-positional binds, make param names explicit
+- move rows payload (RowBinary, CSV, etc.) to SQL statement and remove pseudo-positional binds, making param names explicit https://github.com/plausible/ch/pull/143
 
 ## 0.2.2 (2023-12-23)
 
