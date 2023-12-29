@@ -76,9 +76,6 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES (0), (1)")
 
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES ({$0:UInt8}), ({$1:UInt32})", [0, 1])
-
-%Ch.Result{num_rows: 2} =
   Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES ({a:UInt16}), ({b:UInt64})", %{"a" => 0, "b" => 1})
 
 %Ch.Result{num_rows: 2} =
@@ -117,7 +114,10 @@ header = Ch.RowBinary.encode_names_and_types(names, types)
 row_binary = Ch.RowBinary.encode_rows(rows, types)
 
 %Ch.Result{num_rows: 3} =
-  Ch.query!(pid, ["INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes\n", header | row_binary])
+  Ch.query!(pid, [
+    "INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes\n",
+    header | row_binary
+  ])
 ```
 
 #### Insert rows in custom [format](https://clickhouse.com/docs/en/interfaces/formats)
@@ -147,7 +147,12 @@ row_binary =
   |> Stream.take(10)
 
 %Ch.Result{num_rows: 1_000_000} =
-  Ch.query(pid, Stream.concat(["INSERT INTO ch_demo(id) FORMAT RowBinary\n"], row_binary))
+  Ch.query(pid,
+    Stream.concat(
+      ["INSERT INTO ch_demo(id) FORMAT RowBinary\n"],
+      row_binary
+    )
+  )
 ```
 
 #### Insert rows via [input](https://clickhouse.com/docs/en/sql-reference/table-functions/input) function
@@ -247,8 +252,8 @@ row_binary = Ch.RowBinary.encode(:string, "\x61\xF0\x80\x80\x80b")
 %Ch.Result{rows: [["a�b"]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8")
 
-%Ch.Result{rows: %{"data" => [["a�b"]]}} =
-  pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact") |> Map.update!(:rows, &Jason.decode!/1)
+%{"data" => [["a�b"]]} =
+  pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact").data |> Jason.decode!()
 ```
 
 #### Timezones in RowBinary
