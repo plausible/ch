@@ -6,7 +6,7 @@ scheme = System.get_env("CH_SCHEME") || "http"
 database = System.get_env("CH_DATABASE") || "ch_bench"
 
 {:ok, conn} = Ch.start_link(scheme: scheme, hostname: hostname, port: port)
-Ch.query!(conn, "CREATE DATABASE IF NOT EXISTS {$0:Identifier}", [database])
+Ch.query!(conn, "CREATE DATABASE IF NOT EXISTS {db:Identifier}", %{"db" => database})
 
 Ch.query!(conn, """
 CREATE TABLE IF NOT EXISTS #{database}.benchmark (
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS #{database}.benchmark (
 """)
 
 types = [Ch.Types.u64(), Ch.Types.string(), Ch.Types.array(Ch.Types.u8()), Ch.Types.datetime()]
-statement = "INSERT INTO #{database}.benchmark FORMAT RowBinary"
+statement = "INSERT INTO #{database}.benchmark FORMAT RowBinary\n"
 
 rows = fn count ->
   Enum.map(1..count, fn i ->
@@ -32,7 +32,9 @@ Benchee.run(
   %{
     # "control" => fn rows -> Enum.each(rows, fn _row -> :ok end) end,
     "encode" => fn rows -> RowBinary.encode_rows(rows, types) end,
-    "insert" => fn rows -> Ch.query!(conn, statement, rows, types: types) end,
+    "encode+insert" => fn rows ->
+      Ch.query!(conn, [statement | RowBinary.encode_rows(rows, types)])
+    end,
     # "control stream" => fn rows -> rows |> Stream.chunk_every(60_000) |> Stream.run() end,
     "encode stream" => fn rows ->
       rows
@@ -46,7 +48,7 @@ Benchee.run(
         |> Stream.chunk_every(60_000)
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
 
-      Ch.query!(conn, statement, stream, encode: false)
+      Ch.query!(conn, Stream.concat([statement], stream))
     end
   },
   inputs: %{
