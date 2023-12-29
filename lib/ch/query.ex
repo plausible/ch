@@ -94,7 +94,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     cond do
       decode and format == "RowBinaryWithNamesAndTypes" ->
         rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
-        %Result{num_rows: length(rows), rows: rows, headers: headers, command: command}
+        %Result{num_rows: length(rows), rows: rows, data: data, command: command}
 
       format == nil ->
         num_rows =
@@ -103,10 +103,10 @@ defimpl DBConnection.Query, for: Ch.Query do
             String.to_integer(written_rows)
           end
 
-        %Result{num_rows: num_rows, headers: headers, command: command}
+        %Result{num_rows: num_rows, data: data, command: command}
 
       true ->
-        %Result{rows: data, headers: headers, command: command}
+        %Result{data: data, command: command}
     end
   end
 
