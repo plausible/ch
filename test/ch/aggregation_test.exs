@@ -95,14 +95,15 @@ defmodule Ch.AggregationTest do
     assert %{num_rows: 2} =
              Ch.query!(
                conn,
-               """
-               INSERT INTO test_insert_aggregate_function
-                 SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
-                 FROM input('uid Int16, updated DateTime, name String')
-                 FORMAT RowBinary\
-               """,
-               rows,
-               types: ["Int16", "DateTime", "String"]
+               [
+                 """
+                 INSERT INTO test_insert_aggregate_function
+                   SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
+                   FROM input('uid Int16, updated DateTime, name String')
+                   FORMAT RowBinary
+                 """
+                 | Ch.RowBinary.encode_rows(rows, ["Int16", "DateTime", "String"])
+               ]
              )
 
     assert Ch.query!(conn, """
@@ -126,12 +127,16 @@ defmodule Ch.AggregationTest do
 
       Ch.query!(
         conn,
-        "INSERT INTO test_users_ephemeral_column(uid, updated, name_stub) FORMAT RowBinary",
-        _rows = [
-          [1231, ~N[2020-01-02 00:00:00], "Jane"],
-          [1231, ~N[2020-01-01 00:00:00], "John"]
-        ],
-        types: ["Int16", "DateTime", "String"]
+        [
+          "INSERT INTO test_users_ephemeral_column(uid, updated, name_stub) FORMAT RowBinary\n"
+          | Ch.RowBinary.encode_rows(
+              [
+                [1231, ~N[2020-01-02 00:00:00], "Jane"],
+                [1231, ~N[2020-01-01 00:00:00], "John"]
+              ],
+              ["Int16", "DateTime", "String"]
+            )
+        ]
       )
 
       assert Ch.query!(conn, """
@@ -152,16 +157,20 @@ defmodule Ch.AggregationTest do
 
       Ch.query!(
         conn,
-        """
-        INSERT INTO test_users_input_function
-          SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
-          FROM input('uid Int16, updated DateTime, name String') FORMAT RowBinary\
-        """,
-        _rows = [
-          [1231, ~N[2020-01-02 00:00:00], "Jane"],
-          [1231, ~N[2020-01-01 00:00:00], "John"]
-        ],
-        types: ["Int16", "DateTime", "String"]
+        [
+          """
+          INSERT INTO test_users_input_function
+            SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
+            FROM input('uid Int16, updated DateTime, name String') FORMAT RowBinary
+          """
+          | Ch.RowBinary.encode_rows(
+              [
+                [1231, ~N[2020-01-02 00:00:00], "Jane"],
+                [1231, ~N[2020-01-01 00:00:00], "John"]
+              ],
+              ["Int16", "DateTime", "String"]
+            )
+        ]
       )
 
       assert Ch.query!(conn, """
@@ -196,12 +205,16 @@ defmodule Ch.AggregationTest do
 
       Ch.query!(
         conn,
-        "INSERT INTO test_users_ne FORMAT RowBinary",
-        _rows = [
-          [1231, ~N[2020-01-02 00:00:00], "Jane"],
-          [1231, ~N[2020-01-01 00:00:00], "John"]
-        ],
-        types: ["Int16", "DateTime", "String"]
+        [
+          "INSERT INTO test_users_ne FORMAT RowBinary\n"
+          | Ch.RowBinary.encode_rows(
+              [
+                [1231, ~N[2020-01-02 00:00:00], "Jane"],
+                [1231, ~N[2020-01-01 00:00:00], "John"]
+              ],
+              ["Int16", "DateTime", "String"]
+            )
+        ]
       )
 
       assert Ch.query!(conn, """

@@ -359,9 +359,10 @@ defmodule Ch.FaultsTest do
             assert {:error, %Mint.TransportError{reason: :closed}} =
                      Ch.query(
                        conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       encode: false
+                       Stream.concat(
+                         ["insert into unknown_table(a,b) format RowBinary\n"],
+                         stream
+                       )
                      )
           end)
 
@@ -376,9 +377,10 @@ defmodule Ch.FaultsTest do
             assert {:error, %Ch.Error{code: 60, message: message}} =
                      Ch.query(
                        conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       encode: false
+                       Stream.concat(
+                         ["insert into unknown_table(a,b) format RowBinary\n"],
+                         stream
+                       )
                      )
 
             assert message =~ ~r/UNKNOWN_TABLE/
@@ -418,9 +420,10 @@ defmodule Ch.FaultsTest do
             assert {:error, %Mint.TransportError{reason: :closed}} =
                      Ch.query(
                        conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       encode: false
+                       Stream.concat(
+                         ["insert into unknown_table(a,b) format RowBinary\n"],
+                         stream
+                       )
                      )
           end)
 
@@ -439,9 +442,10 @@ defmodule Ch.FaultsTest do
             assert {:error, %Ch.Error{code: 60, message: message}} =
                      Ch.query(
                        conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       encode: false
+                       Stream.concat(
+                         ["insert into unknown_table(a,b) format RowBinary\n"],
+                         stream
+                       )
                      )
 
             assert message =~ ~r/UNKNOWN_TABLE/
