@@ -3,6 +3,7 @@
 ## Unreleased
 
 - move rows payload (RowBinary, CSV, etc.) to SQL statement and remove pseudo-positional binds, making param names explicit https://github.com/plausible/ch/pull/143
+- drop `:headers` from `%Ch.Result{}` but add `:data`
 
 ## 0.2.4 (2024-01-29)
 

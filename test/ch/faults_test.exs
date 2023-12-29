@@ -476,8 +476,7 @@ defmodule Ch.FaultsTest do
       test = self()
 
       header = "X-ClickHouse-Server-Display-Name"
-      {:ok, %Result{headers: headers}} = Ch.Test.sql_exec("select 1")
-      {_, expected_name} = List.keyfind!(headers, String.downcase(header), 0)
+      {:ok, %Result{rows: [[expected_name]]}} = Ch.Test.sql_exec("select hostName()")
 
       log =
         capture_async_log(fn ->
