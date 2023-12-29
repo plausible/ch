@@ -140,19 +140,13 @@ csv = "0\n1"
 
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
-row_binary =
+DBConnection.run(pid, fn conn ->
   Stream.repeatedly(fn -> [:rand.uniform(100)] end)
   |> Stream.chunk_every(100_000)
   |> Stream.map(fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
   |> Stream.take(10)
-
-%Ch.Result{num_rows: 1_000_000} =
-  Ch.query(pid,
-    Stream.concat(
-      ["INSERT INTO ch_demo(id) FORMAT RowBinary\n"],
-      row_binary
-    )
-  )
+  |> Enum.into(Ch.stream(conn, "INSERT INTO ch_demo(id) FORMAT RowBinary"))
+end)
 ```
 
 #### Insert rows via [input](https://clickhouse.com/docs/en/sql-reference/table-functions/input) function
