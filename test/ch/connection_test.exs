@@ -47,12 +47,12 @@ defmodule Ch.ConnectionTest do
     # datetimes in params are sent in text and ClickHouse translates them to UTC from server timezone by default
     # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
     #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
-    assert {:ok, %{num_rows: 1, rows: [[naive_datetime]], headers: headers}} =
+    assert {:ok, %{num_rows: 1, rows: [[naive_datetime]]}} =
              Ch.query(conn, "select {naive:DateTime}", %{"naive" => naive_noon})
 
     # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
     # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
-    {_, timezone} = List.keyfind!(headers, "x-clickhouse-timezone", 0)
+    %Ch.Result{rows: [[timezone]]} = Ch.query!(conn, "select timezone()")
 
     assert naive_datetime ==
              naive_noon
@@ -720,8 +720,7 @@ defmodule Ch.ConnectionTest do
       # datetimes in params are sent in text and ClickHouse translates them to UTC from server timezone by default
       # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
       #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
-      assert {:ok,
-              %{num_rows: 1, rows: [[naive_datetime, "2022-12-12 12:00:00"]], headers: headers}} =
+      assert {:ok, %{num_rows: 1, rows: [[naive_datetime, "2022-12-12 12:00:00"]]}} =
                Ch.query(
                  conn,
                  "select {naive:DateTime} as d, toString(d)",
@@ -730,7 +729,7 @@ defmodule Ch.ConnectionTest do
 
       # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
       # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
-      {_, timezone} = List.keyfind!(headers, "x-clickhouse-timezone", 0)
+      %Ch.Result{rows: [[timezone]]} = Ch.query!(conn, "select timezone()")
 
       assert naive_datetime ==
                naive_noon
@@ -910,7 +909,7 @@ defmodule Ch.ConnectionTest do
         # datetimes in params are sent in text and ClickHouse translates them to UTC from server timezone by default
         # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
         #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
-        assert {:ok, %{num_rows: 1, rows: [[naive_datetime]], headers: headers}} =
+        assert {:ok, %{num_rows: 1, rows: [[naive_datetime]]}} =
                  Ch.query(
                    conn,
                    "select {naive:DateTime64(#{precision})}",
@@ -919,7 +918,7 @@ defmodule Ch.ConnectionTest do
 
         # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
         # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
-        {_, timezone} = List.keyfind!(headers, "x-clickhouse-timezone", 0)
+        %Ch.Result{rows: [[timezone]]} = Ch.query!(conn, "select timezone()")
 
         expected =
           naive_noon
@@ -1066,12 +1065,11 @@ defmodule Ch.ConnectionTest do
                [{20.0, 20.0}, "Point"]
              ]
 
-      # to make our RowBinary is not garbage in garbage out we also test a text format response
-      assert conn
-             |> Ch.query!(
+      # to make sure our RowBinary is not "garbage in, garbage out" we also test a "text format" response
+      assert Ch.query!(
+               conn,
                "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC FORMAT JSONCompact"
-             )
-             |> Map.fetch!(:rows)
+             ).data
              |> Jason.decode!()
              |> Map.fetch!("data") == [
                [[10, 10], "Point"],
@@ -1108,7 +1106,7 @@ defmodule Ch.ConnectionTest do
       assert Ch.query!(
                conn,
                "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC FORMAT JSONCompact"
-             ).rows
+             ).data
              |> Jason.decode!()
              |> Map.fetch!("data") == [
                [[[0, 0], [10, 0], [10, 10], [0, 10]], "Ring"],
@@ -1160,7 +1158,7 @@ defmodule Ch.ConnectionTest do
       assert Ch.query!(
                conn,
                "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC FORMAT JSONCompact"
-             ).rows
+             ).data
              |> Jason.decode!()
              |> Map.fetch!("data") == [
                [[[[0, 1], [10, 3.2]], [], [[2, 2]]], "Polygon"],
@@ -1242,7 +1240,7 @@ defmodule Ch.ConnectionTest do
       assert Ch.query!(
                conn,
                "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC FORMAT JSONCompact"
-             ).rows
+             ).data
              |> Jason.decode!()
              |> Map.fetch!("data") == [
                [
