@@ -2,45 +2,63 @@ defmodule Ch do
   @moduledoc "Minimal HTTP ClickHouse client."
   alias Ch.{Connection, Query, Result}
 
+  @type common_option ::
+          {:database, String.t()}
+          | {:username, String.t()}
+          | {:password, String.t()}
+          | {:settings, Keyword.t()}
+          | {:timeout, timeout}
+
+  @type start_option ::
+          common_option
+          | {:scheme, String.t()}
+          | {:hostname, String.t()}
+          | {:port, :inet.port_number()}
+          | {:transport_opts, :gen_tcp.connect_option()}
+          | DBConnection.start_option()
+
   @doc """
   Start the connection process and connect to ClickHouse.
 
   ## Options
 
+    * `:scheme` - HTTP scheme, defaults to `"http"`
     * `:hostname` - server hostname, defaults to `"localhost"`
     * `:port` - HTTP port, defualts to `8123`
-    * `:scheme` - HTTP scheme, defaults to `"http"`
+    * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
     * `:database` - Database, defaults to `"default"`
     * `:username` - Username
     * `:password` - User password
     * `:settings` - Keyword list of ClickHouse settings
     * `:timeout` - HTTP receive timeout in milliseconds
-    * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
+    * [`DBConnection.start_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:start_option/0)
 
   """
+  @spec start_link([start_option]) :: GenServer.on_start()
   def start_link(opts \\ []) do
     DBConnection.start_link(Connection, opts)
   end
 
   @doc """
   Returns a supervisor child specification for a DBConnection pool.
+
+  See `start_link/1` for supported options.
   """
+  @spec child_spec([start_option]) :: :supervisor.child_spec()
   def child_spec(opts) do
     DBConnection.child_spec(Connection, opts)
   end
 
   @type statement :: iodata | Enumerable.t()
   @type params :: %{String.t() => term} | [{String.t(), term}]
-  @type option ::
-          {:settings, Keyword.t()}
-          | {:database, String.t()}
-          | {:username, String.t()}
-          | {:password, String.t()}
-          | {:command, Ch.Query.command()}
-          | {:decode, boolean}
-          | {:headers, String.t()}
 
-  @type options :: [option | DBConnection.connection_option()]
+  @type query_option ::
+          common_option
+          | {:command, Ch.Query.command()}
+          | {:headers, [{String.t(), String.t()}]}
+          | {:format, String.t()}
+          | {:decode, boolean}
+          | DBConnection.connection_option()
 
   @doc """
   Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
@@ -48,14 +66,19 @@ defmodule Ch do
 
   ## Options
 
-    * `:timeout` - Query request timeout
-    * `:settings` - Keyword list of settings
     * `:database` - Database
     * `:username` - Username
     * `:password` - User password
+    * `:settings` - Keyword list of settings
+    * `:timeout` - Query request timeout
+    * `:command` - Command tag for the query
+    * `:headers` - Custom HTTP headers for the request
+    * `:format` - Custom response format for the request
+    * `:decode` - Whether to automatically decode the response
+    * [`DBConnection.connection_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:connection_option/0)
 
   """
-  @spec query(DBConnection.conn(), statement, params, options) ::
+  @spec query(DBConnection.conn(), statement, params, [query_option]) ::
           {:ok, Result.t()} | {:error, Exception.t()}
   def query(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
@@ -69,14 +92,14 @@ defmodule Ch do
   Runs a query and returns the result or raises `Ch.Error` if
   there was an error. See `query/4`.
   """
-  @spec query!(DBConnection.conn(), statement, params, options) :: Result.t()
+  @spec query!(DBConnection.conn(), statement, params, [query_option]) :: Result.t()
   def query!(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     DBConnection.execute!(conn, query, params, opts)
   end
 
   @doc false
-  @spec stream(DBConnection.t(), statement, params, options) :: DBConnection.Stream.t()
+  @spec stream(DBConnection.t(), statement, params, [query_option]) :: DBConnection.Stream.t()
   def stream(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     DBConnection.stream(conn, query, params, opts)

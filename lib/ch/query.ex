@@ -1,16 +1,15 @@
 defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
-  defstruct [:statement, :command, :decode]
+  defstruct [:statement, :command]
 
-  @type t :: %__MODULE__{statement: Ch.statement(), command: command, decode: boolean}
+  @type t :: %__MODULE__{statement: Ch.statement(), command: command}
   @type params :: [{String.t(), String.t()}]
 
   @doc false
-  @spec build(Ch.statement(), [Ch.option()]) :: t
+  @spec build(Ch.statement(), [Ch.query_option()]) :: t
   def build(statement, opts \\ []) do
     command = Keyword.get(opts, :command) || extract_command(statement)
-    decode = Keyword.get(opts, :decode, true)
-    %__MODULE__{statement: statement, command: command, decode: decode}
+    %__MODULE__{statement: statement, command: command}
   end
 
   statements = [
@@ -71,32 +70,30 @@ end
 defimpl DBConnection.Query, for: Ch.Query do
   alias Ch.{Query, Result, RowBinary}
 
-  @spec parse(Query.t(), [Ch.option()]) :: Query.t()
+  @spec parse(Query.t(), [Ch.query_option()]) :: Query.t()
   def parse(query, _opts), do: query
 
-  @spec describe(Query.t(), [Ch.option()]) :: Query.t()
+  @spec describe(Query.t(), [Ch.query_option()]) :: Query.t()
   def describe(query, _opts), do: query
 
-  @spec encode(Query.t(), Ch.params(), [Ch.option()]) ::
-          {Ch.Query.params(), Mint.Types.headers(), Ch.statement()}
-  def encode(%Query{statement: statement}, params, opts) do
+  @spec encode(Query.t(), Ch.params(), [Ch.query_option()]) ::
+          {Ch.Query.params(), Mint.Types.headers()}
+  def encode(%Query{}, params, opts) do
     format = Keyword.get(opts, :format, "RowBinaryWithNamesAndTypes")
     headers = Keyword.get(opts, :headers, [])
-    {query_params(params), [{"x-clickhouse-format", format} | headers], statement}
+    {query_params(params), [{"x-clickhouse-format", format} | headers]}
   end
 
-  @spec decode(Query.t(), [response], [Ch.option()]) :: Result.t()
+  @spec decode(Query.t(), [response], [Ch.query_option()]) :: Result.t()
         when response: Mint.Types.status() | Mint.Types.headers() | binary
-  def decode(%Query{command: command, decode: decode}, responses, _opts)
-      when is_list(responses) do
-    # TODO potentially fails on x-progress-headers
-    [_status, headers | data] = responses
+  def decode(%Query{command: command}, [_status, headers | data] = r, opts) do
     format = get_header(headers, "x-clickhouse-format")
+    decode = Keyword.get(opts, :decode, true)
 
     cond do
       decode and format == "RowBinaryWithNamesAndTypes" ->
-        rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
-        %Result{num_rows: length(rows), rows: rows, command: command}
+        rows = data |> IO.iodata_to_binary() |> RowBinary.decode_with_names_and_types()
+        %Result{num_rows: length(rows), rows: rows, data: data, command: command}
 
       format == nil ->
         num_rows =
@@ -105,10 +102,10 @@ defimpl DBConnection.Query, for: Ch.Query do
             String.to_integer(written_rows)
           end
 
-        %Result{num_rows: num_rows, command: command}
+        %Result{num_rows: num_rows, data: data, command: command}
 
       true ->
-        %Result{rows: data, command: command}
+        %Result{data: data, command: command}
     end
   end
 
@@ -120,12 +117,8 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   @compile inline: [query_params: 1]
-  defp query_params(params) do
-    Enum.map(params, &__MODULE__.query_param/1)
-  end
-
-  @doc false
-  def query_param({k, v}), do: {"param_#{k}", encode_param(v)}
+  defp query_params(params), do: Enum.map(params, &query_param/1)
+  defp query_param({k, v}), do: {"param_#{k}", encode_param(v)}
 
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
   defp encode_param(f) when is_float(f), do: Float.to_string(f)

@@ -84,39 +84,123 @@ defmodule Ch.Connection do
   end
 
   @impl true
-  def handle_declare(query, params, opts, conn) do
-    {query_params, extra_headers, body} = params
+  def handle_declare(%Query{statement: statement, command: command} = query, params, opts, conn) do
+    {query_params, extra_headers} = params
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
-    types = Keyword.get(opts, :types)
+    decode = Keyword.get(opts, :decode, true)
+    timeout = timeout(conn, opts)
 
-    with {:ok, conn, ref} <- send_request(conn, "POST", path, headers, body) do
-      {:ok, query, {types, ref}, conn}
+    with {:ok, conn, ref} <- send_request(conn, "POST", path, headers, statement) do
+      # case receive_until(conn, ref, timeout) do
+      #   {:more, conn, [200, headers | data]} ->
+
+      #   {:ok, conn, [status, headers | data]} ->
+      # end
+      case responses do
+        [200, headers | rest] ->
+          conn = ensure_same_server(conn, headers)
+          format = get_header(headers, "x-clickhouse-format")
+
+          if decode and format == "RowBinaryWithNamesAndTypes" do
+            with {:ok, conn, types, responses} <-
+                   receive_stream_types(conn, ref, responses, timeout) do
+              result = %Result{command: command, types: types}
+              {:ok, query, {ref, %Result{command: command, types: types}}, conn}
+            end
+          else
+            {:ok, query, {ref, %Result{command: command}}, conn}
+          end
+
+        [_status, headers | data] ->
+          message = IO.iodata_to_binary(data)
+
+          code =
+            if code = get_header(headers, "x-clickhouse-exception-code") do
+              String.to_integer(code)
+            end
+
+          {:error, Error.exception(code: code, message: message), conn}
+      end
     end
   end
 
+  # to be able to decode the incoming data we need to
+  # receive and parse the RowBinaryWithNamesAndTypes header
+  defp receive_stream(conn, ref, timeout) do
+    with {:ok, conn, responses} <- recv_stream_result(conn, ref, [], timeout) do
+      case responses do
+        [200, headers | rest] ->
+          conn = ensure_same_server(conn, headers)
+          {:ok, conn, %Result{command: command}, responses}
+
+        [_status, headers | data] ->
+          message = IO.iodata_to_binary(data)
+
+          code =
+            if code = get_header(headers, "x-clickhouse-exception-code") do
+              String.to_integer(code)
+            end
+
+          {:error, Error.exception(code: code, message: message), conn}
+      end
+    end
+  end
+
+  # defp recv_stream_result(conn, ref, acc, timeout) do
+  #   case HTTP.recv(conn, 0, timeout) do
+  #     {:ok, conn, responses} ->
+  #       case handle_stream_responses(responses, ref, acc) do
+  #         {:ok, responses} -> {:ok, conn, responses}
+  #         {:more, acc} -> recv(conn, ref, acc, timeout)
+  #       end
+
+  #     {:error, conn, reason, _responses} ->
+  #       {:disconnect, reason, conn}
+  #   end
+  # end
+
+  # defp handle_stream_responses([{:done, ref}], ref, acc) do
+  #   {:ok, :lists.reverse(acc)}
+  # end
+
+  # defp handle_stream_responses([{tag, ref, data} | rest], ref, acc)
+  #      when tag in [:data, :status, :headers] do
+  #   handle_stream_responses(rest, ref, [data | acc])
+  # end
+
+  # defp handle_stream_responses([], _ref, acc), do: {:more, acc}
+
   @impl true
-  def handle_fetch(_query, {types, ref}, opts, conn) do
+  def handle_fetch(_query, {ref, result}, opts, conn) do
     case HTTP.recv(conn, 0, timeout(conn, opts)) do
       {:ok, conn, responses} ->
-        {halt_or_cont(responses, ref), {:stream, types, responses}, conn}
+        case handle_responses(responses, ref, []) do
+          {:ok, responses} ->
+            {:halt, decode_stream(result, responses), conn}
+
+          {:more, responses} ->
+            {:cont, decode_stream(result, :lists.reverse(responses)), conn}
+        end
 
       {:error, conn, reason, _responses} ->
         {:disconnect, reason, conn}
     end
   end
 
-  defp halt_or_cont([{:done, ref}], ref), do: :halt
-
-  defp halt_or_cont([{tag, ref, _data} | rest], ref) when tag in [:data, :status, :headers] do
-    halt_or_cont(rest, ref)
+  @compile inline: [decode_stream: 2]
+  defp decode_stream(%Result{types: types} = result, responses) do
+    if types do
+      rows = responses |> IO.iodata_to_binary() |> Ch.RowBinary.decode(types)
+      %Result{result | rows: rows, data: responses}
+    else
+      %Result{result | data: responses}
+    end
   end
 
-  defp halt_or_cont([], _ref), do: :cont
-
   @impl true
-  def handle_deallocate(_query, _ref, _opts, conn) do
+  def handle_deallocate(_query, _ref_result, _opts, conn) do
     case HTTP.open_request_count(conn) do
       0 ->
         {:ok, [], conn}
@@ -127,17 +211,17 @@ defmodule Ch.Connection do
   end
 
   @impl true
-  def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
-    {query_params, extra_headers, body} = params
+  def handle_execute(%Query{command: :insert, statement: statement} = query, params, opts, conn) do
+    {query_params, extra_headers} = params
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
 
     result =
-      if is_function(body, 2) do
-        request_chunked(conn, "POST", path, headers, body, opts)
+      if is_function(statement, 2) do
+        request_chunked(conn, "POST", path, headers, statement, opts)
       else
-        request(conn, "POST", path, headers, body, opts)
+        request(conn, "POST", path, headers, statement, opts)
       end
 
     with {:ok, conn, responses} <- result do
@@ -145,13 +229,13 @@ defmodule Ch.Connection do
     end
   end
 
-  def handle_execute(query, params, opts, conn) do
-    {query_params, extra_headers, body} = params
+  def handle_execute(%Query{statement: statement} = query, params, opts, conn) do
+    {query_params, extra_headers} = params
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
 
-    with {:ok, conn, responses} <- request(conn, "POST", path, headers, body, opts) do
+    with {:ok, conn, responses} <- request(conn, "POST", path, headers, statement, opts) do
       {:ok, query, responses, conn}
     end
   end
@@ -164,7 +248,14 @@ defmodule Ch.Connection do
 
   @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
 
-  @spec request(conn, binary, binary, Mint.Types.headers(), iodata, Keyword.t()) ::
+  @spec request(
+          conn,
+          method :: String.t(),
+          path :: String.t(),
+          Mint.Types.headers(),
+          body :: iodata,
+          [Ch.query_option()]
+        ) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
           | {:disconnect, Mint.Types.error(), conn}
@@ -174,7 +265,14 @@ defmodule Ch.Connection do
     end
   end
 
-  @spec request_chunked(conn, binary, binary, Mint.Types.headers(), Enumerable.t(), Keyword.t()) ::
+  @spec request_chunked(
+          conn,
+          method :: String.t(),
+          path :: String.t(),
+          Mint.Types.headers(),
+          stream :: Enumerable.t(),
+          [Ch.query_option()]
+        ) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
           | {:disconnect, Mint.Types.error(), conn}
@@ -215,7 +313,7 @@ defmodule Ch.Connection do
           | {:error, Error.t(), conn}
           | {:disconnect, Mint.Types.error(), conn}
   defp receive_response(conn, ref, timeout) do
-    with {:ok, conn, responses} <- recv(conn, ref, [], timeout) do
+    with {:ok, conn, responses} <- recv(conn, ref, [], timeout, _until = &done?/1) do
       case responses do
         [200, headers | _rest] ->
           conn = ensure_same_server(conn, headers)
@@ -253,9 +351,10 @@ defmodule Ch.Connection do
     {:ok, :lists.reverse(acc)}
   end
 
-  defp handle_responses([{tag, ref, data} | rest], ref, acc)
-       when tag in [:data, :status, :headers] do
-    handle_responses(rest, ref, [data | acc])
+  for tag <- [:data, :status, :headers] do
+    defp handle_responses([{unquote(tag), ref, value} | rest], ref, acc) do
+      handle_responses(rest, ref, [value | acc])
+    end
   end
 
   defp handle_responses([], _ref, acc), do: {:more, acc}

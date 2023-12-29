@@ -443,31 +443,31 @@ defmodule Ch.RowBinary do
   defp d(?f), do: 15
 
   @doc """
-  Decodes [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinarywithnamesandtypes) into rows.
+  Decodes [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinarywithnamesandtypes)
 
   Example:
 
-      iex> decode_rows(<<1, 3, "1+1"::bytes, 5, "UInt8"::bytes, 2>>)
+      iex> decode_with_names_and_types(<<1, 3, "1+1"::bytes, 5, "UInt8"::bytes, 2>>)
       [[2]]
 
   """
-  def decode_rows(row_binary_with_names_and_types)
-  def decode_rows(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
-  def decode_rows(<<>>), do: []
+  def decode_with_names_and_types(row_binary_with_names_and_types)
+  def decode_with_names_and_types(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
+  def decode_with_names_and_types(<<>>), do: []
 
   @doc """
-  Decodes [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) into rows.
+  Decodes [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary)
 
   Example:
 
-      iex> decode_rows(<<1>>, ["UInt8"])
+      iex> decode(<<1>>, _types = ["UInt8"])
       [[1]]
 
   """
-  def decode_rows(row_binary, types)
-  def decode_rows(<<>>, _types), do: []
+  def decode(row_binary, types)
+  def decode(<<>>, _types), do: []
 
-  def decode_rows(<<data::bytes>>, types) do
+  def decode(<<data::bytes>>, types) do
     types = decoding_types(types)
     decode_rows(types, data, [], [], types)
   end

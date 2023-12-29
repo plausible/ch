@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- simplify the API https://github.com/plausible/ch/pull/140
+  - move RowBinary to SQL statement
+  - improve timezone / datetime support
+  - automatically decode streams
+  - drop headers from `Ch.Result`
+  - allow custom headers
+
 ## 0.2.2 (2023-12-23)
 
 - fix query encoding for datetimes with zeroed microseconds `~U[****-**-** **:**:**.000000]` https://github.com/plausible/ch/pull/138

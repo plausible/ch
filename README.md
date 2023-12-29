@@ -21,7 +21,7 @@ Your ideas are welcome [here.](https://github.com/plausible/ch/issues/82)
 ```elixir
 defp deps do
   [
-    {:ch, "~> 0.3.0"}
+    {:ch, "~> 0.2.0"}
   ]
 end
 ```
@@ -51,78 +51,9 @@ defaults = [
 
 {:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
   Ch.query(pid, "SELECT * FROM system.numbers LIMIT 3")
-  
 
 {:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
   Ch.query(pid, "SELECT * FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 3})
-```
-
-Note on datetime encoding in query parameters:
-
-- `%NaiveDateTime{}` is encoded as text to make it assume the column's or ClickHouse's timezone
-
-```elixir
-Mix.install([:ch, :tz])
-
-{:ok, pid} = Ch.start_link()
-naive = ~N[2023-12-16 12:00:00]
-
-%Ch.Result{rows: [["UTC"]]} = Ch.query!(pid, "SELECT timezone()")
-
-%Ch.Result{rows: [[~N[2023-12-16 12:00:00]]]} = 
-  Ch.query!(pid, "SELECT {naive:DateTime}", %{"naive" => naive})
-
-# https://clickhouse.com/docs/en/operations/settings/settings#session_timezone
-%Ch.Result{rows: [["Europe/Berlin"]]} =
-  Ch.query!(pid, "SELECT timezone()", [], settings: [session_timezone: "Europe/Berlin"])
-
-%Ch.Result{rows: [[~N[2023-12-16 11:00:00]]]} = 
-  Ch.query!(pid, "SELECT {naive:DateTime}", %{"naive" => naive}, settings: [session_timezone: "Europe/Berlin"])
-
-:ok = Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
-
-%Ch.Result{rows: [[taipei]]} = 
-  Ch.query!(pid, "SELECT {naive:DateTime('Asia/Taipei')}", %{"naive" => naive})
-
-"#DateTime<2023-12-16 12:00:00+08:00 CST Asia/Taipei>" = inspect(taipei)
-```
-
-- `%DateTime{time_zone: "Etc/UTC"}` is encoded as unix timestamp and is treated as UTC timestamp by ClickHouse
-
-```elixir
-{:ok, pid} = Ch.start_link()
-
-```
-
-- encoding non-UTC `%DateTime{}` requires a timezone database be configured
-
-```elixir
-Mix.install([:ch, :tz])
-
-:ok = Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
-
-utc = ~U[2023-12-16 10:20:51Z]
-taipei = DateTime.new!(~D[2023-12-16], ~T[18:20:51], "Asia/Taipei")
-berlin = DateTime.new!(~D[2023-12-16], ~T[11:20:51], "Europe/Berlin") 
-
-%Ch.Result{rows: []} =
-  Ch.query!(pid, "SELECT {utc:DateTime}", %{"utc" => utc})
-
-%Ch.Result{rows: []} =
-  Ch.query!(pid, "SELECT {taipei:DateTime}", %{"taipei" => taipei})
-
-%Ch.Result{rows: []} =
-  Ch.query!(pid, "SELECT {berlin:DateTime}", %{"berlin" => berlin})
-
-%Ch.Result{rows: []} =
-  Ch.query!(pid, "SELECT {utc:DateTime}", %{"utc" => utc}, settings: [session_timezone: "Europe/Berlin"])
-
-%Ch.Result{rows: []} =
-  Ch.query!(pid, "SELECT {taipei:DateTime('UTC')}", %{"ts" => taipei})
-
-%Ch.Result{rows: []} =
-  Ch.query!(pid, "SELECT {taipei:DateTime('Asia/Taipei')}", %{"ts" => taipei})
-
 ```
 
 #### Insert rows
@@ -142,7 +73,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 2})
 ```
 
-#### Insert [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary) (fast)
+#### Insert [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -188,7 +119,7 @@ csv = "0\n1\n2"
   Ch.query!(pid, ["INSERT INTO ch_demo(id) FORMAT CSV\n" | csv])
 ```
 
-#### Insert rows as chunked RowBinary stream
+#### Insert rows as [chunked](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) RowBinary stream
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -197,15 +128,43 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
 row_binary =
   Stream.repeatedly(fn -> [:rand.uniform(100)] end)
-  |> Stream.chunk_every(1_000_000)
+  |> Stream.chunk_every(100_000)
   |> Stream.map(fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
-  |> Stream.take(100)
+  |> Stream.take(10)
 
-stream = Stream.concat(["INSERT INTO ch_demo(id) FORMAT RowBinary\n"], row_binary)
-%Ch.Result{num_rows: 100_000_000} = Ch.query(pid, stream)
+DBConnection.run(pid, fn conn ->
+  stream = Ch.stream(conn, "INSERT INTO ch_demo(id) FORMAT RowBinary\n")
+  Enum.into(row_binary, stream)
+end)
 ```
 
-This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting in lower memory usage.
+#### Select rows as [chunked](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) decoded stream
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+DBConnection.run(pid, fn conn ->
+  Ch.stream(conn, "SELECT * FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 1_000_000})
+  |> Stream.each(&IO.inspect/1)
+  |> Stream.run()
+end)
+
+# TODO
+```
+
+#### Select rows as [chunked](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) CSV stream
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+DBConnection.run(pid, fn conn ->
+  Ch.stream(conn, "SELECT * FROM system.numbers LIMIT {limit:UInt8} FORMAT CSV", %{"limit" => 1_000_000})
+  |> Stream.each(&IO.inspect/1)
+  |> Stream.run()
+end)
+
+# TODO
+```
 
 #### Insert rows via [input](https://clickhouse.com/docs/en/sql-reference/table-functions/input) function
 
@@ -231,7 +190,7 @@ settings = [async_insert: 1]
   Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'")
 
 %Ch.Result{rows: [["async_insert", "Bool", "1"]]} =
-  Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: settings)
+  Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", _params = [], settings: settings)
 ```
 
 ## Caveats
@@ -294,26 +253,16 @@ When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types
 
 Ch.query!(pid, "CREATE TABLE ch_utf8(str String) ENGINE Memory")
 
-bin = "\x61\xF0\x80\x80\x80b"
-utf8 = "a�b"
-
-row_binary = Ch.RowBinary.encode(:string, bin)
+row_binary = Ch.RowBinary.encode(:string, "\x61\xF0\x80\x80\x80b")
 
 %Ch.Result{num_rows: 1} =
   Ch.query!(pid, ["INSERT INTO ch_utf8(str) FORMAT RowBinary\n" | row_binary])
 
-%Ch.Result{rows: [[^utf8]]} =
+%Ch.Result{rows: [["a�b"]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8")
 
-%Ch.Result{rows: %{"data" => [[^utf8]]}} =
+%Ch.Result{rows: %{"data" => [["a�b"]]}} =
   pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact") |> Map.update!(:rows, &Jason.decode!/1)
-```
-
-To get raw binary from `String` columns use `:binary` type that skips UTF-8 checks.
-
-```elixir
-%Ch.Result{rows: [[^bin]]} =
-  Ch.query!(pid, "SELECT * FROM ch_utf8", [], types: [:binary])
 ```
 
 #### Timezones in RowBinary
