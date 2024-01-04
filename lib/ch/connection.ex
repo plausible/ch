@@ -85,7 +85,8 @@ defmodule Ch.Connection do
 
   @impl true
   def handle_declare(query, params, opts, conn) do
-    {query_params, extra_headers, body} = params
+    {query_params, extra_headers} = params
+    body = query.statement
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)

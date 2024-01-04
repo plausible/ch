@@ -99,11 +99,13 @@ defmodule Ch do
     DBConnection.execute!(conn, query, params, opts)
   end
 
-  @doc false
-  @spec stream(DBConnection.t(), statement, params, [query_option]) :: DBConnection.Stream.t()
+  @doc """
+  Returns a stream for a query on a connection.
+  """
+  @spec stream(DBConnection.t(), statement, params, [query_option]) :: Ch.Stream.t()
   def stream(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
-    DBConnection.stream(conn, query, params, opts)
+    %Ch.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
   if Code.ensure_loaded?(Ecto.ParameterizedType) do

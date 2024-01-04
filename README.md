@@ -133,7 +133,7 @@ csv = "0\n1"
   Ch.query!(pid, ["INSERT INTO ch_demo(id) FORMAT CSV\n" | csv])
 ```
 
-#### Insert rows as [chunked](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) RowBinary stream
+#### Insert [chunked](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) RowBinary stream
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -145,8 +145,24 @@ DBConnection.run(pid, fn conn ->
   |> Stream.chunk_every(100_000)
   |> Stream.map(fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
   |> Stream.take(10)
-  |> Enum.into(Ch.stream(conn, "INSERT INTO ch_demo(id) FORMAT RowBinary"))
+  |> Enum.into(Ch.stream(conn, "INSERT INTO ch_demo(id) FORMAT RowBinary\n"))
 end)
+```
+
+#### Select rows as stream
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+DBConnection.run(pid, fn conn ->
+  Ch.stream(conn, "SELECT * FROM system.numbers LIMIT {limit:UInt64}", %{"limit" => 1_000_000})
+  |> Stream.each(&IO.inspect/1)
+  |> Stream.run()
+end)
+
+# %Ch.Result{rows: [[0], [1], [2], ...]}
+# %Ch.Result{rows: [[112123], [112124], [113125], ...]}
+# etc.
 ```
 
 #### Insert rows via [input](https://clickhouse.com/docs/en/sql-reference/table-functions/input) function
