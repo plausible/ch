@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.15 (2024-01-04)
+
+- fix query string escaping for `\t`, `\\`, and `\n` https://github.com/plausible/ch/pull/147
+
 ## 0.1.14 (2023-05-24)
 
 - simplify types, again...

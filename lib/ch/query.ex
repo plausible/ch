@@ -195,7 +195,11 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
   defp encode_param(f) when is_float(f), do: Float.to_string(f)
-  defp encode_param(b) when is_binary(b), do: escape_param([{"\t", "\\t"}, {"\n", "\\n"}], b)
+
+  defp encode_param(b) when is_binary(b) do
+    escape_param([{"\\", "\\\\"}, {"\t", "\\\t"}, {"\n", "\\\n"}], b)
+  end
+
   defp encode_param(b) when is_boolean(b), do: Atom.to_string(b)
   defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
   defp encode_param(%Date{} = date), do: Date.to_iso8601(date)
