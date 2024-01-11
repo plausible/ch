@@ -43,12 +43,12 @@ Benchee.run(
       |> Stream.run()
     end,
     "insert stream" => fn rows ->
-      stream =
+      DBConnection.run(conn, fn conn ->
         rows
         |> Stream.chunk_every(60_000)
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
-
-      Ch.query!(conn, Stream.concat([statement], stream))
+        |> Enum.into(Ch.stream(conn, statement))
+      end)
     end
   },
   inputs: %{
