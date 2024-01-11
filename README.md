@@ -120,7 +120,7 @@ row_binary = Ch.RowBinary.encode_rows(rows, types)
   ])
 ```
 
-#### Insert rows in custom [format](https://clickhouse.com/docs/en/interfaces/formats)
+#### Insert custom [format](https://clickhouse.com/docs/en/interfaces/formats)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -133,26 +133,20 @@ csv = "0\n1"
   Ch.query!(pid, ["INSERT INTO ch_demo(id) FORMAT CSV\n" | csv])
 ```
 
-#### Insert rows as [chunked](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) RowBinary stream
+#### Insert [chunked](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) RowBinary stream
 
 ```elixir
 {:ok, pid} = Ch.start_link()
 
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
-row_binary =
+DBConnection.run(pid, fn conn ->
   Stream.repeatedly(fn -> [:rand.uniform(100)] end)
   |> Stream.chunk_every(100_000)
   |> Stream.map(fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
-  |> Stream.take(10)
-
-%Ch.Result{num_rows: 1_000_000} =
-  Ch.query(pid,
-    Stream.concat(
-      ["INSERT INTO ch_demo(id) FORMAT RowBinary\n"],
-      row_binary
-    )
-  )
+  |> Stream.take(10)  
+  |> Enum.into(Ch.stream(conn, "INSERT INTO ch_demo(id) FORMAT RowBinary\n"))
+end)
 ```
 
 #### Insert rows via [input](https://clickhouse.com/docs/en/sql-reference/table-functions/input) function

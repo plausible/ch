@@ -78,10 +78,24 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   @spec encode(Query.t(), Ch.params(), [Ch.query_option()]) ::
           {Ch.Query.params(), Mint.Types.headers()}
-  def encode(%Query{}, params, opts) do
+  def encode(%Query{}, params, opts) when is_list(params) or is_map(params) do
     format = Keyword.get(opts, :format, "RowBinaryWithNamesAndTypes")
     headers = Keyword.get(opts, :headers, [])
     {query_params(params), [{"x-clickhouse-format", format} | headers]}
+  end
+
+  # stream: insert init
+  @spec encode(Query.t(), {:stream, Ch.params()}, [Ch.query_option()]) ::
+          {:stream, {Ch.Query.params(), Mint.Types.headers()}}
+  def encode(query, {:stream, params}, opts) do
+    {:stream, encode(query, params, opts)}
+  end
+
+  # stream: insert data chunk
+  @spec encode(Query.t(), {:stream, Mint.Types.request_ref(), iodata | :eof}, [Ch.query_option()]) ::
+          {:stream, Mint.Types.request_ref(), iodata | :eof}
+  def encode(_query, {:stream, ref, data}, _opts) do
+    {:stream, ref, data}
   end
 
   @spec decode(Query.t(), [response], [Ch.query_option()]) :: Result.t()
@@ -110,8 +124,10 @@ defimpl DBConnection.Query, for: Ch.Query do
     end
   end
 
-  # stream result
+  # stream: select result
   def decode(_query, %Result{} = result, _opts), do: result
+  # stream: insert result
+  def decode(_query, ref, _opts) when is_reference(ref), do: ref
 
   defp get_header(headers, key) do
     case List.keyfind(headers, key, 0) do

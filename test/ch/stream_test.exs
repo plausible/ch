@@ -6,7 +6,7 @@ defmodule Ch.StreamTest do
     {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
-  describe "Ch.stream/4" do
+  describe "enumerable Ch.stream/4" do
     test "emits %Ch.Result{}", %{conn: conn} do
       count = 1_000_000
 
@@ -35,6 +35,23 @@ defmodule Ch.StreamTest do
                        conn |> Ch.stream("select ", %{"count" => 1_000_000}) |> Enum.into([])
                      end)
                    end
+    end
+  end
+
+  describe "collectable Ch.stream/4" do
+    test "inserts chunks", %{conn: conn} do
+      Ch.query!(conn, "create table collect_stream(i UInt64) engine Memory")
+
+      assert %Ch.Result{command: :insert, num_rows: 1_000_000} =
+               DBConnection.run(conn, fn conn ->
+                 Stream.repeatedly(fn -> [:rand.uniform(100)] end)
+                 |> Stream.chunk_every(100_000)
+                 |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
+                 |> Stream.take(10)
+                 |> Enum.into(Ch.stream(conn, "insert into collect_stream(i) format RowBinary\n"))
+               end)
+
+      assert Ch.query!(conn, "select count(*) from collect_stream").rows == [[1_000_000]]
     end
   end
 end
