@@ -1309,54 +1309,20 @@ defmodule Ch.ConnectionTest do
   end
 
   describe "stream" do
-    @tag :skip
-    test "sends mint http packets", %{conn: conn} do
-      stmt = "select number from system.numbers limit 1000"
-
-      drop_ref = fn packets ->
-        Enum.map(packets, fn
-          {tag, _ref, data} -> {tag, data}
-          {tag, _ref} -> tag
-        end)
-      end
-
-      packets =
+    test "emits result structs containing raw data", %{conn: conn} do
+      results =
         DBConnection.run(conn, fn conn ->
           conn
-          |> Ch.stream(stmt)
-          |> Enum.flat_map(drop_ref)
-        end)
-
-      assert [{:status, 200}, {:headers, headers} | _rest] = packets
-
-      assert List.keyfind!(headers, "transfer-encoding", 0) == {"transfer-encoding", "chunked"}
-
-      assert data_packets =
-               packets
-               |> Enum.filter(&match?({:data, _data}, &1))
-               |> Enum.map(fn {:data, data} -> data end)
-
-      assert length(data_packets) >= 2
-      assert RowBinary.decode_rows(Enum.join(data_packets)) == Enum.map(0..999, &[&1])
-
-      assert List.last(packets) == :done
-    end
-
-    @tag :skip
-    test "decodes RowBinary", %{conn: conn} do
-      stmt = "select number from system.numbers limit 1000"
-
-      rows =
-        DBConnection.run(conn, fn conn ->
-          conn
-          |> Ch.stream(stmt, _params = [], types: [:u64])
+          |> Ch.stream("select number from system.numbers limit 1000")
           |> Enum.into([])
         end)
 
-      assert List.flatten(rows) == Enum.into(0..999, [])
+      assert length(results) >= 2
+
+      assert results |> Enum.map(& &1.data) |> IO.iodata_to_binary() |> RowBinary.decode_rows() ==
+               Enum.map(0..999, &[&1])
     end
 
-    @tag :skip
     test "disconnects on early halt", %{conn: conn} do
       logs =
         ExUnit.CaptureLog.capture_log(fn ->
