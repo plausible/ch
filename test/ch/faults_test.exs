@@ -364,14 +364,17 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.close(mint)
 
           spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(
-                       conn,
-                       Stream.concat(
-                         ["insert into unknown_table(a,b) format RowBinary\n"],
-                         stream
-                       )
-                     )
+            try do
+              DBConnection.run(conn, fn conn ->
+                Enum.into(
+                  stream,
+                  Ch.stream(conn, "insert into unknown_table(a,b) format RowBinary\n")
+                )
+              end)
+            rescue
+              e in [DBConnection.ConnectionError, Mint.TransportError] ->
+                assert Exception.message(e) =~ "closed"
+            end
           end)
 
           # reconnect
@@ -382,16 +385,14 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(
-                       conn,
-                       Stream.concat(
-                         ["insert into unknown_table(a,b) format RowBinary\n"],
-                         stream
-                       )
-                     )
-
-            assert message =~ ~r/UNKNOWN_TABLE/
+            assert_raise Ch.Error, ~r/UNKNOWN_TABLE/, fn ->
+              DBConnection.run(conn, fn conn ->
+                Enum.into(
+                  stream,
+                  Ch.stream(conn, "insert into unknown_table(a,b) format RowBinary\n")
+                )
+              end)
+            end
 
             send(test, :done)
           end)
@@ -425,14 +426,17 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(
-                       conn,
-                       Stream.concat(
-                         ["insert into unknown_table(a,b) format RowBinary\n"],
-                         stream
-                       )
-                     )
+            try do
+              DBConnection.run(conn, fn conn ->
+                Enum.into(
+                  stream,
+                  Ch.stream(conn, "insert into unknown_table(a,b) format RowBinary\n")
+                )
+              end)
+            rescue
+              e in [DBConnection.ConnectionError, Mint.TransportError] ->
+                assert Exception.message(e) =~ "closed"
+            end
           end)
 
           # close after first packet from mint arrives
@@ -447,16 +451,14 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(
-                       conn,
-                       Stream.concat(
-                         ["insert into unknown_table(a,b) format RowBinary\n"],
-                         stream
-                       )
-                     )
-
-            assert message =~ ~r/UNKNOWN_TABLE/
+            assert_raise Ch.Error, ~r/UNKNOWN_TABLE/, fn ->
+              DBConnection.run(conn, fn conn ->
+                Enum.into(
+                  stream,
+                  Ch.stream(conn, "insert into unknown_table(a,b) format RowBinary\n")
+                )
+              end)
+            end
 
             send(test, :done)
           end)

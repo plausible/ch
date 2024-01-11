@@ -6,6 +6,7 @@
 - drop `:headers` from `%Ch.Result{}` but add `:data` https://github.com/plausible/ch/pull/144
 - fix query string escaping for `\t`, `\\`, and `\n` https://github.com/plausible/ch/pull/147
 - make `Ch.stream/4` emit `%Ch.Result{data: iodata}` https://github.com/plausible/ch/pull/148
+- make `Ch.stream/4` collectable and remove stream support in `Ch.query/4` https://github.com/plausible/ch/pull/149
 
 ## 0.2.4 (2024-01-29)
 

@@ -258,11 +258,13 @@ defmodule Ch.ConnectionTest do
         |> Stream.chunk_every(2)
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
 
-      assert {:ok, %{num_rows: 3}} =
-               Ch.query(
-                 conn,
-                 Stream.concat(["insert into #{table}(a, b) format RowBinary\n"], row_binary)
-               )
+      assert %{num_rows: 3} =
+               DBConnection.run(conn, fn conn ->
+                 Enum.into(
+                   row_binary,
+                   Ch.stream(conn, "insert into #{table}(a, b) format RowBinary\n")
+                 )
+               end)
 
       assert {:ok, %{rows: rows}} =
                Ch.query(conn, "select * from {table:Identifier}", %{"table" => table})
