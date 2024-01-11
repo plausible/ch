@@ -86,7 +86,7 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   @spec decode(Query.t(), [response], [Ch.query_option()]) :: Result.t()
         when response: Mint.Types.status() | Mint.Types.headers() | binary
-  def decode(%Query{command: command}, responses, opts) do
+  def decode(%Query{command: command}, responses, opts) when is_list(responses) do
     [_status, headers | data] = responses
     format = get_header(headers, "x-clickhouse-format")
     decode = Keyword.get(opts, :decode, true)
@@ -109,6 +109,9 @@ defimpl DBConnection.Query, for: Ch.Query do
         %Result{data: data, command: command}
     end
   end
+
+  # stream result
+  def decode(_query, %Result{} = result, _opts), do: result
 
   defp get_header(headers, key) do
     case List.keyfind(headers, key, 0) do

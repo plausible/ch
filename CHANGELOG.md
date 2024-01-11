@@ -5,6 +5,7 @@
 - move rows payload (RowBinary, CSV, etc.) to SQL statement and remove pseudo-positional binds, making param names explicit https://github.com/plausible/ch/pull/143
 - drop `:headers` from `%Ch.Result{}` but add `:data` https://github.com/plausible/ch/pull/144
 - fix query string escaping for `\t`, `\\`, and `\n` https://github.com/plausible/ch/pull/147
+- make `Ch.stream/4` emit `%Ch.Result{data: iodata}` https://github.com/plausible/ch/pull/148
 
 ## 0.2.2 (2023-12-23)
 
