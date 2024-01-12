@@ -10,20 +10,19 @@ defmodule Ch.StreamTest do
     test "emits %Ch.Result{}", %{conn: conn} do
       count = 1_000_000
 
-      assert [%Result{command: :select, data: header} | rest] =
+      assert [%Result{command: :select, data: header} | _rest] =
+               results =
                DBConnection.run(conn, fn conn ->
                  conn
                  |> Ch.stream("select * from numbers({count:UInt64})", %{"count" => 1_000_000})
                  |> Enum.into([])
                end)
 
-      assert header == [<<1, 6, "number", 6, "UInt64">>]
+      assert [<<1, 6, "number", 6, "UInt64">> | _] = header
 
-      decoded =
-        Enum.flat_map(rest, fn %Result{data: data} ->
-          data |> IO.iodata_to_binary() |> RowBinary.decode_rows([:u64])
-        end)
+      decoded = results |> Enum.map(& &1.data) |> IO.iodata_to_binary() |> RowBinary.decode_rows()
 
+      assert [[0], [1], [2] | _] = decoded
       assert length(decoded) == count
     end
 
