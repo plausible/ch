@@ -1,4 +1,4 @@
-name: test
+name: mix
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
     branches: [master]
 
 jobs:
-  mix:
+  test:
     runs-on: ubuntu-latest
 
     env:
@@ -56,6 +56,15 @@ jobs:
             test-${{ matrix.otp }}-${{ matrix.elixir }}-refs/heads/master-
 
       - run: mix deps.get --only $MIX_ENV
-      - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
       - run: mix test
+
+  format:
+    runs-on: ubuntu-latest 
+    steps:
+      - uses: actions/checkout@v4 
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.16"
+          otp-version: "26"
+      - run: mix format --check-formatted
