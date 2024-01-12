@@ -9,9 +9,15 @@ jobs:
     env:
       MIX_ENV: bench
 
+    strategy:
+      matrix:
+        elixir: ["1.16"]
+        otp: ["26"]
+        clickhouse: ["latest"]
+
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:23.3.7.5-alpine
+        image: clickhouse/clickhouse-server:${{ matrix.clickhouse }}
         ports:
           - 8123:8123
         env:
@@ -26,21 +32,20 @@ jobs:
 
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.16"
-          otp-version: "26"
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
 
       - uses: actions/cache@v3
         with:
           path: |
             deps
             _build
-          key: bench-ref-${{ github.head_ref || github.ref }}-mix-${{ hashFiles('**/mix.lock') }}
+          key: bench-${{ matrix.otp }}-${{ matrix.elixir }}-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            bench-ref-${{ github.head_ref || github.ref }}-mix-
-            bench-ref-refs/heads/master-mix-
+            bench-${{ matrix.otp }}-${{ matrix.elixir }}-${{ github.head_ref || github.ref }}-
+            bench-${{ matrix.otp }}-${{ matrix.elixir }}-refs/heads/master-
 
       - run: mix deps.get --only $MIX_ENV
-      - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
       - run: mkdir results
       - run: mix run bench/insert.exs | tee results/insert.txt
