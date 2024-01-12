@@ -1,9 +1,9 @@
-name: mix
+name: bench
 
 on: workflow_dispatch
 
 jobs:
-  bench:
+  benchee:
     runs-on: ubuntu-latest
 
     env:
