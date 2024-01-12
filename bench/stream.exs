@@ -17,7 +17,7 @@ Benchee.run(
         conn,
         fn conn ->
           conn
-          |> Ch.stream(statement, _params = [], format: "RowBinary")
+          |> Ch.stream(statement, _params = [], format: "RowBinary", timeout: :infinity)
           |> Stream.run()
         end,
         timeout: :infinity
@@ -28,7 +28,7 @@ Benchee.run(
         conn,
         fn conn ->
           conn
-          |> Ch.stream(statement, _params = [], format: "RowBinary")
+          |> Ch.stream(statement, _params = [], format: "RowBinary", timeout: :infinity)
           |> Stream.map(fn %Ch.Result{data: data} ->
             data
             |> IO.iodata_to_binary()
