@@ -24,16 +24,20 @@ Benchee.run(
       )
     end,
     "RowBinary stream with manual decode" => fn statement ->
-      DBConnection.run(conn, fn conn ->
-        conn
-        |> Ch.stream(statement, _params = [], format: "RowBinary")
-        |> Stream.map(fn %Ch.Result{data: data} ->
-          data
-          |> IO.iodata_to_binary()
-          |> Ch.RowBinary.decode_rows([:u64])
-        end)
-        |> Stream.run()
-      end)
+      DBConnection.run(
+        conn,
+        fn conn ->
+          conn
+          |> Ch.stream(statement, _params = [], format: "RowBinary")
+          |> Stream.map(fn %Ch.Result{data: data} ->
+            data
+            |> IO.iodata_to_binary()
+            |> Ch.RowBinary.decode_rows([:u64])
+          end)
+          |> Stream.run()
+        end,
+        timeout: :infinity
+      )
     end
   },
   inputs: %{

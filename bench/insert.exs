@@ -43,12 +43,16 @@ Benchee.run(
       |> Stream.run()
     end,
     "insert stream" => fn rows ->
-      DBConnection.run(conn, fn conn ->
-        rows
-        |> Stream.chunk_every(60_000)
-        |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
-        |> Enum.into(Ch.stream(conn, statement))
-      end)
+      DBConnection.run(
+        conn,
+        fn conn ->
+          rows
+          |> Stream.chunk_every(60_000)
+          |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
+          |> Enum.into(Ch.stream(conn, statement))
+        end,
+        timeout: :infinity
+      )
     end
   },
   inputs: %{
