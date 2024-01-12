@@ -37,18 +37,22 @@ Benchee.run(
     end,
     # "control stream" => fn rows -> rows |> Stream.chunk_every(60_000) |> Stream.run() end,
     "encode stream" => fn rows ->
+      encoding_types = Ch.RowBinary.encoding_types(types)
+
       rows
       |> Stream.chunk_every(60_000)
-      |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
+      |> Stream.map(fn chunk -> RowBinary._encode_rows(chunk, encoding_types) end)
       |> Stream.run()
     end,
     "insert stream" => fn rows ->
       DBConnection.run(
         conn,
         fn conn ->
+          encoding_types = Ch.RowBinary.encoding_types(types)
+
           rows
           |> Stream.chunk_every(60_000)
-          |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
+          |> Stream.map(fn chunk -> RowBinary._encode_rows(chunk, encoding_types) end)
           |> Enum.into(Ch.stream(conn, statement))
         end,
         timeout: :infinity
