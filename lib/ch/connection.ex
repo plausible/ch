@@ -34,14 +34,17 @@ defmodule Ch.Connection do
               {:ok, conn}
 
             result ->
-              {:error,
-               Error.exception("unexpected result for '#{handshake}': " <> inspect(result))}
+              reason = Error.exception("unexpected result for '#{handshake}': #{inspect(result)}")
+              {:ok, _conn} = HTTP.close(conn)
+              {:error, reason}
           end
 
-        {:error, reason, _conn} ->
+        {:error, reason, conn} ->
+          {:ok, _conn} = HTTP.close(conn)
           {:error, reason}
 
-        {:disconnect, reason, _conn} ->
+        {:disconnect, reason, conn} ->
+          {:ok, _conn} = HTTP.close(conn)
           {:error, reason}
       end
     end
