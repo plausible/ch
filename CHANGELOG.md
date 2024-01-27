@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- fix socket leak on failed handshake https://github.com/plausible/ch/pull/153
+
 ## 0.2.2 (2023-12-23)
 
 - fix query encoding for datetimes with zeroed microseconds `~U[****-**-** **:**:**.000000]` https://github.com/plausible/ch/pull/138

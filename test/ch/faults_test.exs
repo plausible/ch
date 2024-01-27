@@ -122,23 +122,27 @@ defmodule Ch.FaultsTest do
           Ch.start_link(port: port, backoff_min: 0)
 
           # connect
-          {:ok, mint} = :gen_tcp.accept(listen)
+          {:ok, mint1} = :gen_tcp.accept(listen)
 
           # failed handshake
-          handshake = intercept_packets(mint)
+          handshake = intercept_packets(mint1)
           assert handshake =~ "select 1"
           altered_handshake = String.replace(handshake, "select 1", "select ;")
           :ok = :gen_tcp.send(clickhouse, altered_handshake)
-          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+          :ok = :gen_tcp.send(mint1, intercept_packets(clickhouse))
 
           # reconnect
-          {:ok, mint} = :gen_tcp.accept(listen)
+          {:ok, mint2} = :gen_tcp.accept(listen)
 
           # handshake
-          handshake = intercept_packets(mint)
+          handshake = intercept_packets(mint2)
           assert handshake =~ "select 1"
           :ok = :gen_tcp.send(clickhouse, handshake)
-          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+          :ok = :gen_tcp.send(mint2, intercept_packets(clickhouse))
+
+          # no socket leak
+          refute Port.info(mint1)
+          assert Port.info(mint2)
         end)
 
       assert log =~ "failed to connect: ** (Ch.Error) Code: 62. DB::Exception: Syntax error"
@@ -152,23 +156,27 @@ defmodule Ch.FaultsTest do
           Ch.start_link(port: port, backoff_min: 0)
 
           # connect
-          {:ok, mint} = :gen_tcp.accept(listen)
+          {:ok, mint1} = :gen_tcp.accept(listen)
 
           # failed handshake
-          handshake = intercept_packets(mint)
+          handshake = intercept_packets(mint1)
           assert handshake =~ "select 1"
           altered_handshake = String.replace(handshake, "select 1", "select 2")
           :ok = :gen_tcp.send(clickhouse, altered_handshake)
-          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+          :ok = :gen_tcp.send(mint1, intercept_packets(clickhouse))
 
           # reconnect
-          {:ok, mint} = :gen_tcp.accept(listen)
+          {:ok, mint2} = :gen_tcp.accept(listen)
 
           # handshake
-          handshake = intercept_packets(mint)
+          handshake = intercept_packets(mint2)
           assert handshake =~ "select 1"
           :ok = :gen_tcp.send(clickhouse, handshake)
-          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+          :ok = :gen_tcp.send(mint2, intercept_packets(clickhouse))
+
+          # no socket leak
+          refute Port.info(mint1)
+          assert Port.info(mint2)
         end)
 
       assert log =~ "failed to connect: ** (Ch.Error) unexpected result for 'select 1'"
