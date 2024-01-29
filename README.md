@@ -85,7 +85,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 2})
 ```
 
-#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary) (efficient)
+#### Insert [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -98,8 +98,11 @@ types = [Ch.Types.u64()]
 # or
 types = [:u64]
 
+rows = [[0], [1]]
+row_binary = Ch.RowBinary.encode_rows(rows, types)
+
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", [[0], [1]], types: types)
+  Ch.query!(pid, ["INSERT INTO ch_demo(id) FORMAT RowBinary\n" | row_binary])
 ```
 
 Note that RowBinary format encoding requires `:types` option to be provided.
@@ -107,11 +110,14 @@ Note that RowBinary format encoding requires `:types` option to be provided.
 Similarly, you can use [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/interfaces/formats#rowbinarywithnamesandtypes) which would additionally do something like a type check.
 
 ```elixir
-sql = "INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes"
-opts = [names: ["id"], types: ["UInt64"]]
-rows = [[0], [1]]
+names = ["id"]
+types = ["UInt64"]
 
-%Ch.Result{num_rows: 2} = Ch.query!(pid, sql, rows, opts)
+header = Ch.RowBinary.encode_names_and_types(names, types)
+row_binary = Ch.RowBinary.encode_rows(rows, types)
+
+%Ch.Result{num_rows: 3} =
+  Ch.query!(pid, ["INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes\n", header | row_binary])
 ```
 
 #### Insert rows in custom [format](https://clickhouse.com/docs/en/interfaces/formats)
@@ -121,29 +127,42 @@ rows = [[0], [1]]
 
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
-csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
+csv = "0\n1"
 
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT CSV", csv, encode: false)
+  Ch.query!(pid, ["INSERT INTO ch_demo(id) FORMAT CSV\n" | csv])
 ```
 
-#### Insert rows as chunked RowBinary stream
+#### Insert rows as [chunked](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) RowBinary stream
 
 ```elixir
 {:ok, pid} = Ch.start_link()
 
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
-stream = Stream.repeatedly(fn -> [:rand.uniform(100)] end)
-chunked = Stream.chunk_every(stream, 100)
-encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
-ten_encoded_chunks = Stream.take(encoded, 10)
+row_binary =
+  Stream.repeatedly(fn -> [:rand.uniform(100)] end)
+  |> Stream.chunk_every(100_000)
+  |> Stream.map(fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
+  |> Stream.take(10)
 
-%Ch.Result{num_rows: 1000} =
-  Ch.query(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", ten_encoded_chunks, encode: false)
+%Ch.Result{num_rows: 1_000_000} =
+  Ch.query(pid, Stream.concat(["INSERT INTO ch_demo(id) FORMAT RowBinary\n"], row_binary))
 ```
 
-This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting in lower memory usage.
+#### Insert rows via [input](https://clickhouse.com/docs/en/sql-reference/table-functions/input) function
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
+
+sql = "INSERT INTO ch_demo SELECT id + {ego:Int64} FROM input('id UInt64') FORMAT RowBinary\n"
+row_binary = Ch.RowBinary.encode_rows([[1], [2], [3]], ["UInt64"])
+
+%Ch.Result{num_rows: 3} =
+  Ch.query!(pid, [sql | row_binary], %{"ego" => -1})
+```
 
 #### Query with custom [settings](https://clickhouse.com/docs/en/operations/settings/settings)
 
@@ -156,7 +175,7 @@ settings = [async_insert: 1]
   Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'")
 
 %Ch.Result{rows: [["async_insert", "Bool", "1"]]} =
-  Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: settings)
+  Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", _params = [], settings: settings)
 ```
 
 ## Caveats
@@ -179,13 +198,13 @@ CREATE TABLE ch_nulls (
 """)
 
 types = ["Nullable(UInt8)", "UInt8", "UInt8"]
-inserted_rows = [[nil, nil, nil]]
-selected_rows = [[nil, 0, 0]]
+rows = [[nil, nil, nil]]
+row_binary = Ch.RowBinary.encode_rows(rows, types)
 
 %Ch.Result{num_rows: 1} =
-  Ch.query!(pid, "INSERT INTO ch_nulls(a, b, c) FORMAT RowBinary", inserted_rows, types: types)
+  Ch.query!(pid, ["INSERT INTO ch_nulls(a, b, c) FORMAT RowBinary\n" | row_binary])
 
-%Ch.Result{rows: ^selected_rows} =
+%Ch.Result{rows: [[nil, 0, 0]]} =
   Ch.query!(pid, "SELECT * FROM ch_nulls")
 ```
 
@@ -197,13 +216,17 @@ However, [`input()`](https://clickhouse.com/docs/en/sql-reference/table-function
 sql = """
 INSERT INTO ch_nulls
   SELECT * FROM input('a Nullable(UInt8), b Nullable(UInt8), c UInt8')
-  FORMAT RowBinary\
+  FORMAT RowBinary
 """
 
-Ch.query!(pid, sql, inserted_rows, types: ["Nullable(UInt8)", "Nullable(UInt8)", "UInt8"])
+types = ["Nullable(UInt8)", "Nullable(UInt8)", "UInt8"]
+row_binary = Ch.RowBinary.encode_rows(rows, types)
 
-%Ch.Result{rows: [[0], [10]]} =
-  Ch.query!(pid, "SELECT b FROM ch_nulls ORDER BY b")
+%Ch.Result{num_rows: 1} =
+  Ch.query!(pid, [sql | row_binary])
+
+%Ch.Result{rows: [_before = [nil, 0, 0], _after = [nil, 10, 0]]} =
+  Ch.query!(pid, "SELECT * FROM ch_nulls ORDER BY b")
 ```
 
 #### UTF-8 in RowBinary
@@ -215,24 +238,17 @@ When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types
 
 Ch.query!(pid, "CREATE TABLE ch_utf8(str String) ENGINE Memory")
 
-bin = "\x61\xF0\x80\x80\x80b"
-utf8 = "a�b"
+# "\x61\xF0\x80\x80\x80b" will become "a�b" on SELECT
+row_binary = Ch.RowBinary.encode(:string, "\x61\xF0\x80\x80\x80b")
 
 %Ch.Result{num_rows: 1} =
-  Ch.query!(pid, "INSERT INTO ch_utf8(str) FORMAT RowBinary", [[bin]], types: ["String"])
+  Ch.query!(pid, ["INSERT INTO ch_utf8(str) FORMAT RowBinary\n" | row_binary])
 
-%Ch.Result{rows: [[^utf8]]} =
+%Ch.Result{rows: [["a�b"]]} =
   Ch.query!(pid, "SELECT * FROM ch_utf8")
 
-%Ch.Result{rows: %{"data" => [[^utf8]]}} =
+%Ch.Result{rows: %{"data" => [["a�b"]]}} =
   pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact") |> Map.update!(:rows, &Jason.decode!/1)
-```
-
-To get raw binary from `String` columns use `:binary` type that skips UTF-8 checks.
-
-```elixir
-%Ch.Result{rows: [[^bin]]} =
-  Ch.query!(pid, "SELECT * FROM ch_utf8", [], types: [:binary])
 ```
 
 #### Timezones in RowBinary
@@ -268,7 +284,7 @@ utc = DateTime.utc_now()
 taipei = DateTime.shift_zone!(utc, "Asia/Taipei")
 
 # ** (ArgumentError) non-UTC timezones are not supported for encoding: 2023-04-26 01:49:43.044569+08:00 CST Asia/Taipei
-Ch.query!(pid, "INSERT INTO ch_datetimes(datetime) FORMAT RowBinary", [[naive], [utc], [taipei]], types: ["DateTime"])
+Ch.RowBinary.encode_rows([[naive], [utc], [taipei]], ["DateTime"])
 ```
 
 ## Benchmarks

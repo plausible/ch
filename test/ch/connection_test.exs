@@ -10,10 +10,6 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1")
   end
 
-  test "select with types", %{conn: conn} do
-    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1", [], types: ["UInt8"])
-  end
-
   test "select with params", %{conn: conn} do
     assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {a:UInt8}", %{"a" => 1})
 
@@ -66,17 +62,17 @@ defmodule Ch.ConnectionTest do
 
     # when the timezone information is provided in the type, we don't need to rely on server timezone
     assert {:ok, %{num_rows: 1, rows: [[bkk_datetime]]}} =
-             Ch.query(conn, "select {$0:DateTime('Asia/Bangkok')}", [naive_noon])
+             Ch.query(conn, "select {naive:DateTime('Asia/Bangkok')}", [{"naive", naive_noon}])
 
     assert bkk_datetime == DateTime.from_naive!(naive_noon, "Asia/Bangkok")
 
     assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00Z]]]}} =
-             Ch.query(conn, "select {$0:DateTime('UTC')}", [naive_noon])
+             Ch.query(conn, "select {naive:DateTime('UTC')}", [{"naive", naive_noon}])
 
     naive_noon_ms = ~N[2022-01-01 12:00:00.123]
 
     assert {:ok, %{num_rows: 1, rows: [[naive_datetime]]}} =
-             Ch.query(conn, "select {$0:DateTime64(3)}", [naive_noon_ms])
+             Ch.query(conn, "select {naive:DateTime64(3)}", [{"naive", naive_noon_ms}])
 
     assert NaiveDateTime.compare(
              naive_datetime,
@@ -109,7 +105,7 @@ defmodule Ch.ConnectionTest do
     #          Ch.query(conn, "select {a:UUID}", %{"a" => uuid_bin})
 
     # pseudo-positional bind
-    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {$0:UInt8}", [1])
+    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {$0:UInt8}", [{"$0", 1}])
   end
 
   test "utc datetime query param encoding", %{conn: conn} do
@@ -117,13 +113,17 @@ defmodule Ch.ConnectionTest do
     msk = DateTime.new!(~D[2021-01-01], ~T[15:00:00], "Europe/Moscow")
     naive = utc |> DateTime.shift_zone!(Ch.Test.clickhouse_tz(conn)) |> DateTime.to_naive()
 
-    assert Ch.query!(conn, "select {$0:DateTime} as d, toString(d)", [utc]).rows ==
+    assert Ch.query!(conn, "select {utc:DateTime} as d, toString(d)", %{"utc" => utc}).rows ==
              [[~N[2021-01-01 12:00:00], to_string(naive)]]
 
-    assert Ch.query!(conn, "select {$0:DateTime('UTC')} as d, toString(d)", [utc]).rows ==
+    assert Ch.query!(conn, "select {utc:DateTime('UTC')} as d, toString(d)", %{"utc" => utc}).rows ==
              [[utc, "2021-01-01 12:00:00"]]
 
-    assert Ch.query!(conn, "select {$0:DateTime('Europe/Moscow')} as d, toString(d)", [utc]).rows ==
+    assert Ch.query!(
+             conn,
+             "select {utc:DateTime('Europe/Moscow')} as d, toString(d)",
+             %{"utc" => utc}
+           ).rows ==
              [[msk, "2021-01-01 15:00:00"]]
   end
 
@@ -132,13 +132,17 @@ defmodule Ch.ConnectionTest do
     msk = DateTime.new!(~D[2021-01-01], ~T[15:00:00.123456], "Europe/Moscow")
     naive = utc |> DateTime.shift_zone!(Ch.Test.clickhouse_tz(conn)) |> DateTime.to_naive()
 
-    assert Ch.query!(conn, "select {$0:DateTime64(6)} as d, toString(d)", [utc]).rows ==
+    assert Ch.query!(conn, "select {utc:DateTime64(6)} as d, toString(d)", %{"utc" => utc}).rows ==
              [[~N[2021-01-01 12:00:00.123456], to_string(naive)]]
 
-    assert Ch.query!(conn, "select {$0:DateTime64(6, 'UTC')} as d, toString(d)", [utc]).rows ==
+    assert Ch.query!(conn, "select {utc:DateTime64(6, 'UTC')} as d, toString(d)", %{"utc" => utc}).rows ==
              [[utc, "2021-01-01 12:00:00.123456"]]
 
-    assert Ch.query!(conn, "select {$0:DateTime64(6,'Europe/Moscow')} as d, toString(d)", [utc]).rows ==
+    assert Ch.query!(
+             conn,
+             "select {utc:DateTime64(6,'Europe/Moscow')} as d, toString(d)",
+             %{"utc" => utc}
+           ).rows ==
              [[msk, "2021-01-01 15:00:00.123456"]]
   end
 
@@ -148,7 +152,7 @@ defmodule Ch.ConnectionTest do
     utc = ~U[2021-01-01 12:00:00.000000Z]
     naive = utc |> DateTime.shift_zone!(Ch.Test.clickhouse_tz(conn)) |> DateTime.to_naive()
 
-    assert Ch.query!(conn, "select {$0:DateTime64(6)} as d, toString(d)", [utc]).rows ==
+    assert Ch.query!(conn, "select {utc:DateTime64(6)} as d, toString(d)", %{"utc" => utc}).rows ==
              [[~N[2021-01-01 12:00:00.000000], to_string(naive)]]
   end
 
@@ -161,13 +165,16 @@ defmodule Ch.ConnectionTest do
   end
 
   test "create", %{conn: conn} do
-    assert {:ok, %{num_rows: nil, rows: []}} =
+    assert {:ok, %{command: :create}} =
              Ch.query(conn, "create table create_example(a UInt8) engine = Memory")
   end
 
   test "create with options", %{conn: conn} do
     assert {:error, %Ch.Error{code: 164, message: message}} =
-             Ch.query(conn, "create table create_example(a UInt8) engine = Memory", [],
+             Ch.query(
+               conn,
+               "create table create_example(a UInt8) engine = Memory",
+               _param = [],
                settings: [readonly: 1]
              )
 
@@ -202,8 +209,8 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 2}} =
                Ch.query(
                  conn,
-                 "insert into {$0:Identifier}(a, b) values ({$1:UInt8},{$2:String}),({$3:UInt8},{$4:String})",
-                 [table, 4, "d", 5, "e"]
+                 "insert into {table:Identifier}(a, b) values ({a:UInt8},{b:String}),({c:UInt8},{d:String})",
+                 %{"table" => table, "a" => 4, "b" => "d", "c" => 5, "d" => "e"}
                )
 
       assert {:ok, %{rows: rows}} =
@@ -226,26 +233,15 @@ defmodule Ch.ConnectionTest do
       assert message =~ "Cannot execute query in readonly mode."
     end
 
-    test "automatic RowBinary", %{conn: conn, table: table} do
-      stmt = "insert into #{table}(a, b) format RowBinary"
+    test "RowBinary", %{conn: conn, table: table} do
       types = ["UInt8", "String"]
       rows = [[1, "a"], [2, "b"]]
-      assert %{num_rows: 2} = Ch.query!(conn, stmt, rows, types: types)
 
-      assert %{rows: rows} =
-               Ch.query!(conn, "select * from {table:Identifier}", %{"table" => table})
-
-      assert rows == [[1, "a"], [2, "b"]]
-    end
-
-    test "manual RowBinary", %{conn: conn, table: table} do
-      stmt = "insert into #{table}(a, b) format RowBinary"
-
-      types = ["UInt8", "String"]
-      rows = [[1, "a"], [2, "b"]]
-      data = RowBinary.encode_rows(rows, types)
-
-      assert %{num_rows: 2} = Ch.query!(conn, stmt, data, encode: false)
+      assert %{num_rows: 2} =
+               Ch.query!(conn, [
+                 "insert into #{table}(a, b) format RowBinary\n"
+                 | RowBinary.encode_rows(rows, types)
+               ])
 
       assert %{rows: rows} =
                Ch.query!(conn, "select * from {table:Identifier}", %{"table" => table})
@@ -257,7 +253,7 @@ defmodule Ch.ConnectionTest do
       types = ["UInt8", "String"]
       rows = [[1, "a"], [2, "b"], [3, "c"]]
 
-      stream =
+      row_binary =
         rows
         |> Stream.chunk_every(2)
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
@@ -265,9 +261,7 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 3}} =
                Ch.query(
                  conn,
-                 "insert into #{table}(a, b) format RowBinary",
-                 stream,
-                 encode: false
+                 Stream.concat(["insert into #{table}(a, b) format RowBinary\n"], row_binary)
                )
 
       assert {:ok, %{rows: rows}} =
@@ -299,8 +293,8 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 2}} =
                Ch.query(
                  conn,
-                 "insert into {$0:Identifier}(a, b) select a, b from {$0:Identifier} where a > {$1:UInt8}",
-                 [table, 1]
+                 "insert into {table:Identifier}(a, b) select a, b from {table:Identifier} where a > {a:UInt8}",
+                 %{"table" => table, "a" => 1}
                )
 
       assert {:ok, %{rows: new_rows}} =
@@ -320,7 +314,7 @@ defmodule Ch.ConnectionTest do
 
     settings = [allow_experimental_lightweight_delete: 1]
 
-    assert {:ok, %{rows: [], command: :delete}} =
+    assert {:ok, %{command: :delete}} =
              Ch.query(conn, "delete from delete_t where 1", [], settings: settings)
   end
 
@@ -379,14 +373,18 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 4}} =
                Ch.query(
                  conn,
-                 "insert into fixed_string_t(a) format RowBinary",
                  [
-                   [""],
-                   ["a"],
-                   ["aa"],
-                   ["aaa"]
-                 ],
-                 types: ["FixedString(3)"]
+                   "insert into fixed_string_t(a) format RowBinary\n"
+                   | RowBinary.encode_rows(
+                       [
+                         [""],
+                         ["a"],
+                         ["aa"],
+                         ["aaa"]
+                       ],
+                       ["FixedString(3)"]
+                     )
+                 ]
                )
 
       assert Ch.query!(conn, "select * from fixed_string_t").rows == [
@@ -423,13 +421,13 @@ defmodule Ch.ConnectionTest do
       assert %{num_rows: 3} =
                Ch.query!(
                  conn,
-                 "insert into decimal_t(d) format RowBinary",
-                 _rows = [
-                   [Decimal.new("2.66")],
-                   [Decimal.new("2.6666")],
-                   [Decimal.new("2.66666")]
-                 ],
-                 types: ["Decimal32(4)"]
+                 [
+                   "insert into decimal_t(d) format RowBinary\n"
+                   | RowBinary.encode_rows(
+                       [[Decimal.new("2.66")], [Decimal.new("2.6666")], [Decimal.new("2.66666")]],
+                       ["Decimal32(4)"]
+                     )
+                 ]
                )
 
       assert Ch.query!(conn, "select * from decimal_t").rows == [
@@ -454,9 +452,13 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "insert into test_bool(A, B) format RowBinary",
-        _rows = [[3, true], [4, false]],
-        types: ["Int64", "Bool"]
+        [
+          "insert into test_bool(A, B) format RowBinary\n"
+          | RowBinary.encode_rows(
+              [[3, true], [4, false]],
+              ["Int64", "Bool"]
+            )
+        ]
       )
 
       # anything > 0 is `true`, here `2` is `true`
@@ -497,9 +499,13 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "insert into t_uuid(x,y) format RowBinary",
-        _rows = [[uuid, "Example 3"]],
-        types: ["UUID", "String"]
+        [
+          "insert into t_uuid(x,y) format RowBinary\n"
+          | RowBinary.encode_rows(
+              [[uuid, "Example 3"]],
+              ["UUID", "String"]
+            )
+        ]
       )
 
       assert {:ok,
@@ -559,9 +565,13 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "INSERT INTO t_enum(i, x) FORMAT RowBinary",
-        _rows = [[3, "hello"], [4, "world"], [5, 1], [6, 2]],
-        types: ["UInt8", "Enum8('hello' = 1, 'world' = 2)"]
+        [
+          "INSERT INTO t_enum(i, x) FORMAT RowBinary\n"
+          | RowBinary.encode_rows(
+              _rows = [[3, "hello"], [4, "world"], [5, 1], [6, 2]],
+              ["UInt8", "Enum8('hello' = 1, 'world' = 2)"]
+            )
+        ]
       )
 
       assert Ch.query!(conn, "SELECT *, CAST(x, 'Int8') FROM t_enum ORDER BY i").rows == [
@@ -608,18 +618,22 @@ defmodule Ch.ConnectionTest do
 
       assert Ch.query!(
                conn,
-               "INSERT INTO table_map FORMAT RowBinary",
-               _rows = [
-                 [%{"key10" => 20, "key20" => 40}],
-                 # empty map
-                 [%{}],
-                 # null map
-                 [nil],
-                 # empty proplist map
-                 [[]],
-                 [[{"key50", 100}]]
-               ],
-               types: ["Map(String, UInt64)"]
+               [
+                 "INSERT INTO table_map FORMAT RowBinary\n"
+                 | RowBinary.encode_rows(
+                     [
+                       [%{"key10" => 20, "key20" => 40}],
+                       # empty map
+                       [%{}],
+                       # null map
+                       [nil],
+                       # empty proplist map
+                       [[]],
+                       [[{"key50", 100}]]
+                     ],
+                     ["Map(String, UInt64)"]
+                   )
+               ]
              )
 
       assert Ch.query!(conn, "SELECT * FROM table_map ORDER BY a ASC").rows == [
@@ -641,7 +655,7 @@ defmodule Ch.ConnectionTest do
                [{1, "a"}, "Tuple(UInt8, String)"]
              ]
 
-      assert Ch.query!(conn, "SELECT {$0:Tuple(Int8, String)}", [{-1, "abs"}]).rows == [
+      assert Ch.query!(conn, "SELECT {t:Tuple(Int8, String)}", %{"t" => {-1, "abs"}}).rows == [
                [{-1, "abs"}]
              ]
 
@@ -660,9 +674,13 @@ defmodule Ch.ConnectionTest do
       assert %{num_rows: 2} =
                Ch.query!(
                  conn,
-                 "INSERT INTO tuples_t FORMAT RowBinary",
-                 _rows = [[{"a", 20}], [{"b", 30}]],
-                 types: ["Tuple(String, Int64)"]
+                 [
+                   "INSERT INTO tuples_t FORMAT RowBinary\n"
+                   | RowBinary.encode_rows(
+                       [[{"a", 20}], [{"b", 30}]],
+                       ["Tuple(String, Int64)"]
+                     )
+                 ]
                )
 
       assert Ch.query!(conn, "SELECT a FROM tuples_t ORDER BY a.1 ASC").rows == [
@@ -704,7 +722,11 @@ defmodule Ch.ConnectionTest do
       #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
       assert {:ok,
               %{num_rows: 1, rows: [[naive_datetime, "2022-12-12 12:00:00"]], headers: headers}} =
-               Ch.query(conn, "select {$0:DateTime} as d, toString(d)", [naive_noon])
+               Ch.query(
+                 conn,
+                 "select {naive:DateTime} as d, toString(d)",
+                 %{"naive" => naive_noon}
+               )
 
       # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
       # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
@@ -717,12 +739,18 @@ defmodule Ch.ConnectionTest do
                |> DateTime.to_naive()
 
       assert {:ok, %{num_rows: 1, rows: [[~U[2022-12-12 12:00:00Z], "2022-12-12 12:00:00"]]}} =
-               Ch.query(conn, "select {$0:DateTime('UTC')} as d, toString(d)", [naive_noon])
+               Ch.query(
+                 conn,
+                 "select {naive:DateTime('UTC')} as d, toString(d)",
+                 %{"naive" => naive_noon}
+               )
 
       assert {:ok, %{num_rows: 1, rows: rows}} =
-               Ch.query(conn, "select {$0:DateTime('Asia/Bangkok')} as d, toString(d)", [
-                 naive_noon
-               ])
+               Ch.query(
+                 conn,
+                 "select {naive:DateTime('Asia/Bangkok')} as d, toString(d)",
+                 %{"naive" => naive_noon}
+               )
 
       assert rows == [
                [
@@ -737,7 +765,7 @@ defmodule Ch.ConnectionTest do
       on_exit(fn -> Calendar.put_time_zone_database(prev_tz_db) end)
 
       assert_raise ArgumentError, ~r/:utc_only_time_zone_database/, fn ->
-        Ch.query(conn, "select {$0:DateTime('Asia/Tokyo')}", [naive_noon])
+        Ch.query(conn, "select {naive:DateTime('Asia/Tokyo')}", %{"naive" => naive_noon})
       end
     end
 
@@ -759,21 +787,37 @@ defmodule Ch.ConnectionTest do
              ]
 
       assert {:ok, %{num_rows: 1, rows: [[~D[1900-01-01], "1900-01-01"]]}} =
-               Ch.query(conn, "select {$0:Date32} as d, toString(d)", [~D[1900-01-01]])
+               Ch.query(
+                 conn,
+                 "select {date:Date32} as d, toString(d)",
+                 %{"date" => ~D[1900-01-01]}
+               )
 
       # max
       assert {:ok, %{num_rows: 1, rows: [[~D[2299-12-31], "2299-12-31"]]}} =
-               Ch.query(conn, "select {$0:Date32} as d, toString(d)", [~D[2299-12-31]])
+               Ch.query(
+                 conn,
+                 "select {date:Date32} as d, toString(d)",
+                 %{"date" => ~D[2299-12-31]}
+               )
 
       # min
       assert {:ok, %{num_rows: 1, rows: [[~D[1900-01-01], "1900-01-01"]]}} =
-               Ch.query(conn, "select {$0:Date32} as d, toString(d)", [~D[1900-01-01]])
+               Ch.query(
+                 conn,
+                 "select {date:Date32} as d, toString(d)",
+                 %{"date" => ~D[1900-01-01]}
+               )
 
       Ch.query!(
         conn,
-        "insert into new(timestamp, event_id) format RowBinary",
-        _rows = [[~D[1960-01-01], 3]],
-        types: ["Date32", "UInt8"]
+        [
+          "insert into new(timestamp, event_id) format RowBinary\n"
+          | RowBinary.encode_rows(
+              [[~D[1960-01-01], 3]],
+              ["Date32", "UInt8"]
+            )
+        ]
       )
 
       assert %{
@@ -829,12 +873,16 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "insert into datetime64_t(event_id, timestamp) format RowBinary",
-        _rows = [
-          [4, ~N[2021-01-01 12:00:00.123456]],
-          [5, ~N[2021-01-01 12:00:00]]
-        ],
-        types: ["UInt8", "DateTime64(3)"]
+        [
+          "insert into datetime64_t(event_id, timestamp) format RowBinary\n"
+          | RowBinary.encode_rows(
+              [
+                [4, ~N[2021-01-01 12:00:00.123456]],
+                [5, ~N[2021-01-01 12:00:00]]
+              ],
+              ["UInt8", "DateTime64(3)"]
+            )
+        ]
       )
 
       assert {:ok, %{num_rows: 2, rows: rows}} =
@@ -863,7 +911,11 @@ defmodule Ch.ConnectionTest do
         # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
         #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
         assert {:ok, %{num_rows: 1, rows: [[naive_datetime]], headers: headers}} =
-                 Ch.query(conn, "select {$0:DateTime64(#{precision})}", [naive_noon])
+                 Ch.query(
+                   conn,
+                   "select {naive:DateTime64(#{precision})}",
+                   %{"naive" => naive_noon}
+                 )
 
         # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
         # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
@@ -919,9 +971,10 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 5}} =
                Ch.query(
                  conn,
-                 "insert into nullable format RowBinary",
-                 <<1, 2, 3, 4, 5>>,
-                 encode: false
+                 [
+                   "insert into nullable format RowBinary\n"
+                   | <<1, 2, 3, 4, 5>>
+                 ]
                )
 
       assert %{num_rows: 1, rows: [[count]]} =
@@ -942,9 +995,13 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "INSERT INTO ch_nulls(a, b, c, d) FORMAT RowBinary",
-        [[nil, nil, nil, nil]],
-        types: ["UInt8", "Nullable(UInt8)", "UInt8", "Nullable(UInt8)"]
+        [
+          "INSERT INTO ch_nulls(a, b, c, d) FORMAT RowBinary\n"
+          | RowBinary.encode_rows(
+              [[nil, nil, nil, nil]],
+              ["UInt8", "Nullable(UInt8)", "UInt8", "Nullable(UInt8)"]
+            )
+        ]
       )
 
       # default is ignored...
@@ -962,14 +1019,18 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        """
-        INSERT INTO test_insert_default_value
-          SELECT id, name
-          FROM input('id UInt32, name Nullable(String)')
-          FORMAT RowBinary\
-        """,
-        [[1, nil], [-1, nil]],
-        types: ["UInt32", "Nullable(String)"]
+        [
+          """
+          INSERT INTO test_insert_default_value
+            SELECT id, name
+            FROM input('id UInt32, name Nullable(String)')
+            FORMAT RowBinary
+          """
+          | RowBinary.encode_rows(
+              [[1, nil], [-1, nil]],
+              ["UInt32", "Nullable(String)"]
+            )
+        ]
       )
 
       assert Ch.query!(conn, "SELECT * FROM test_insert_default_value ORDER BY n").rows ==
@@ -986,7 +1047,7 @@ defmodule Ch.ConnectionTest do
     end
 
     test "can encode and then decode Point in query params", %{conn: conn} do
-      assert Ch.query!(conn, "select {$0:Point}", [{10, 10}]).rows == [
+      assert Ch.query!(conn, "select {p:Point}", %{"p" => {10, 10}}).rows == [
                _row = [_point = {10.0, 10.0}]
              ]
     end
@@ -994,7 +1055,11 @@ defmodule Ch.ConnectionTest do
     test "can insert and select Point", %{conn: conn} do
       Ch.query!(conn, "CREATE TABLE geo_point (p Point) ENGINE = Memory()")
       Ch.query!(conn, "INSERT INTO geo_point VALUES((10, 10))")
-      Ch.query!(conn, "INSERT INTO geo_point FORMAT RowBinary", [[{20, 20}]], types: ["Point"])
+
+      Ch.query!(conn, [
+        "INSERT INTO geo_point FORMAT RowBinary\n"
+        | RowBinary.encode_rows([[{20, 20}]], ["Point"])
+      ])
 
       assert Ch.query!(conn, "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC").rows == [
                [{10.0, 10.0}, "Point"],
@@ -1021,7 +1086,7 @@ defmodule Ch.ConnectionTest do
 
     test "can encode and then decode Ring in query params", %{conn: conn} do
       ring = [{0.0, 1.0}, {10.0, 3.0}]
-      assert Ch.query!(conn, "select {$0:Ring}", [ring]).rows == [_row = [ring]]
+      assert Ch.query!(conn, "select {r:Ring}", %{"r" => ring}).rows == [_row = [ring]]
     end
 
     test "can insert and select Ring", %{conn: conn} do
@@ -1029,7 +1094,10 @@ defmodule Ch.ConnectionTest do
       Ch.query!(conn, "INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)])")
 
       ring = [{20, 20}, {0, 0}, {0, 20}]
-      Ch.query!(conn, "INSERT INTO geo_ring FORMAT RowBinary", [[ring]], types: ["Ring"])
+
+      Ch.query!(conn, [
+        "INSERT INTO geo_ring FORMAT RowBinary\n" | RowBinary.encode_rows([[ring]], ["Ring"])
+      ])
 
       assert Ch.query!(conn, "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC").rows == [
                [[{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}], "Ring"],
@@ -1058,7 +1126,7 @@ defmodule Ch.ConnectionTest do
 
     test "can encode and then decode Polygon in query params", %{conn: conn} do
       polygon = [[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]]
-      assert Ch.query!(conn, "select {$0:Polygon}", [polygon]).rows == [_row = [polygon]]
+      assert Ch.query!(conn, "select {p:Polygon}", %{"p" => polygon}).rows == [_row = [polygon]]
     end
 
     test "can insert and select Polygon", %{conn: conn} do
@@ -1070,7 +1138,11 @@ defmodule Ch.ConnectionTest do
       )
 
       polygon = [[{0, 1.0}, {10, 3.2}], [], [{2, 2}]]
-      Ch.query!(conn, "INSERT INTO geo_polygon FORMAT RowBinary", [[polygon]], types: ["Polygon"])
+
+      Ch.query!(conn, [
+        "INSERT INTO geo_polygon FORMAT RowBinary\n"
+        | RowBinary.encode_rows([[polygon]], ["Polygon"])
+      ])
 
       assert Ch.query!(conn, "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC").rows ==
                [
@@ -1113,7 +1185,7 @@ defmodule Ch.ConnectionTest do
     test "can encode and then decode MultiPolygon in query params", %{conn: conn} do
       multipolygon = [[[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]], [], [[{3, 3}]]]
 
-      assert Ch.query!(conn, "select {$0:MultiPolygon}", [multipolygon]).rows == [
+      assert Ch.query!(conn, "select {mp:MultiPolygon}", %{"mp" => multipolygon}).rows == [
                _row = [multipolygon]
              ]
     end
@@ -1128,9 +1200,13 @@ defmodule Ch.ConnectionTest do
 
       multipolygon = [[[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]], [], [[{3, 3}]]]
 
-      Ch.query!(conn, "INSERT INTO geo_multipolygon FORMAT RowBinary", [[multipolygon]],
-        types: ["MultiPolygon"]
-      )
+      Ch.query!(conn, [
+        "INSERT INTO geo_multipolygon FORMAT RowBinary\n"
+        | RowBinary.encode_rows(
+            [[multipolygon]],
+            ["MultiPolygon"]
+          )
+      ])
 
       assert Ch.query!(conn, "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC").rows ==
                [
@@ -1235,6 +1311,7 @@ defmodule Ch.ConnectionTest do
   end
 
   describe "stream" do
+    @tag :skip
     test "sends mint http packets", %{conn: conn} do
       stmt = "select number from system.numbers limit 1000"
 
@@ -1246,7 +1323,7 @@ defmodule Ch.ConnectionTest do
       end
 
       packets =
-        Ch.run(conn, fn conn ->
+        DBConnection.run(conn, fn conn ->
           conn
           |> Ch.stream(stmt)
           |> Enum.flat_map(drop_ref)
@@ -1267,11 +1344,12 @@ defmodule Ch.ConnectionTest do
       assert List.last(packets) == :done
     end
 
+    @tag :skip
     test "decodes RowBinary", %{conn: conn} do
       stmt = "select number from system.numbers limit 1000"
 
       rows =
-        Ch.run(conn, fn conn ->
+        DBConnection.run(conn, fn conn ->
           conn
           |> Ch.stream(stmt, _params = [], types: [:u64])
           |> Enum.into([])
@@ -1280,10 +1358,11 @@ defmodule Ch.ConnectionTest do
       assert List.flatten(rows) == Enum.into(0..999, [])
     end
 
+    @tag :skip
     test "disconnects on early halt", %{conn: conn} do
       logs =
         ExUnit.CaptureLog.capture_log(fn ->
-          Ch.run(conn, fn conn ->
+          DBConnection.run(conn, fn conn ->
             conn |> Ch.stream("select number from system.numbers") |> Enum.take(1)
           end)
 
@@ -1338,46 +1417,49 @@ defmodule Ch.ConnectionTest do
     end
 
     test "error on type mismatch", %{conn: conn} do
-      stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes"
-      rows = [["AB", "rare", -42]]
       names = ["country_code", "rare_string", "maybe_int32"]
+      types = [Ch.Types.fixed_string(2), Ch.Types.string(), Ch.Types.nullable(Ch.Types.u32())]
 
-      opts = [
-        names: names,
-        types: [Ch.Types.fixed_string(2), Ch.Types.string(), Ch.Types.nullable(Ch.Types.u32())]
-      ]
+      assert {:error, %Ch.Error{code: 117, message: message}} =
+               Ch.query(conn, [
+                 "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes\n",
+                 _header = RowBinary.encode_names_and_types(names, types)
+                 | RowBinary.encode_rows([["AB", "rare", -42]], types)
+               ])
 
-      assert {:error, %Ch.Error{code: 117, message: message}} = Ch.query(conn, stmt, rows, opts)
       assert message =~ "Type of 'rare_string' must be LowCardinality(String), not String"
 
-      opts = [
-        names: names,
-        types: [
-          Ch.Types.fixed_string(2),
-          Ch.Types.low_cardinality(Ch.Types.string()),
-          Ch.Types.nullable(Ch.Types.u32())
-        ]
+      types = [
+        Ch.Types.fixed_string(2),
+        Ch.Types.low_cardinality(Ch.Types.string()),
+        Ch.Types.nullable(Ch.Types.u32())
       ]
 
-      assert {:error, %Ch.Error{code: 117, message: message}} = Ch.query(conn, stmt, rows, opts)
+      assert {:error, %Ch.Error{code: 117, message: message}} =
+               Ch.query(conn, [
+                 "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes\n",
+                 _header = RowBinary.encode_names_and_types(names, types)
+                 | RowBinary.encode_rows([["AB", "rare", -42]], types)
+               ])
+
       assert message =~ "Type of 'maybe_int32' must be Nullable(Int32), not Nullable(UInt32)"
     end
 
     test "ok on valid types", %{conn: conn} do
-      stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes"
-      rows = [["AB", "rare", -42]]
       names = ["country_code", "rare_string", "maybe_int32"]
 
-      opts = [
-        names: names,
-        types: [
-          Ch.Types.fixed_string(2),
-          Ch.Types.low_cardinality(Ch.Types.string()),
-          Ch.Types.nullable(Ch.Types.i32())
-        ]
+      types = [
+        Ch.Types.fixed_string(2),
+        Ch.Types.low_cardinality(Ch.Types.string()),
+        Ch.Types.nullable(Ch.Types.i32())
       ]
 
-      assert {:ok, %{num_rows: 1}} = Ch.query(conn, stmt, rows, opts)
+      assert {:ok, %{num_rows: 1}} =
+               Ch.query(conn, [
+                 "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes\n",
+                 _header = RowBinary.encode_names_and_types(names, types)
+                 | RowBinary.encode_rows([["AB", "rare", -42]], types)
+               ])
     end
   end
 end

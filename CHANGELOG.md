@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- move rows payload (RowBinary, CSV, etc.) to SQL statement
+- remove pseudo-positional binds, make param names explicit
+
 ## 0.2.4 (2024-01-29)
 
 - use `ch-#{version}` as user-agent https://github.com/plausible/ch/pull/154

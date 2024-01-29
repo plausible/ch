@@ -134,31 +134,20 @@ defmodule Ch.Connection do
   end
 
   @impl true
-  def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
-    {query_params, extra_headers, body} = params
+  def handle_execute(%Query{statement: statement} = query, params, opts, conn) do
+    {query_params, extra_headers} = params
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
 
     result =
-      if is_function(body, 2) do
-        request_chunked(conn, "POST", path, headers, body, opts)
+      if is_list(statement) or is_binary(statement) do
+        request(conn, "POST", path, headers, statement, opts)
       else
-        request(conn, "POST", path, headers, body, opts)
+        request_chunked(conn, "POST", path, headers, statement, opts)
       end
 
     with {:ok, conn, responses} <- result do
-      {:ok, query, responses, conn}
-    end
-  end
-
-  def handle_execute(query, params, opts, conn) do
-    {query_params, extra_headers, body} = params
-
-    path = path(conn, query_params, opts)
-    headers = headers(conn, extra_headers, opts)
-
-    with {:ok, conn, responses} <- request(conn, "POST", path, headers, body, opts) do
       {:ok, query, responses, conn}
     end
   end
@@ -171,7 +160,14 @@ defmodule Ch.Connection do
 
   @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
 
-  @spec request(conn, binary, binary, Mint.Types.headers(), iodata, Keyword.t()) ::
+  @spec request(
+          conn,
+          method :: String.t(),
+          path :: String.t(),
+          Mint.Types.headers(),
+          body :: iodata,
+          [Ch.query_option()]
+        ) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
           | {:disconnect, Mint.Types.error(), conn}
@@ -181,7 +177,14 @@ defmodule Ch.Connection do
     end
   end
 
-  @spec request_chunked(conn, binary, binary, Mint.Types.headers(), Enumerable.t(), Keyword.t()) ::
+  @spec request_chunked(
+          conn,
+          method :: String.t(),
+          path :: String.t(),
+          Mint.Types.headers(),
+          body :: Enumerable.t(),
+          [Ch.query_option()]
+        ) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
           | {:disconnect, Mint.Types.error(), conn}
