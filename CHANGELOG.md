@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- use `ch-#{version}` as user-agent https://github.com/plausible/ch/pull/154
+
 ## 0.2.3 (2024-01-29)
 
 - fix socket leak on failed handshake https://github.com/plausible/ch/pull/153

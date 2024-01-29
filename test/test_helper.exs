@@ -5,4 +5,4 @@ default_test_db = System.get_env("CH_DATABASE", "ch_elixir_test")
 {:ok, _} = Ch.Test.sql_exec("CREATE DATABASE #{default_test_db}")
 Application.put_env(:ch, :database, default_test_db)
 
-ExUnit.start()
+ExUnit.start(exclude: [:slow])
