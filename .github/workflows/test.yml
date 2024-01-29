@@ -73,6 +73,5 @@ jobs:
       - uses: actions/checkout@v4 
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1.16"
-          otp-version: "26"
+          elixir-version: "latest"
       - run: mix format --check-formatted
