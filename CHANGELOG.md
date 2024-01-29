@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 (2024-01-29)
 
 - use `ch-#{version}` as user-agent https://github.com/plausible/ch/pull/154
 - fix query string escaping for `\t`, `\\`, and `\n` https://github.com/plausible/ch/pull/155 
