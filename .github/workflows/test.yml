@@ -74,5 +74,6 @@ jobs:
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: "1"
+          otp-version: "latest"
       - run: elixir -v
       - run: mix format --check-formatted
