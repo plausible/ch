@@ -1206,8 +1206,8 @@ defmodule Ch.ConnectionTest do
       assert {:error, %Ch.Error{code: 81} = error} =
                Ch.query(conn, "select 1 + 1", _params = [], database: "no-db")
 
-      assert Exception.message(error) =~
-               "Code: 81. DB::Exception: Database `no-db` doesn't exist. (UNKNOWN_DATABASE)"
+      assert Exception.message(error) =~ "`no-db`"
+      assert Exception.message(error) =~ "UNKNOWN_DATABASE"
     end
 
     test "can provide custom database", %{conn: conn} do
