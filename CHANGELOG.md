@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- add `:data` in `%Ch.Result{}`  
+
 ## 0.2.4 (2024-01-29)
 
 - use `ch-#{version}` as user-agent https://github.com/plausible/ch/pull/154

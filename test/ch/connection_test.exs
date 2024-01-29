@@ -161,7 +161,7 @@ defmodule Ch.ConnectionTest do
   end
 
   test "create", %{conn: conn} do
-    assert {:ok, %{num_rows: nil, rows: []}} =
+    assert {:ok, %{command: :create, num_rows: nil, rows: nil, data: []}} =
              Ch.query(conn, "create table create_example(a UInt8) engine = Memory")
   end
 
@@ -320,7 +320,7 @@ defmodule Ch.ConnectionTest do
 
     settings = [allow_experimental_lightweight_delete: 1]
 
-    assert {:ok, %{rows: [], command: :delete}} =
+    assert {:ok, %{rows: nil, data: [], command: :delete}} =
              Ch.query(conn, "delete from delete_t where 1", [], settings: settings)
   end
 
@@ -1002,11 +1002,10 @@ defmodule Ch.ConnectionTest do
              ]
 
       # to make our RowBinary is not garbage in garbage out we also test a text format response
-      assert conn
-             |> Ch.query!(
+      assert Ch.query!(
+               conn,
                "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC FORMAT JSONCompact"
-             )
-             |> Map.fetch!(:rows)
+             ).data
              |> Jason.decode!()
              |> Map.fetch!("data") == [
                [[10, 10], "Point"],
@@ -1040,7 +1039,7 @@ defmodule Ch.ConnectionTest do
       assert Ch.query!(
                conn,
                "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC FORMAT JSONCompact"
-             ).rows
+             ).data
              |> Jason.decode!()
              |> Map.fetch!("data") == [
                [[[0, 0], [10, 0], [10, 10], [0, 10]], "Ring"],
@@ -1088,7 +1087,7 @@ defmodule Ch.ConnectionTest do
       assert Ch.query!(
                conn,
                "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC FORMAT JSONCompact"
-             ).rows
+             ).data
              |> Jason.decode!()
              |> Map.fetch!("data") == [
                [[[[0, 1], [10, 3.2]], [], [[2, 2]]], "Polygon"],
@@ -1166,7 +1165,7 @@ defmodule Ch.ConnectionTest do
       assert Ch.query!(
                conn,
                "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC FORMAT JSONCompact"
-             ).rows
+             ).data
              |> Jason.decode!()
              |> Map.fetch!("data") == [
                [
