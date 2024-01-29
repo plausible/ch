@@ -73,5 +73,6 @@ jobs:
       - uses: actions/checkout@v4 
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: "latest"
+          elixir-version: "1"
+      - run: elixir -v
       - run: mix format --check-formatted
