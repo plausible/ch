@@ -167,22 +167,9 @@ defimpl DBConnection.Query, for: Ch.Query do
     end
   end
 
-  # TODO merge :stream `decode/3` with "normal" `decode/3` clause above
-  @spec decode(Query.t(), {:stream, nil, responses}, Keyword.t()) :: responses
-        when responses: [Mint.Types.response()]
-  def decode(_query, {:stream, nil, responses}, _opts), do: responses
-
-  @spec decode(Query.t(), {:stream, [atom], [Mint.Types.response()]}, Keyword.t()) :: [[term]]
-  def decode(_query, {:stream, types, responses}, _opts) do
-    decode_stream_data(responses, types)
-  end
-
-  defp decode_stream_data([{:data, _ref, data} | rest], types) do
-    [RowBinary.decode_rows(data, types) | decode_stream_data(rest, types)]
-  end
-
-  defp decode_stream_data([_ | rest], types), do: decode_stream_data(rest, types)
-  defp decode_stream_data([] = done, _types), do: done
+  # stream: select result
+  @spec decode(Query.t(), result, [Ch.query_option()]) :: result when result: Result.t()
+  def decode(_query, %Result{} = result, _opts), do: result
 
   defp get_header(headers, key) do
     case List.keyfind(headers, key, 0) do

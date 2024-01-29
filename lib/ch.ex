@@ -107,6 +107,7 @@ defmodule Ch do
     DBConnection.stream(conn, query, params, opts)
   end
 
+  # TODO drop
   @doc false
   @spec run(DBConnection.conn(), (DBConnection.t() -> any), Keyword.t()) :: any
   def run(conn, f, opts \\ []) when is_function(f, 1) do
