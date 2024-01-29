@@ -190,6 +190,38 @@ defmodule Ch.Connection do
   end
 
   @impl true
+  def handle_execute(%Query{} = query, {:stream, params}, opts, conn) do
+    {query_params, extra_headers, body} = params
+
+    path = path(conn, query_params, opts)
+    headers = headers(conn, extra_headers, opts)
+
+    with {:ok, conn, ref} <- send_request(conn, "POST", path, headers, :stream) do
+      case HTTP.stream_request_body(conn, ref, body) do
+        {:ok, conn} -> {:ok, query, ref, conn}
+        {:error, conn, reason} -> {:disconnect, reason, conn}
+      end
+    end
+  end
+
+  def handle_execute(%Query{} = query, {:stream, ref, body}, opts, conn) do
+    case HTTP.stream_request_body(conn, ref, body) do
+      {:ok, conn} ->
+        case body do
+          :eof ->
+            with {:ok, conn, responses} <- receive_full_response(conn, timeout(conn, opts)) do
+              {:ok, query, responses, conn}
+            end
+
+          _other ->
+            {:ok, query, ref, conn}
+        end
+
+      {:error, conn, reason} ->
+        {:disconnect, reason, conn}
+    end
+  end
+
   def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
     {query_params, extra_headers, body} = params
 

@@ -101,10 +101,10 @@ defmodule Ch do
   end
 
   @doc false
-  @spec stream(DBConnection.t(), iodata, map | [term], [query_option]) :: DBConnection.Stream.t()
+  @spec stream(DBConnection.t(), iodata, map | [term], [query_option]) :: Ch.Stream.t()
   def stream(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
-    DBConnection.stream(conn, query, params, opts)
+    %Ch.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
   # TODO drop
