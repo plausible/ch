@@ -2,10 +2,10 @@ defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
   defstruct [:statement, :command, :encode, :decode]
 
-  @type t :: %__MODULE__{statement: iodata, command: atom, encode: boolean, decode: boolean}
+  @type t :: %__MODULE__{statement: iodata, command: command, encode: boolean, decode: boolean}
 
   @doc false
-  @spec build(iodata, Keyword.t()) :: t
+  @spec build(iodata, [Ch.query_option()]) :: t
   def build(statement, opts \\ []) do
     command = Keyword.get(opts, :command) || extract_command(statement)
     encode = Keyword.get(opts, :encode, true)
@@ -43,6 +43,13 @@ defmodule Ch.Query do
     {"WATCH", :watch}
   ]
 
+  command_union =
+    statements
+    |> Enum.map(fn {_, command} -> command end)
+    |> Enum.reduce(&{:|, [], [&1, &2]})
+
+  @type command :: unquote(command_union)
+
   defp extract_command(statement)
 
   for {statement, command} <- statements do
@@ -64,13 +71,14 @@ end
 defimpl DBConnection.Query, for: Ch.Query do
   alias Ch.{Query, Result, RowBinary}
 
-  @spec parse(Query.t(), Keyword.t()) :: Query.t()
+  @spec parse(Query.t(), [Ch.query_option()]) :: Query.t()
   def parse(query, _opts), do: query
 
-  @spec describe(Query.t(), Keyword.t()) :: Query.t()
+  @spec describe(Query.t(), [Ch.query_option()]) :: Query.t()
   def describe(query, _opts), do: query
 
-  @spec encode(Query.t(), params, Keyword.t()) :: {query_params, Mint.Types.headers(), body}
+  @spec encode(Query.t(), params, [Ch.query_option()]) ::
+          {query_params, Mint.Types.headers(), body}
         when params: map | [term] | [row :: [term]] | iodata | Enumerable.t(),
              query_params: [{String.t(), String.t()}],
              body: iodata | Enumerable.t()
@@ -120,7 +128,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     |> format_row_binary?()
   end
 
-  @spec decode(Query.t(), [response], Keyword.t()) :: Result.t()
+  @spec decode(Query.t(), [response], [Ch.query_option()]) :: Result.t()
         when response: Mint.Types.status() | Mint.Types.headers() | binary
   def decode(%Query{command: :insert}, responses, _opts) do
     [_status, headers | _data] = responses
