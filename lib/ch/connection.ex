@@ -10,7 +10,7 @@ defmodule Ch.Connection do
   @typep conn :: HTTP.t()
 
   @impl true
-  @spec connect(Keyword.t()) :: {:ok, conn} | {:error, Error.t() | Mint.Types.error()}
+  @spec connect([Ch.start_option()]) :: {:ok, conn} | {:error, Error.t() | Mint.Types.error()}
   def connect(opts) do
     scheme = String.to_existing_atom(opts[:scheme] || "http")
     address = opts[:hostname] || "localhost"
@@ -171,7 +171,7 @@ defmodule Ch.Connection do
 
   @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
 
-  @spec request(conn, binary, binary, Mint.Types.headers(), iodata, Keyword.t()) ::
+  @spec request(conn, binary, binary, Mint.Types.headers(), iodata, [Ch.query_option()]) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
           | {:disconnect, Mint.Types.error(), conn}

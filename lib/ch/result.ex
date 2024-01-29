@@ -14,7 +14,7 @@ defmodule Ch.Result do
   defstruct [:command, :num_rows, :rows, :headers]
 
   @type t :: %__MODULE__{
-          command: atom,
+          command: Ch.Query.command(),
           num_rows: non_neg_integer | nil,
           rows: [[term]] | iodata | nil,
           headers: Mint.Types.headers()
