@@ -1,4 +1,4 @@
-name: test
+name: mix
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
     branches: [master]
 
 jobs:
-  mix:
+  test:
     runs-on: ubuntu-latest
 
     env:
@@ -16,17 +16,24 @@ jobs:
       matrix:
         elixir: ["1.14", "1.15", "1.16"]
         otp: ["25", "26"]
-        clickhouse: ["23.3.7.5"]
+        clickhouse: ["latest"]
         timezone: ["UTC"]
         include:
           - elixir: "1.16"
             otp: "26"
-            clickhouse: "23.3.7.5"
+            clickhouse: "latest"
             timezone: "Europe/Berlin"
+          # Plausible
+          # - https://github.com/plausible/analytics/blob/master/.tool-versions
+          # - https://github.com/plausible/analytics/blob/master/.github/workflows/elixir.yml
+          - elixir: "1.16.0"
+            otp: "26.2.1"
+            clickhouse: "23.3.7.5"
+            timezone: "UTC"
 
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:${{ matrix.clickhouse }}-alpine
+        image: clickhouse/clickhouse-server:${{ matrix.clickhouse }}
         ports:
           - 8123:8123
         env:
@@ -59,3 +66,13 @@ jobs:
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
       - run: mix test --include slow
+
+  format:
+    runs-on: ubuntu-latest 
+    steps:
+      - uses: actions/checkout@v4 
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.16"
+          otp-version: "26"
+      - run: mix format --check-formatted
