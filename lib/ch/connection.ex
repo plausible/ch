@@ -5,6 +5,8 @@ defmodule Ch.Connection do
   alias Ch.{Error, Query, Result}
   alias Mint.HTTP1, as: HTTP
 
+  @user_agent "ch/" <> Mix.Project.config()[:version]
+
   @typep conn :: HTTP.t()
 
   @impl true
@@ -53,7 +55,9 @@ defmodule Ch.Connection do
   @impl true
   @spec ping(conn) :: {:ok, conn} | {:disconnect, Mint.Types.error() | Error.t(), conn}
   def ping(conn) do
-    case request(conn, "GET", "/ping", _headers = [], _body = "", _opts = []) do
+    headers = [{"user-agent", @user_agent}]
+
+    case request(conn, "GET", "/ping", headers, _body = "", _opts = []) do
       {:ok, conn, _response} -> {:ok, conn}
       {:error, error, conn} -> {:disconnect, error, conn}
       {:disconnect, _error, _conn} = disconnect -> disconnect
@@ -277,17 +281,25 @@ defmodule Ch.Connection do
 
   defp headers(conn, extra_headers, opts) do
     extra_headers
-    |> maybe_put_header("x-clickhouse-user", get_opts_or_private(conn, opts, :username))
-    |> maybe_put_header("x-clickhouse-key", get_opts_or_private(conn, opts, :password))
-    |> maybe_put_header("x-clickhouse-database", get_opts_or_private(conn, opts, :database))
+    |> maybe_put_new_header("x-clickhouse-user", get_opts_or_private(conn, opts, :username))
+    |> maybe_put_new_header("x-clickhouse-key", get_opts_or_private(conn, opts, :password))
+    |> maybe_put_new_header("x-clickhouse-database", get_opts_or_private(conn, opts, :database))
+    |> maybe_put_new_header("user-agent", @user_agent)
   end
 
   defp get_opts_or_private(conn, opts, key) do
     Keyword.get(opts, key) || HTTP.get_private(conn, key)
   end
 
-  defp maybe_put_header(headers, _k, nil), do: headers
-  defp maybe_put_header(headers, k, v), do: [{k, v} | headers]
+  defp maybe_put_new_header(headers, _name, _no_value = nil), do: headers
+
+  defp maybe_put_new_header(headers, name, value) do
+    if List.keymember?(headers, name, 0) do
+      headers
+    else
+      [{name, value} | headers]
+    end
+  end
 
   defp get_header(headers, key) do
     case List.keyfind(headers, key, 0) do

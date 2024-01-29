@@ -58,4 +58,4 @@ jobs:
       - run: mix deps.get --only $MIX_ENV
       - run: mix format --check-formatted
       - run: mix compile --warnings-as-errors
-      - run: mix test
+      - run: mix test --include slow
