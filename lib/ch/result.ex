@@ -14,7 +14,7 @@ defmodule Ch.Result do
   @type t :: %__MODULE__{
           command: Ch.Query.command(),
           num_rows: non_neg_integer | nil,
-          rows: [[term]] | nil,
+          rows: [[term]] | iodata | nil,
           headers: Mint.Types.headers(),
           data: iodata
         }

@@ -145,7 +145,7 @@ defimpl DBConnection.Query, for: Ch.Query do
   def decode(%Query{decode: false, command: command}, responses, _opts) when is_list(responses) do
     # TODO potentially fails on x-progress-headers
     [_status, headers | data] = responses
-    %Result{data: data, command: command, headers: headers}
+    %Result{rows: data, data: data, command: command, headers: headers}
   end
 
   def decode(%Query{command: command}, responses, opts) when is_list(responses) do
@@ -163,7 +163,7 @@ defimpl DBConnection.Query, for: Ch.Query do
         %Result{num_rows: length(rows), rows: rows, command: command, headers: headers}
 
       _other ->
-        %Result{data: data, command: command, headers: headers}
+        %Result{rows: data, data: data, command: command, headers: headers}
     end
   end
 

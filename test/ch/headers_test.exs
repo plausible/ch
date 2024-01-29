@@ -7,7 +7,7 @@ defmodule Ch.HeadersTest do
   end
 
   test "can request gzipped response through headers", %{conn: conn} do
-    assert {:ok, %{data: data, headers: headers}} =
+    assert {:ok, %{rows: data, data: data, headers: headers}} =
              Ch.query(conn, "select number from system.numbers limit 100", [],
                decode: false,
                settings: [enable_http_compression: 1],
@@ -23,7 +23,7 @@ defmodule Ch.HeadersTest do
   end
 
   test "can request lz4 response through headers", %{conn: conn} do
-    assert {:ok, %{data: data, headers: headers}} =
+    assert {:ok, %{rows: data, data: data, headers: headers}} =
              Ch.query(conn, "select number from system.numbers limit 100", [],
                decode: false,
                settings: [enable_http_compression: 1],
@@ -39,7 +39,7 @@ defmodule Ch.HeadersTest do
   end
 
   test "can request zstd response through headers", %{conn: conn} do
-    assert {:ok, %{data: data, headers: headers}} =
+    assert {:ok, %{rows: data, data: data, headers: headers}} =
              Ch.query(conn, "select number from system.numbers limit 100", [],
                decode: false,
                settings: [enable_http_compression: 1],
