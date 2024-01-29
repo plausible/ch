@@ -77,6 +77,20 @@ defimpl DBConnection.Query, for: Ch.Query do
   @spec describe(Query.t(), [Ch.query_option()]) :: Query.t()
   def describe(query, _opts), do: query
 
+  # stream: insert init
+  @spec encode(Query.t(), {:stream, term}, [Ch.query_option()]) ::
+          {:stream, {[{String.t(), String.t()}], Mint.Types.headers(), iodata}}
+  def encode(query, {:stream, params}, opts) do
+    {:stream, encode(query, params, opts)}
+  end
+
+  # stream: insert data chunk
+  @spec encode(Query.t(), {:stream, Mint.Types.request_ref(), iodata | :eof}, [Ch.query_option()]) ::
+          {:stream, Mint.Types.request_ref(), iodata | :eof}
+  def encode(_query, {:stream, ref, data}, _opts) do
+    {:stream, ref, data}
+  end
+
   @spec encode(Query.t(), params, [Ch.query_option()]) ::
           {query_params, Mint.Types.headers(), body}
         when params: map | [term] | [row :: [term]] | iodata | Enumerable.t(),
@@ -128,6 +142,13 @@ defimpl DBConnection.Query, for: Ch.Query do
     |> format_row_binary?()
   end
 
+  # stream: select result
+  @spec decode(Query.t(), result, [Ch.query_option()]) :: result when result: Result.t()
+  def decode(_query, %Result{} = result, _opts), do: result
+  # stream: insert result
+  @spec decode(Query.t(), ref, [Ch.query_option()]) :: ref when ref: Mint.Types.request_ref()
+  def decode(_query, ref, _opts) when is_reference(ref), do: ref
+
   @spec decode(Query.t(), [response], [Ch.query_option()]) :: Result.t()
         when response: Mint.Types.status() | Mint.Types.headers() | binary
   def decode(%Query{command: :insert}, responses, _opts) do
@@ -166,10 +187,6 @@ defimpl DBConnection.Query, for: Ch.Query do
         %Result{rows: data, data: data, command: command, headers: headers}
     end
   end
-
-  # stream: select result
-  @spec decode(Query.t(), result, [Ch.query_option()]) :: result when result: Result.t()
-  def decode(_query, %Result{} = result, _opts), do: result
 
   defp get_header(headers, key) do
     case List.keyfind(headers, key, 0) do

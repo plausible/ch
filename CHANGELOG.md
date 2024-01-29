@@ -4,7 +4,8 @@
 
 - add `:data` in `%Ch.Result{}` https://github.com/plausible/ch/pull/159
 - duplicate `Ch.Result.data` in `Ch.Result.rows` for backwards compatibility https://github.com/plausible/ch/pull/160
-- make `Ch.stream` emit `Ch.Result.t` instead of `Mint.Types.response`
+- make `Ch.stream` emit `Ch.Result.t` instead of `Mint.Types.response` https://github.com/plausible/ch/pull/161
+- make `Ch.stream` collectable https://github.com/plausible/ch/pull/162
 
 ## 0.2.4 (2024-01-29)
 
