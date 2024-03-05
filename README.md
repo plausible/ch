@@ -5,23 +5,22 @@
 
 Minimal HTTP ClickHouse client for Elixir.
 
-Used in [Ecto ClickHouse adapter.](https://github.com/plausible/chto)
+Used in [Ecto ClickHouse adapter.](https://github.com/plausible/ecto_ch)
 
 ### Key features
 
-- RowBinary
 - Native query parameters
 - Per query settings
 - Minimal API
-
-Your ideas are welcome [here.](https://github.com/plausible/ch/issues/82)
 
 ## Installation
 
 ```elixir
 defp deps do
   [
-    {:ch, "~> 0.2.0"}
+    {:ch, "~> 0.3.0"},
+    # TODO ch_native, ch_http
+    {:ch_row_binary, "~> 0.1.0"}
   ]
 end
 ```
@@ -38,7 +37,15 @@ defaults = [
   database: "default",
   settings: [],
   pool_size: 1,
-  timeout: :timer.seconds(15)
+  timeout: :timer.seconds(15),
+  # which means the default format for the HTTP interface in your
+  # ClickHouse server will be used which is usually TSV
+  format: nil,
+  decode: %{
+    # x-clickhouse-format -> function
+    "RowBinaryWithNamesAndTypes" => &Ch.RowBinary.decode/1,
+    "Native" => &Ch.Native.decode/1
+  }
 ]
 
 {:ok, pid} = Ch.start_link(defaults)
@@ -49,21 +56,18 @@ defaults = [
 ```elixir
 {:ok, pid} = Ch.start_link()
 
-{:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
+{:ok, %Ch.Result{decoded: nil, data: _tsv = ""} =
   Ch.query(pid, "SELECT * FROM system.numbers LIMIT 3")
 
-{:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
-  Ch.query(pid, "SELECT * FROM system.numbers LIMIT {$0:UInt8}", [3])
+{:ok, %Ch.Result{decoded: %{columns: ["number"], rows: [[0], [1], [2]]}}} =
+  Ch.query(pid, "SELECT * FROM system.numbers LIMIT 3 FORMAT RowBinaryWithNamesAndTypes")
 
-{:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
+{:ok, %Ch.Result{decoded: %{num_rows: 3, num_columns: 1, data: %{"number" => [0, 1, 2]}}}} =
+  Ch.query(pid, "SELECT * FROM system.numbers LIMIT 3 FORMAT Native")
+
+{:ok, %Ch.Result{columns: %{"number" => [0, 1, 2]}}} =
   Ch.query(pid, "SELECT * FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 3})
 ```
-
-Note on datetime encoding in query parameters:
-
-- `%NaiveDateTime{}` is encoded as text to make it assume the column's or ClickHouse server's timezone
-- `%DateTime{time_zone: "Etc/UTC"}` is encoded as unix timestamp and is treated as UTC timestamp by ClickHouse
-- encoding non UTC `%DateTime{}` raises `ArgumentError`
 
 #### Insert rows
 
@@ -84,40 +88,22 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
 #### Insert [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary)
 
+#### Insert [Native](https://clickhouse.com/docs/en/interfaces/formats#native)
+
 ```elixir
 {:ok, pid} = Ch.start_link()
 
-Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
+Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64, name String) ENGINE Null")
 
-types = ["UInt64"]
-# or
-types = [Ch.Types.u64()]
-# or
-types = [:u64]
-
-rows = [[0], [1]]
-row_binary = Ch.RowBinary.encode_rows(rows, types)
+iodata = [
+  _cols = 2,
+  _rows = 3,
+  Ch.Native.encode_column("id", :u64, [0, 1, 2]),
+  Ch.Native.encode_column("name", :string, ["alice", "bob", "charlie"])
+]
 
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, ["INSERT INTO ch_demo(id) FORMAT RowBinary\n" | row_binary])
-```
-
-Note that RowBinary format encoding requires `:types` option to be provided.
-
-Similarly, you can use [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/interfaces/formats#rowbinarywithnamesandtypes) which would additionally do something like a type check.
-
-```elixir
-names = ["id"]
-types = ["UInt64"]
-
-header = Ch.RowBinary.encode_names_and_types(names, types)
-row_binary = Ch.RowBinary.encode_rows(rows, types)
-
-%Ch.Result{num_rows: 3} =
-  Ch.query!(pid, [
-    "INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes\n",
-    header | row_binary
-  ])
+  Ch.query!(pid, ["INSERT INTO ch_demo FORMAT Native\n" | iodata])
 ```
 
 #### Insert custom [format](https://clickhouse.com/docs/en/interfaces/formats)
@@ -143,9 +129,10 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 DBConnection.run(pid, fn conn ->
   Stream.repeatedly(fn -> [:rand.uniform(100)] end)
   |> Stream.chunk_every(100_000)
-  |> Stream.map(fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
+  |> Stream.map(fn chunk -> Ch.RowBinary.encode_many(chunk, _types = ["UInt64"]) end)
   |> Stream.take(10)  
-  |> Enum.into(Ch.stream(conn, "INSERT INTO ch_demo(id) FORMAT RowBinary\n"))
+  |> Stream.into(Ch.stream(conn, "INSERT INTO ch_demo(id) FORMAT RowBinary\n"))
+  |> Stream.run()
 end)
 ```
 
@@ -157,7 +144,7 @@ end)
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
 sql = "INSERT INTO ch_demo SELECT id + {ego:Int64} FROM input('id UInt64') FORMAT RowBinary\n"
-row_binary = Ch.RowBinary.encode_rows([[1], [2], [3]], ["UInt64"])
+row_binary = Ch.RowBinary.encode_many([[1], [2], [3]], ["UInt64"])
 
 %Ch.Result{num_rows: 3} =
   Ch.query!(pid, [sql | row_binary], %{"ego" => -1})
@@ -197,8 +184,8 @@ CREATE TABLE ch_nulls (
 """)
 
 types = ["Nullable(UInt8)", "UInt8", "UInt8"]
-rows = [[nil, nil, nil]]
-row_binary = Ch.RowBinary.encode_rows(rows, types)
+row = [nil, nil, nil]
+row_binary = Ch.RowBinary.encode_one(row, types)
 
 %Ch.Result{num_rows: 1} =
   Ch.query!(pid, ["INSERT INTO ch_nulls(a, b, c) FORMAT RowBinary\n" | row_binary])
@@ -219,7 +206,7 @@ INSERT INTO ch_nulls
 """
 
 types = ["Nullable(UInt8)", "Nullable(UInt8)", "UInt8"]
-row_binary = Ch.RowBinary.encode_rows(rows, types)
+row_binary = Ch.RowBinary.encode_one(row, types)
 
 %Ch.Result{num_rows: 1} =
   Ch.query!(pid, [sql | row_binary])
@@ -238,7 +225,7 @@ When decoding [`String`](https://clickhouse.com/docs/en/sql-reference/data-types
 Ch.query!(pid, "CREATE TABLE ch_utf8(str String) ENGINE Memory")
 
 # "\x61\xF0\x80\x80\x80b" will become "a�b" on SELECT
-row_binary = Ch.RowBinary.encode(:string, "\x61\xF0\x80\x80\x80b")
+row_binary = Ch.RowBinary.encode(["\x61\xF0\x80\x80\x80b"], Ch.RowBinary.encoder(types: [:string]))
 
 %Ch.Result{num_rows: 1} =
   Ch.query!(pid, ["INSERT INTO ch_utf8(str) FORMAT RowBinary\n" | row_binary])
