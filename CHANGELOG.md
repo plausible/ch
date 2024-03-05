@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.5-rc.0 (2024-01-29)
+## 0.2.5 (2024-03-05)
 
 - add `:data` in `%Ch.Result{}` https://github.com/plausible/ch/pull/159
 - duplicate `Ch.Result.data` in `Ch.Result.rows` for backwards compatibility https://github.com/plausible/ch/pull/160

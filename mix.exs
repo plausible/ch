@@ -2,7 +2,7 @@ defmodule Ch.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/plausible/ch"
-  @version "0.2.5-rc.0"
+  @version "0.2.5"
 
   def project do
     [
