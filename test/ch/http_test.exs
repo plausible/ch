@@ -11,7 +11,7 @@ defmodule Ch.HTTPTest do
     test "sets user-agent to ch/<version> by default", %{ch: ch} do
       %Ch.Result{rows: [[123]], headers: resp_header} = Ch.query!(ch, "select 123")
       {"x-clickhouse-query-id", query_id} = List.keyfind!(resp_header, "x-clickhouse-query-id", 0)
-      assert query_http_user_agent(ch, query_id) == "ch/0.2.4"
+      assert query_http_user_agent(ch, query_id) == "ch/" <> Mix.Project.config()[:version]
     end
 
     test "uses the provided user-agent", %{ch: ch} do
