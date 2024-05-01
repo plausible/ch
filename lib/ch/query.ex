@@ -80,6 +80,12 @@ defimpl DBConnection.Query, for: Ch.Query do
   # stream: insert init
   @spec encode(Query.t(), {:stream, term}, [Ch.query_option()]) ::
           {:stream, {[{String.t(), String.t()}], Mint.Types.headers(), iodata}}
+  @spec encode(Ch.Query.t(), any(), any()) ::
+          {:stream,
+           {:stream,
+            {:stream, {any(), any()} | {any(), any(), any()}} | {:stream | list(), any(), any()}}
+           | {:stream | list(), any(), any()}}
+          | {:stream | list(), any(), any()}
   def encode(query, {:stream, params}, opts) do
     {:stream, encode(query, params, opts)}
   end
@@ -156,7 +162,7 @@ defimpl DBConnection.Query, for: Ch.Query do
 
     num_rows =
       if summary = get_header(headers, "x-clickhouse-summary") do
-        %{"written_rows" => written_rows} = Jason.decode!(summary)
+        %{"written_rows" => written_rows} = :json.decode(summary)
         String.to_integer(written_rows)
       end
 

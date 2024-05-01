@@ -32,10 +32,12 @@ defmodule Ch.MixProject do
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
+    jason_opts = if System.otp_release() >= "27", do: [optional: true], else: []
+
     [
       {:mint, "~> 1.0"},
       {:db_connection, "~> 2.0"},
-      {:jason, "~> 1.0"},
+      {:jason, "~> 1.0", jason_opts},
       {:decimal, "~> 2.0"},
       {:ecto, "~> 3.5", optional: true},
       {:benchee, "~> 1.0", only: [:bench]},

@@ -1006,7 +1006,7 @@ defmodule Ch.ConnectionTest do
                conn,
                "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC FORMAT JSONCompact"
              ).rows
-             |> Jason.decode!()
+             |> :json.decode()
              |> Map.fetch!("data") == [
                [[10, 10], "Point"],
                [[20, 20], "Point"]
@@ -1040,7 +1040,7 @@ defmodule Ch.ConnectionTest do
                conn,
                "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC FORMAT JSONCompact"
              ).rows
-             |> Jason.decode!()
+             |> :json.decode()
              |> Map.fetch!("data") == [
                [[[0, 0], [10, 0], [10, 10], [0, 10]], "Ring"],
                [[[20, 20], [0, 0], [0, 20]], "Ring"]
@@ -1088,7 +1088,7 @@ defmodule Ch.ConnectionTest do
                conn,
                "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC FORMAT JSONCompact"
              ).rows
-             |> Jason.decode!()
+             |> :json.decode()
              |> Map.fetch!("data") == [
                [[[[0, 1], [10, 3.2]], [], [[2, 2]]], "Polygon"],
                [
@@ -1166,7 +1166,7 @@ defmodule Ch.ConnectionTest do
                conn,
                "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC FORMAT JSONCompact"
              ).rows
-             |> Jason.decode!()
+             |> :json.decode()
              |> Map.fetch!("data") == [
                [
                  [

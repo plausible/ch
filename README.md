@@ -225,7 +225,7 @@ utf8 = "a�b"
   Ch.query!(pid, "SELECT * FROM ch_utf8")
 
 %Ch.Result{rows: %{"data" => [[^utf8]]}} =
-  pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact") |> Map.update!(:rows, &Jason.decode!/1)
+  pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact") |> Map.update!(:rows, &:json.decode/1)
 ```
 
 To get raw binary from `String` columns use `:binary` type that skips UTF-8 checks.
