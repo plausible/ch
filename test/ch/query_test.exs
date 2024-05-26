@@ -113,7 +113,7 @@ defmodule Ch.QueryTest do
     test "decoded binaries copy behaviour", %{conn: conn} do
       text = "hello world"
       assert [[bin]] = Ch.query!(conn, "SELECT {$0:String}", [text]).rows
-      assert :binary.referenced_byte_size(bin) == byte_size(text)
+      assert :binary.referenced_byte_size(bin) == :binary.referenced_byte_size("hello world")
 
       # For OTP 20+ refc binaries up to 64 bytes might be copied during a GC
       text = String.duplicate("hello world", 6)
