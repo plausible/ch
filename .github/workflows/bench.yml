@@ -11,9 +11,10 @@ jobs:
 
     strategy:
       matrix:
-        elixir: ["1.16"]
-        otp: ["26"]
-        clickhouse: ["latest"]
+        # TODO
+        elixir: [v1.17.0-rc.0]
+        otp: [27]
+        clickhouse: [latest]
 
     services:
       clickhouse:

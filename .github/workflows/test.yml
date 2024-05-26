@@ -14,22 +14,27 @@ jobs:
 
     strategy:
       matrix:
-        elixir: ["1.14", "1.15", "1.16"]
-        otp: ["25", "26"]
-        clickhouse: ["latest"]
-        timezone: ["UTC"]
+        elixir: [1.14, 1.15, 1.16]
+        otp: [25, 26]
+        clickhouse: [latest]
+        timezone: [UTC]
         include:
-          - elixir: "1.16"
-            otp: "26"
-            clickhouse: "latest"
-            timezone: "Europe/Berlin"
+          - elixir: 1.16
+            otp: 26
+            clickhouse: latest
+            timezone: Europe/Berlin
+          # TODO
+          - elixir: v1.17.0-rc.0
+            otp: 27
+            clickhouse: latest
+            timezone: UTC
           # Plausible
           # - https://github.com/plausible/analytics/blob/master/.tool-versions
           # - https://github.com/plausible/analytics/blob/master/.github/workflows/elixir.yml
-          - elixir: "1.16.0"
-            otp: "26.2.1"
-            clickhouse: "24.3.3.102"
-            timezone: "UTC"
+          - elixir: 1.16.0
+            otp: 26.2.1
+            clickhouse: 24.3.3.102
+            timezone: UTC
 
     services:
       clickhouse:
@@ -67,12 +72,13 @@ jobs:
       - run: mix test --include slow
 
   format:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 
+      - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: "1"
-          otp-version: "26"
+          # TODO
+          elixir-version: v1.17.0-rc.0
+          otp-version: 27
       - run: elixir -v
       - run: mix format --check-formatted
