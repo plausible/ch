@@ -232,7 +232,7 @@ defimpl DBConnection.Query, for: Ch.Query do
         IO.iodata_to_binary([
           Integer.to_string(seconds),
           ?.,
-          String.pad_leading(Integer.to_string(fractional), precision)
+          String.pad_leading(Integer.to_string(fractional), precision, "0")
         ])
 
       _ ->
