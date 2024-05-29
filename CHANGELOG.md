@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- fix query encoding for datetimes where the microseconds value starts with zeroes `~U[****-**-** **:**:**.0*****]` https://github.com/plausible/ch/pull/175
+
 ## 0.2.5 (2024-03-05)
 
 - add `:data` in `%Ch.Result{}` https://github.com/plausible/ch/pull/159
@@ -10,7 +14,7 @@
 ## 0.2.4 (2024-01-29)
 
 - use `ch-#{version}` as user-agent https://github.com/plausible/ch/pull/154
-- fix query string escaping for `\t`, `\\`, and `\n` https://github.com/plausible/ch/pull/155 
+- fix query string escaping for `\t`, `\\`, and `\n` https://github.com/plausible/ch/pull/155
 
 ## 0.2.3 (2024-01-29)
 
