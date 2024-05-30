@@ -152,6 +152,16 @@ defmodule Ch.ConnectionTest do
              [[~N[2021-01-01 12:00:00.000000], to_string(naive)]]
   end
 
+  test "utc datetime64 microseconds with more precision than digits", %{conn: conn} do
+    # this test case guards against a previous bug where DateTimes with a microsecond value of with N digits
+    # and a precision > N would be encoded with a space like `234235234. 234123`
+    utc = ~U[2024-05-26 20:00:46.099856Z]
+    naive = utc |> DateTime.shift_zone!(Ch.Test.clickhouse_tz(conn)) |> DateTime.to_naive()
+
+    assert Ch.query!(conn, "select {$0:DateTime64(6)} as d, toString(d)", [utc]).rows ==
+             [[~N[2024-05-26 20:00:46.099856Z], to_string(naive)]]
+  end
+
   test "select with options", %{conn: conn} do
     assert {:ok, %{num_rows: 1, rows: [["async_insert", "Bool", "1"]]}} =
              Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 1])
