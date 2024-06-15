@@ -9,16 +9,9 @@ jobs:
     env:
       MIX_ENV: bench
 
-    strategy:
-      matrix:
-        # TODO
-        elixir: [v1.17.0-rc.0]
-        otp: [27]
-        clickhouse: [latest]
-
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:${{ matrix.clickhouse }}
+        image: clickhouse/clickhouse-server:latest
         ports:
           - 8123:8123
         env:
@@ -33,18 +26,18 @@ jobs:
 
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: ${{ matrix.elixir }}
-          otp-version: ${{ matrix.otp }}
+          elixir-version: 1
+          otp-version: 27
 
       - uses: actions/cache@v4
         with:
           path: |
             deps
             _build
-          key: bench-${{ matrix.otp }}-${{ matrix.elixir }}-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
+          key: bench-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            bench-${{ matrix.otp }}-${{ matrix.elixir }}-${{ github.head_ref || github.ref }}-
-            bench-${{ matrix.otp }}-${{ matrix.elixir }}-refs/heads/master-
+            bench-${{ github.head_ref || github.ref }}-
+            bench-refs/heads/master-
 
       - run: mix deps.get --only $MIX_ENV
       - run: mix compile --warnings-as-errors
