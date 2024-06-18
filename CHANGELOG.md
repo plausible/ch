@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- raise on invalid UInt8 and Int8 when encoding RowBinary https://github.com/plausible/ch/pull/180
+
 ## 0.2.6 (2024-05-30)
 
 - fix query encoding for datetimes where the microseconds value starts with zeroes `~U[****-**-** **:**:**.0*****]` https://github.com/plausible/ch/pull/175

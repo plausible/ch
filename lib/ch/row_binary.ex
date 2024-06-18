@@ -195,12 +195,22 @@ defmodule Ch.RowBinary do
 
   def encode({:fixed_string, size}, nil), do: <<0::size(size * 8)>>
 
-  def encode(:u8, u) when is_integer(u), do: u
+  # UInt8 — [0 : 255]
+  def encode(:u8, u) when is_integer(u) and u >= 0 and u <= 255, do: u
   def encode(:u8, nil), do: 0
 
-  def encode(:i8, i) when is_integer(i) and i >= 0, do: i
-  def encode(:i8, i) when is_integer(i), do: <<i::signed>>
+  def encode(:u8, term) do
+    raise ArgumentError, "invalid UInt8: #{inspect(term)}"
+  end
+
+  # Int8 — [-128 : 127]
+  def encode(:i8, i) when is_integer(i) and i >= 0 and i <= 127, do: i
+  def encode(:i8, i) when is_integer(i) and i < 0 and i >= -128, do: <<i::signed>>
   def encode(:i8, nil), do: 0
+
+  def encode(:i8, term) do
+    raise ArgumentError, "invalid Int8: #{inspect(term)}"
+  end
 
   for size <- [16, 32, 64, 128, 256] do
     def encode(unquote(:"u#{size}"), u) when is_integer(u) do

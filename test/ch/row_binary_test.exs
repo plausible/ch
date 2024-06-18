@@ -305,4 +305,20 @@ defmodule Ch.RowBinaryTest do
       assert decode_rows(<<1, 2>>, [:u8, :u8]) == [[1, 2]]
     end
   end
+
+  # TODO maybe use stream_data?
+  describe "invalid arguments" do
+    # https://github.com/plausible/ch/issues/166
+    test "for UInt8" do
+      assert_raise ArgumentError, "invalid UInt8: 256", fn -> encode(:u8, 256) end
+      assert_raise ArgumentError, "invalid UInt8: -1", fn -> encode(:u8, -1) end
+      assert_raise ArgumentError, "invalid UInt8: \"a\"", fn -> encode(:u8, "a") end
+    end
+
+    test "for Int8" do
+      assert_raise ArgumentError, "invalid Int8: 128", fn -> encode(:i8, 128) end
+      assert_raise ArgumentError, "invalid Int8: -129", fn -> encode(:i8, -129) end
+      assert_raise ArgumentError, "invalid Int8: \"a\"", fn -> encode(:i8, "a") end
+    end
+  end
 end
