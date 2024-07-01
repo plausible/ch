@@ -1,11 +1,11 @@
 # Ch
 
-[![Hex Package](https://img.shields.io/hexpm/v/ch.svg)](https://hex.pm/packages/ch)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/ch)
+[![Documentation badge](https://img.shields.io/badge/Documentation-ff69b4)](https://hexdocs.pm/ch)
+[![Hex.pm badge](https://img.shields.io/badge/Package%20on%20hex.pm-informational)](https://hex.pm/packages/ch)
 
 Minimal HTTP ClickHouse client for Elixir.
 
-Used in [Ecto ClickHouse adapter.](https://github.com/plausible/chto)
+Used in [Ecto ClickHouse adapter.](https://github.com/plausible/ecto_ch)
 
 ### Key features
 
