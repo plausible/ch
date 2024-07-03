@@ -14,7 +14,7 @@ defmodule Ch do
           | {:scheme, String.t()}
           | {:hostname, String.t()}
           | {:port, :inet.port_number()}
-          | {:transport_opts, :gen_tcp.connect_option()}
+          | {:transport_opts, :gen_tcp.connect_option() | :ssl.tls_client_option()}
           | DBConnection.start_option()
 
   @doc """
@@ -25,11 +25,10 @@ defmodule Ch do
     * `:scheme` - HTTP scheme, defaults to `"http"`
     * `:hostname` - server hostname, defaults to `"localhost"`
     * `:port` - HTTP port, defualts to `8123`
-    * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
     * `:database` - Database, defaults to `"default"`
     * `:username` - Username
     * `:password` - User password
-    * `:settings` - Keyword list of ClickHouse settings
+    * `:settings` - Keyword list of ClickHouse settings to send wtih every query
     * `:timeout` - HTTP receive timeout in milliseconds
     * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
     * [`DBConnection.start_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:start_option/0)
@@ -55,8 +54,6 @@ defmodule Ch do
           | {:command, Ch.Query.command()}
           | {:headers, [{String.t(), String.t()}]}
           | {:format, String.t()}
-          # TODO remove
-          | {:encode, boolean}
           | {:decode, boolean}
           | DBConnection.connection_option()
 
@@ -69,8 +66,8 @@ defmodule Ch do
     * `:database` - Database
     * `:username` - Username
     * `:password` - User password
-    * `:settings` - Keyword list of settings
-    * `:timeout` - Query request timeout
+    * `:settings` - Keyword list of settings to merge with `:settings` from `start_link` and send with this query
+    * `:timeout` - Configures both query request timeout and HTTP receive timeout in milliseconds, whichever happens faster
     * `:command` - Command tag for the query
     * `:headers` - Custom HTTP headers for the request
     * `:format` - Custom response format for the request
