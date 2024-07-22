@@ -227,7 +227,7 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          # falied ping
+          # failed ping
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
           :ok = :gen_tcp.close(mint)
@@ -342,7 +342,7 @@ defmodule Ch.FaultsTest do
 
     # TODO non-chunked request
 
-    test "reconects after closed before streaming request", ctx do
+    test "reconnects after closed before streaming request", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse} = ctx
 
       test = self()
