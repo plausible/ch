@@ -24,7 +24,7 @@ defmodule Ch do
 
     * `:scheme` - HTTP scheme, defaults to `"http"`
     * `:hostname` - server hostname, defaults to `"localhost"`
-    * `:port` - HTTP port, defualts to `8123`
+    * `:port` - HTTP port, defaults to `8123`
     * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
     * `:database` - Database, defaults to `"default"`
     * `:username` - Username
