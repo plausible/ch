@@ -7,16 +7,18 @@ defmodule Ch.EctoTypeTest do
     end
 
     test "with :type" do
-      assert {:parameterized, Ch, :string} = Ecto.ParameterizedType.init(Ch, type: "String")
+      assert {:parameterized, {Ch, :string}} = Ecto.ParameterizedType.init(Ch, type: "String")
     end
 
     test "with :raw" do
-      assert {:parameterized, Ch, :string} = Ecto.ParameterizedType.init(Ch, raw: "String")
+      assert {:parameterized, {Ch, :string}} = Ecto.ParameterizedType.init(Ch, raw: "String")
     end
   end
 
   test "String" do
-    assert {:parameterized, Ch, :string} = type = Ecto.ParameterizedType.init(Ch, type: "String")
+    assert {:parameterized, {Ch, :string}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "String")
+
     assert Ecto.Type.type(type) == type
     assert Ecto.Type.format(type) == "#Ch<String>"
 
@@ -32,7 +34,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Nullable(String)" do
-    assert {:parameterized, Ch, {:nullable, :string}} =
+    assert {:parameterized, {Ch, {:nullable, :string}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "Nullable(String)")
 
     assert Ecto.Type.type(type) == type
@@ -50,7 +52,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "LowCardinality(String)" do
-    assert {:parameterized, Ch, {:low_cardinality, :string}} =
+    assert {:parameterized, {Ch, {:low_cardinality, :string}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "LowCardinality(String)")
 
     assert Ecto.Type.type(type) == type
@@ -68,7 +70,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Array(String)" do
-    assert {:parameterized, Ch, {:array, :string}} =
+    assert {:parameterized, {Ch, {:array, :string}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "Array(String)")
 
     assert Ecto.Type.type(type) == type
@@ -88,7 +90,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "{:array, String}" do
-    assert {:array, {:parameterized, Ch, :string}} =
+    assert {:array, {:parameterized, {Ch, :string}}} =
              type = {:array, Ecto.ParameterizedType.init(Ch, type: "String")}
 
     assert Ecto.Type.type(type) == type
@@ -108,7 +110,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Tuple(String, Int64)" do
-    assert {:parameterized, Ch, {:tuple, [:string, :i64]}} =
+    assert {:parameterized, {Ch, {:tuple, [:string, :i64]}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "Tuple(String, Int64)")
 
     assert Ecto.Type.type(type) == type
@@ -129,7 +131,7 @@ defmodule Ch.EctoTypeTest do
   for size <- [8, 16, 32, 64, 128, 256] do
     for {encoded, decoded} <- [{"Int#{size}", :"i#{size}"}, {"UInt#{size}", :"u#{size}"}] do
       test encoded do
-        assert {:parameterized, Ch, unquote(decoded)} =
+        assert {:parameterized, {Ch, unquote(decoded)}} =
                  type = Ecto.ParameterizedType.init(Ch, type: unquote(encoded))
 
         assert Ecto.Type.type(type) == type
@@ -147,7 +149,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Map(String, UInt64)" do
-    assert {:parameterized, Ch, {:map, :string, :u64}} =
+    assert {:parameterized, {Ch, {:map, :string, :u64}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "Map(String, UInt64)")
 
     assert Ecto.Type.type(type) == type
@@ -162,7 +164,7 @@ defmodule Ch.EctoTypeTest do
 
   for size <- [32, 64] do
     test "Float#{size}" do
-      assert {:parameterized, Ch, unquote(:"f#{size}")} =
+      assert {:parameterized, {Ch, unquote(:"f#{size}")}} =
                type = Ecto.ParameterizedType.init(Ch, type: unquote("Float#{size}"))
 
       assert Ecto.Type.type(type) == type
@@ -181,7 +183,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Date" do
-    assert {:parameterized, Ch, :date} = type = Ecto.ParameterizedType.init(Ch, type: "Date")
+    assert {:parameterized, {Ch, :date}} = type = Ecto.ParameterizedType.init(Ch, type: "Date")
 
     assert Ecto.Type.type(type) == type
     assert Ecto.Type.format(type) == "#Ch<Date>"
@@ -197,7 +199,8 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Date32" do
-    assert {:parameterized, Ch, :date32} = type = Ecto.ParameterizedType.init(Ch, type: "Date32")
+    assert {:parameterized, {Ch, :date32}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "Date32")
 
     assert Ecto.Type.type(type) == type
     assert Ecto.Type.format(type) == "#Ch<Date32>"
@@ -213,7 +216,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Bool" do
-    assert {:parameterized, Ch, :boolean} = type = Ecto.ParameterizedType.init(Ch, type: "Bool")
+    assert {:parameterized, {Ch, :boolean}} = type = Ecto.ParameterizedType.init(Ch, type: "Bool")
 
     assert Ecto.Type.type(type) == type
     assert Ecto.Type.format(type) == "#Ch<Bool>"
@@ -229,7 +232,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "DateTime" do
-    assert {:parameterized, Ch, :datetime} =
+    assert {:parameterized, {Ch, :datetime}} =
              type = Ecto.ParameterizedType.init(Ch, type: "DateTime")
 
     assert Ecto.Type.type(type) == type
@@ -246,7 +249,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "DateTime('UTC')" do
-    assert {:parameterized, Ch, {:datetime, "UTC"}} =
+    assert {:parameterized, {Ch, {:datetime, "UTC"}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "DateTime('UTC')")
 
     assert Ecto.Type.type(type) == type
@@ -264,7 +267,7 @@ defmodule Ch.EctoTypeTest do
 
   # TODO truncate?
   test "DateTime64(3)" do
-    assert {:parameterized, Ch, {:datetime64, 3}} =
+    assert {:parameterized, {Ch, {:datetime64, 3}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "DateTime64(3)")
 
     assert Ecto.Type.type(type) == type
@@ -289,7 +292,7 @@ defmodule Ch.EctoTypeTest do
 
   # TODO truncate?
   test "DateTime64(3, 'UTC')" do
-    assert {:parameterized, Ch, {:datetime64, 3, "UTC"}} =
+    assert {:parameterized, {Ch, {:datetime64, 3, "UTC"}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "DateTime64(3, 'UTC')")
 
     assert Ecto.Type.type(type) == type
@@ -313,7 +316,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "SimpleAggregateFunction(any, String)" do
-    assert {:parameterized, Ch, {:simple_aggregate_function, "any", :string}} =
+    assert {:parameterized, {Ch, {:simple_aggregate_function, "any", :string}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "SimpleAggregateFunction(any, String)")
 
     assert Ecto.Type.type(type) == type
@@ -331,8 +334,8 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "SimpleAggregateFunction(groupArrayArray, Array(DateTime('UTC')))" do
-    assert {:parameterized, Ch,
-            {:simple_aggregate_function, "groupArrayArray", {:array, {:datetime, "UTC"}}}} =
+    assert {:parameterized,
+            {Ch, {:simple_aggregate_function, "groupArrayArray", {:array, {:datetime, "UTC"}}}}} =
              type =
              Ecto.ParameterizedType.init(Ch,
                type: "SimpleAggregateFunction(groupArrayArray, Array(DateTime('UTC')))"
@@ -359,7 +362,7 @@ defmodule Ch.EctoTypeTest do
 
   # TODO check size?
   test "FixedString(3)" do
-    assert {:parameterized, Ch, {:fixed_string, 3}} =
+    assert {:parameterized, {Ch, {:fixed_string, 3}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "FixedString(3)")
 
     assert Ecto.Type.type(type) == type
@@ -383,7 +386,7 @@ defmodule Ch.EctoTypeTest do
     full_encoded = encoded <> "('hello' = 1, 'world' = 2)"
 
     test full_encoded do
-      assert {:parameterized, Ch, {unquote(decoded), [{"hello", 1}, {"world", 2}]}} =
+      assert {:parameterized, {Ch, {unquote(decoded), [{"hello", 1}, {"world", 2}]}}} =
                type = Ecto.ParameterizedType.init(Ch, type: unquote(full_encoded))
 
       assert Ecto.Type.type(type) == type
@@ -412,7 +415,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "UUID" do
-    assert {:parameterized, Ch, :uuid} = type = Ecto.ParameterizedType.init(Ch, type: "UUID")
+    assert {:parameterized, {Ch, :uuid}} = type = Ecto.ParameterizedType.init(Ch, type: "UUID")
 
     assert Ecto.Type.type(type) == type
     assert Ecto.Type.format(type) == "#Ch<UUID>"
@@ -429,7 +432,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "IPv4" do
-    assert {:parameterized, Ch, :ipv4} = type = Ecto.ParameterizedType.init(Ch, type: "IPv4")
+    assert {:parameterized, {Ch, :ipv4}} = type = Ecto.ParameterizedType.init(Ch, type: "IPv4")
 
     assert Ecto.Type.type(type) == type
     assert Ecto.Type.format(type) == "#Ch<IPv4>"
@@ -448,7 +451,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "IPv6" do
-    assert {:parameterized, Ch, :ipv6} = type = Ecto.ParameterizedType.init(Ch, type: "IPv6")
+    assert {:parameterized, {Ch, :ipv6}} = type = Ecto.ParameterizedType.init(Ch, type: "IPv6")
 
     assert Ecto.Type.type(type) == type
     assert Ecto.Type.format(type) == "#Ch<IPv6>"
@@ -470,7 +473,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Point" do
-    assert {:parameterized, Ch, :point} = type = Ecto.ParameterizedType.init(Ch, type: "Point")
+    assert {:parameterized, {Ch, :point}} = type = Ecto.ParameterizedType.init(Ch, type: "Point")
 
     assert Ecto.Type.type(type) == type
     assert Ecto.Type.format(type) == "#Ch<Point>"
@@ -488,7 +491,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Ring" do
-    assert {:parameterized, Ch, :ring} = type = Ecto.ParameterizedType.init(Ch, type: "Ring")
+    assert {:parameterized, {Ch, :ring}} = type = Ecto.ParameterizedType.init(Ch, type: "Ring")
 
     assert Ecto.Type.type(type) == type
     assert Ecto.Type.format(type) == "#Ch<Ring>"
@@ -500,7 +503,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Polygon" do
-    assert {:parameterized, Ch, :polygon} =
+    assert {:parameterized, {Ch, :polygon}} =
              type = Ecto.ParameterizedType.init(Ch, type: "Polygon")
 
     assert Ecto.Type.type(type) == type
@@ -517,7 +520,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "MultiPolygon" do
-    assert {:parameterized, Ch, :multipolygon} =
+    assert {:parameterized, {Ch, :multipolygon}} =
              type = Ecto.ParameterizedType.init(Ch, type: "MultiPolygon")
 
     assert Ecto.Type.type(type) == type
@@ -534,7 +537,7 @@ defmodule Ch.EctoTypeTest do
   end
 
   test "Decimal(18, 4)" do
-    assert {:parameterized, Ch, {:decimal, 18, 4}} =
+    assert {:parameterized, {Ch, {:decimal, 18, 4}}} =
              type = Ecto.ParameterizedType.init(Ch, type: unquote("Decimal(18, 4)"))
 
     assert Ecto.Type.type(type) == type
@@ -547,7 +550,7 @@ defmodule Ch.EctoTypeTest do
 
   for size <- [32, 64, 128, 256] do
     test "Decimal#{size}(4)" do
-      assert {:parameterized, Ch, {unquote(:"decimal#{size}"), 4}} =
+      assert {:parameterized, {Ch, {unquote(:"decimal#{size}"), 4}}} =
                type = Ecto.ParameterizedType.init(Ch, type: unquote("Decimal#{size}(4)"))
 
       precision =

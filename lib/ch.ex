@@ -118,7 +118,7 @@ defmodule Ch do
     @behaviour Ecto.ParameterizedType
 
     @impl true
-    def type(params), do: {:parameterized, Ch, params}
+    def type(params), do: {:parameterized, {Ch, params}}
 
     @impl true
     def init(opts) do
