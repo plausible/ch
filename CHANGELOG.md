@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.7 (2024-08-15)
 
 - raise on invalid UInt8 and Int8 when encoding RowBinary https://github.com/plausible/ch/pull/180
+- adapt to Ecto v3.12 https://github.com/plausible/ch/pull/195
 
 ## 0.2.6 (2024-05-30)
 
