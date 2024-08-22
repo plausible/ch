@@ -17,7 +17,7 @@ defmodule Ch.Types do
         {"Float#{size}", :"f#{size}", []}
       end,
       {"Array", :array, [:type]},
-      {"Tuple", :tuple, [:type]},
+      {"Tuple", :tuple, [:maybe_named_column]},
       {"Map", :map, [:type]},
       {"FixedString", :fixed_string, [:int]},
       {"Nullable", :nullable, [:type]},
@@ -392,6 +392,31 @@ defmodule Ch.Types do
     decode_identifier(rest, 0, rest, stack, acc)
   end
 
+  for {encoded, decoded, [_ | _] = args} <- types do
+    defp decode([:maybe_named_column | stack], unquote(encoded) <> rest, acc) do
+      [:close, {:tuple, [:maybe_named_column]} | stack] = stack
+
+      decode(
+        [:open | unquote(args)] ++
+          [:close, {unquote(decoded), unquote(args)}, acc, :close, {:tuple, [:type]} | stack],
+        rest,
+        []
+      )
+    end
+  end
+
+  for {encoded, decoded, []} <- types do
+    defp decode([:maybe_named_column | stack], unquote(encoded) <> rest, acc) do
+      [:close, {:tuple, [:maybe_named_column]} | stack] = stack
+      decode([:close, {:tuple, [:type]} | stack], rest, [unquote(decoded) | acc])
+    end
+  end
+
+  defp decode([:maybe_named_column | stack], <<rest::bytes>>, acc) do
+    [:close, {:tuple, [:maybe_named_column]} | stack] = stack
+    decode([:identifier, :type, :close, {:tuple, [:identifier, :type]} | stack], rest, acc)
+  end
+
   defp decode([:eq | stack], <<?=, rest::bytes>>, acc) do
     decode(stack, rest, acc)
   end
@@ -402,7 +427,7 @@ defmodule Ch.Types do
   defp close([_ | stack]), do: close(stack)
 
   defp build_type(:array = a, [t]), do: {a, t}
-  defp build_type(:tuple = t, ts), do: {t, :lists.reverse(ts)}
+  defp build_type(:tuple = t, ts), do: {t, build_tuple(ts)}
   defp build_type(:fixed_string = fs, [n]), do: {fs, n}
   defp build_type(:datetime = d, [tz]), do: {d, tz}
   defp build_type(:datetime64 = d, [precision]), do: {d, precision}
@@ -423,6 +448,18 @@ defmodule Ch.Types do
     mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)
   end
 
+  defp build_tuple([type, name | rest]) when is_binary(name) do
+    named_columns_to_types(rest, [type])
+  end
+
+  defp build_tuple(types), do: :lists.reverse(types)
+
+  defp named_columns_to_types([type, _name | rest], acc) do
+    named_columns_to_types(rest, [type | acc])
+  end
+
+  defp named_columns_to_types([], acc), do: acc
+
   # TODO '', \'
 
   defp decode_string(<<?', rest::bytes>>, len, original, stack, acc) do
@@ -441,8 +478,10 @@ defmodule Ch.Types do
   defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
   defguardp is_alpha(a) when (a >= ?a and a <= ?z) or (a >= ?A and a <= ?Z)
+  defguardp is_numeric(char) when char >= ?0 and char <= ?9
 
-  defp decode_identifier(<<a, rest::bytes>>, len, original, stack, acc) when is_alpha(a) do
+  defp decode_identifier(<<a, rest::bytes>>, len, original, stack, acc)
+       when is_alpha(a) or is_numeric(a) do
     decode_identifier(rest, len + 1, original, stack, acc)
   end
 
@@ -450,8 +489,6 @@ defmodule Ch.Types do
     part = :binary.part(original, 0, len)
     decode(stack, rest, [:binary.copy(part) | acc])
   end
-
-  defguardp is_numeric(char) when char >= ?0 and char <= ?9
 
   defp decode_int(<<?-, i, rest::bytes>>, stack, outer_acc) when is_numeric(i) do
     decode_int_cont(rest, -(i - ?0), stack, outer_acc)
