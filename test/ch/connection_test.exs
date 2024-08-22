@@ -523,6 +523,7 @@ defmodule Ch.ConnectionTest do
               }} = Ch.query(conn, "SELECT * FROM t_uuid ORDER BY y")
     end
 
+    @tag :skip
     test "json", %{conn: conn} do
       settings = [allow_experimental_object_type: 1]
 

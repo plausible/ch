@@ -99,6 +99,11 @@ defmodule Ch.QueryTest do
       assert [[[[0]]]] = Ch.query!(conn, "SELECT [[0]]").rows
     end
 
+    test "decode tuples", %{conn: conn} do
+      assert [[{"Hello", 123}]] = Ch.query!(conn, "select ('Hello', 123)").rows
+      assert [[{"Hello", 123}]] = Ch.query!(conn, "select ('Hello' as a, 123 as b)").rows
+    end
+
     test "decode network types", %{conn: conn} do
       assert [[{127, 0, 0, 1} = ipv4]] = Ch.query!(conn, "SELECT '127.0.0.1'::inet4").rows
       assert :inet.ntoa(ipv4) == ~c"127.0.0.1"
