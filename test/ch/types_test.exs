@@ -71,6 +71,23 @@ defmodule Ch.TypesTest do
                 ]}
     end
 
+    test "named tuple" do
+      assert decode("Tuple(a String, b UInt8)") == {:tuple, [:string, :u8]}
+      assert decode(" Tuple ( a String , b UInt8 ) ") == {:tuple, [:string, :u8]}
+
+      assert decode(
+               " Tuple ( a Array( String ) , t Tuple ( a String , b UInt64 ), d DateTime, d64 DateTime64(3), f FixedString(3) ) "
+             ) ==
+               {:tuple,
+                [
+                  {:array, :string},
+                  {:tuple, [:string, :u64]},
+                  :datetime,
+                  {:datetime64, 3},
+                  {:fixed_string, 3}
+                ]}
+    end
+
     test "datetime" do
       assert decode("DateTime") == :datetime
       assert decode("DateTime('UTC')") == {:datetime, "UTC"}
