@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.8 (2024-09-06)
+
+- support named tuples https://github.com/plausible/ch/pull/197
+
 ## 0.2.7 (2024-08-15)
 
 - raise on invalid UInt8 and Int8 when encoding RowBinary https://github.com/plausible/ch/pull/180
