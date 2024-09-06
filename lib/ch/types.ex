@@ -480,8 +480,9 @@ defmodule Ch.Types do
   defguardp is_alpha(a) when (a >= ?a and a <= ?z) or (a >= ?A and a <= ?Z)
   defguardp is_numeric(char) when char >= ?0 and char <= ?9
 
+  # TODO add ?$
   defp decode_identifier(<<a, rest::bytes>>, len, original, stack, acc)
-       when is_alpha(a) or is_numeric(a) or a == ?_ or a == ?$ do
+       when is_alpha(a) or is_numeric(a) or a == ?_ do
     decode_identifier(rest, len + 1, original, stack, acc)
   end
 
