@@ -102,6 +102,8 @@ defmodule Ch.QueryTest do
     test "decode tuples", %{conn: conn} do
       assert [[{"Hello", 123}]] = Ch.query!(conn, "select ('Hello', 123)").rows
       assert [[{"Hello", 123}]] = Ch.query!(conn, "select ('Hello' as a, 123 as b)").rows
+      assert [[{"Hello", 123}]] = Ch.query!(conn, "select ('Hello' as a_, 123 as b)").rows
+      assert [[{"Hello", 123}]] = Ch.query!(conn, "select ('Hello' as a$, 123 as b)").rows
     end
 
     test "decode network types", %{conn: conn} do
