@@ -1,6 +1,8 @@
 defmodule Ch.RowBinary do
   @moduledoc "Helpers for working with ClickHouse [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) format."
 
+  # TODO cleanup
+
   # @compile {:bin_opt_info, true}
   @dialyzer :no_improper_lists
 

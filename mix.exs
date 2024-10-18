@@ -2,7 +2,7 @@ defmodule Ch.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/plausible/ch"
-  @version "0.2.8"
+  @version "0.3.0"
 
   def project do
     [
@@ -12,7 +12,7 @@ defmodule Ch.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       name: "Ch",
-      description: "HTTP ClickHouse driver for Elixir",
+      description: "ClickHouse driver for Elixir",
       docs: docs(),
       package: package(),
       source_url: @source_url
@@ -33,9 +33,9 @@ defmodule Ch.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:mint, "~> 1.0"},
+      {:mint, "~> 1.0", optional: true},
       {:db_connection, "~> 2.0"},
-      {:jason, "~> 1.0"},
+      {:jason, "~> 1.0", optional: true},
       {:decimal, "~> 2.0"},
       {:ecto, "~> 3.12", optional: true},
       {:benchee, "~> 1.0", only: [:bench]},

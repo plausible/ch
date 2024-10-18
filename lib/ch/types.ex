@@ -3,6 +3,8 @@ defmodule Ch.Types do
   Helpers to turn ClickHouse types into Elixir terms for easier processing.
   """
 
+  # TODO cleanup
+
   types =
     [
       {_encoded = "String", _decoded = :string, _args = []},

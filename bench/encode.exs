@@ -31,10 +31,15 @@ alias Ch.RowBinary
 Benchee.run(
   %{
     # "control" => fn rows -> Enum.each(rows, fn _row -> :ok end) end,
-
+    "encode" => fn rows -> RowBinary.encode_rows(rows, types) end,
     "insert" => fn rows -> Ch.query!(conn, statement, rows, types: types) end,
     # "control stream" => fn rows -> rows |> Stream.chunk_every(60_000) |> Stream.run() end,
-
+    "encode stream" => fn rows ->
+      rows
+      |> Stream.chunk_every(60_000)
+      |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
+      |> Stream.run()
+    end,
     "insert stream" => fn rows ->
       stream =
         rows

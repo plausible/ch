@@ -1,16 +1,13 @@
 defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
-  defstruct [:statement, :command, :encode, :decode]
-
-  @type t :: %__MODULE__{statement: iodata, command: command, encode: boolean, decode: boolean}
+  defstruct [:statement, :command]
+  @type t :: %__MODULE__{statement: iodata, command: command}
 
   @doc false
   @spec build(iodata, [Ch.query_option()]) :: t
   def build(statement, opts \\ []) do
     command = Keyword.get(opts, :command) || extract_command(statement)
-    encode = Keyword.get(opts, :encode, true)
-    decode = Keyword.get(opts, :decode, true)
-    %__MODULE__{statement: statement, command: command, encode: encode, decode: decode}
+    %__MODULE__{statement: statement, command: command}
   end
 
   statements = [

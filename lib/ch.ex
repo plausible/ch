@@ -7,14 +7,13 @@ defmodule Ch do
           | {:username, String.t()}
           | {:password, String.t()}
           | {:settings, Keyword.t()}
-          | {:timeout, timeout}
 
   @type start_option ::
           common_option
           | {:scheme, String.t()}
           | {:hostname, String.t()}
           | {:port, :inet.port_number()}
-          | {:transport_opts, :gen_tcp.connect_option()}
+          | {:transport_opts, [:gen_tcp.connect_option() | :ssl.tls_client_option()]}
           | DBConnection.start_option()
 
   @doc """
@@ -29,9 +28,7 @@ defmodule Ch do
     * `:database` - Database, defaults to `"default"`
     * `:username` - Username
     * `:password` - User password
-    * `:settings` - Keyword list of ClickHouse settings
-    * `:timeout` - HTTP receive timeout in milliseconds
-    * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
+    * `:settings` - Keyword list of ClickHouse settings to send wtih every query
     * [`DBConnection.start_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:start_option/0)
 
   """
@@ -50,15 +47,17 @@ defmodule Ch do
     DBConnection.child_spec(Connection, opts)
   end
 
+  @type query :: iodata
+
   @type query_option ::
           common_option
           | {:command, Ch.Query.command()}
           | {:headers, [{String.t(), String.t()}]}
-          | {:format, String.t()}
-          # TODO remove
-          | {:encode, boolean}
-          | {:decode, boolean}
           | DBConnection.connection_option()
+
+  @type query_params ::
+          %{(name :: String.t()) => value :: term}
+          | [{name :: String.t(), value :: term}]
 
   @doc """
   Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
@@ -69,18 +68,14 @@ defmodule Ch do
     * `:database` - Database
     * `:username` - Username
     * `:password` - User password
-    * `:settings` - Keyword list of settings
-    * `:timeout` - Query request timeout
-    * `:command` - Command tag for the query
+    * `:settings` - Keyword list of settings to merge with `:settings` from `start_link` and send with this query
+    * `:command` - Command tag for the query like `:insert` or `:select`, to avoid extracting it from SQL. Used in some Ecto.Repo `:telemetry` events
     * `:headers` - Custom HTTP headers for the request
-    * `:format` - Custom response format for the request
-    * `:decode` - Whether to automatically decode the response
     * [`DBConnection.connection_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:connection_option/0)
 
   """
-  @spec query(DBConnection.conn(), iodata, params, [query_option]) ::
+  @spec query(DBConnection.conn(), query, query_params, [query_option]) ::
           {:ok, Result.t()} | {:error, Exception.t()}
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
   def query(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
 
@@ -93,27 +88,20 @@ defmodule Ch do
   Runs a query and returns the result or raises `Ch.Error` if
   there was an error. See `query/4`.
   """
-  @spec query!(DBConnection.conn(), iodata, params, [query_option]) :: Result.t()
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
+  @spec query!(DBConnection.conn(), query, query_params, [query_option]) :: Result.t()
   def query!(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     DBConnection.execute!(conn, query, params, opts)
   end
 
   @doc false
-  @spec stream(DBConnection.t(), iodata, map | [term], [query_option]) :: Ch.Stream.t()
+  @spec stream(DBConnection.t(), query, query_params, [query_option]) :: Ch.Stream.t()
   def stream(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     %Ch.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
-  # TODO drop
-  @doc false
-  @spec run(DBConnection.conn(), (DBConnection.t() -> any), Keyword.t()) :: any
-  def run(conn, f, opts \\ []) when is_function(f, 1) do
-    DBConnection.run(conn, f, opts)
-  end
-
+  # TODO need it?
   if Code.ensure_loaded?(Ecto.ParameterizedType) do
     @behaviour Ecto.ParameterizedType
 

@@ -8,7 +8,7 @@ defmodule Ch.Stream do
           conn: DBConnection.conn(),
           ref: Mint.Types.request_ref() | nil,
           query: Ch.Query.t(),
-          params: term,
+          params: Ch.query_params(),
           opts: [Ch.query_option()]
         }
 
@@ -24,6 +24,7 @@ defmodule Ch.Stream do
     def slice(_), do: {:error, __MODULE__}
   end
 
+  # TODO optimize
   defimpl Collectable do
     def into(stream) do
       %Ch.Stream{conn: conn, query: query, params: params, opts: opts} = stream
