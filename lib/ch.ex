@@ -55,7 +55,6 @@ defmodule Ch do
           | {:command, Ch.Query.command()}
           | {:headers, [{String.t(), String.t()}]}
           | {:format, String.t()}
-          | {:decode, boolean}
           | DBConnection.connection_option()
 
   @doc """
@@ -71,8 +70,7 @@ defmodule Ch do
     * `:timeout` - Configures both query request timeout and HTTP receive timeout in milliseconds, whichever happens faster
     * `:command` - Command tag for the query
     * `:headers` - Custom HTTP headers for the request
-    * `:format` - Custom response format for the request
-    * `:decode` - Whether to automatically decode the response
+    * `:format` - Custom response format for the request, if provided, the response is not decoded automatically
     * [`DBConnection.connection_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:connection_option/0)
 
   """
@@ -105,13 +103,7 @@ defmodule Ch do
     %Ch.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
-  # TODO drop
-  @doc false
-  @spec run(DBConnection.conn(), (DBConnection.t() -> any), Keyword.t()) :: any
-  def run(conn, f, opts \\ []) when is_function(f, 1) do
-    DBConnection.run(conn, f, opts)
-  end
-
+  # TODO need it?
   if Code.ensure_loaded?(Ecto.ParameterizedType) do
     @behaviour Ecto.ParameterizedType
 

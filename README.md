@@ -3,25 +3,25 @@
 [![Documentation badge](https://img.shields.io/badge/Documentation-ff69b4)](https://hexdocs.pm/ch)
 [![Hex.pm badge](https://img.shields.io/badge/Package%20on%20hex.pm-informational)](https://hex.pm/packages/ch)
 
-Minimal HTTP ClickHouse client for Elixir.
+Minimal ClickHouse client for Elixir.
 
 Used in [Ecto ClickHouse adapter.](https://github.com/plausible/ecto_ch)
 
 ### Key features
 
-- RowBinary
 - Native query parameters
 - Per query settings
 - Minimal API
-
-Your ideas are welcome [here.](https://github.com/plausible/ch/issues/82)
+- HTTP or Native
+- [Multinode support](./guides/multihost.md)
+- [Compression](./guides/compression.md)
 
 ## Installation
 
 ```elixir
 defp deps do
   [
-    {:ch, "~> 0.2.0"}
+    {:ch, "~> 0.3.0"}
   ]
 end
 ```
@@ -60,7 +60,7 @@ Note on datetime encoding in query parameters:
 
 - `%NaiveDateTime{}` is encoded as text to make it assume the column's or ClickHouse server's timezone
 - `%DateTime{time_zone: "Etc/UTC"}` is encoded as unix timestamp and is treated as UTC timestamp by ClickHouse
-- encoding non UTC `%DateTime{}` raises `ArgumentError`
+- encoding non-UTC `%DateTime{}` requires a [time zone database](https://hexdocs.pm/elixir/1.17.1/DateTime.html#module-time-zone-database)
 
 #### Insert rows
 
@@ -100,10 +100,10 @@ types = [:u64, :string]
 rowbinary = Ch.RowBinary.encode_rows(rows, types)
 
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, ["INSERT INTO ch_demo(id) FORMAT RowBinary\n" | rowbinary])
+  Ch.query!(pid, ["INSERT INTO ch_demo(id, text) FORMAT RowBinary\n" | rowbinary])
 ```
 
-Similarly, you can use [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/interfaces/formats#rowbinarywithnamesandtypes) which would additionally do something like a type check.
+Similarly, you can use [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/interfaces/formats#rowbinarywithnamesandtypes) which would additionally do something not quite unlike a type check.
 
 ```elixir
 sql = "INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes\n"
@@ -116,12 +116,24 @@ rows = [
 types = ["UInt64", "String"]
 names = ["id", "text"]
 
-data = [
+rowbinary_with_names_and_types = [
   Ch.RowBinary.encode_names_and_types(names, types),
   Ch.RowBinary.encode_rows(rows, types)
 ]
 
-%Ch.Result{num_rows: 2} = Ch.query!(pid, [sql | data])
+%Ch.Result{num_rows: 2} =
+  Ch.query!(pid, [sql | rowbinary_with_names_and_types])
+```
+
+And you can use buffer helpers too. They are available for RowBinary, RowBinaryWithNamesAndTypes, and Native formats.
+
+```elixir
+buffer = Ch.RowBinary.new_buffer(_types = ["UInt64", "String"])
+buffer = Ch.RowBinary.push_buffer(buffer, [[0, "a"], [1, "b"]])
+rowbinary = Ch.RowBinary.buffer_to_iodata(buffer)
+
+%Ch.Result{num_rows: 2} =
+  Ch.query!(pid, ["INSERT INTO ch_demo(id, text) FORMAT RowBinary\n" | rowbinary])
 ```
 
 #### Insert rows in some other [format](https://clickhouse.com/docs/en/interfaces/formats)
@@ -129,9 +141,13 @@ data = [
 ```elixir
 {:ok, pid} = Ch.start_link()
 
-Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
+Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64, text String) ENGINE Null")
 
-csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
+csv =
+  """
+  0,"a"\n
+  1,"b"\
+  """
 
 %Ch.Result{num_rows: 2} =
   Ch.query!(pid, ["INSERT INTO ch_demo(id) FORMAT CSV\n" | csv])
@@ -155,6 +171,20 @@ end)
 ```
 
 This query makes a [`transfer-encoding: chunked`] HTTP request while unfolding the stream resulting in lower memory usage.
+
+#### Stream from a file
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
+
+DBConnection.run(pid, fn conn ->
+  File.stream!("buffer.tmp", _bytes = 2048)
+  |> Stream.into(Ch.stream(conn, "INSERT INTO ch_demo(id) FORMAT RowBinary\n"))
+  |> Stream.run()
+end)
+```
 
 #### Query with custom [settings](https://clickhouse.com/docs/en/operations/settings/settings)
 
@@ -265,7 +295,7 @@ Mix.install([:ch, :tz])
 "2023-04-26 01:45:12+08:00 CST Asia/Taipei" = to_string(taipei)
 ```
 
-Encoding non-UTC datetimes raises an `ArgumentError`
+Encoding non-UTC datetimes is possible but slow.
 
 ```elixir
 Ch.query!(pid, "CREATE TABLE ch_datetimes(datetime DateTime) ENGINE Null")
@@ -274,10 +304,17 @@ naive = NaiveDateTime.utc_now()
 utc = DateTime.utc_now()
 taipei = DateTime.shift_zone!(utc, "Asia/Taipei")
 
-# ** (ArgumentError) non-UTC timezones are not supported for encoding: 2023-04-26 01:49:43.044569+08:00 CST Asia/Taipei
-Ch.RowBinary.encode_rows([[naive], [utc], [taipei]], ["DateTime"])
+rows = [
+  [naive],
+  [utc],
+  [taipei]
+]
+
+types = ["DateTime"]
+
+Ch.RowBinary.encode_rows(rows, types)
 ```
 
 ## Benchmarks
 
-Please see [CI Results](https://github.com/plausible/ch/actions/workflows/bench.yml) (make sure to click the latest workflow run and scroll down to "Artifacts") for [some of our benchmarks.](./bench/) :)
+Please see [CI Results](https://github.com/plausible/ch/actions/workflows/bench.yml) (make sure to click the latest workflow run and scroll down to "Artifacts") for [some of our benchmarks.](./bench/)
