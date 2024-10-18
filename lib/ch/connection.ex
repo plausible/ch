@@ -20,7 +20,6 @@ defmodule Ch.Connection do
     with {:ok, conn} <- HTTP.connect(scheme, address, port, mint_opts) do
       conn =
         conn
-        |> HTTP.put_private(:timeout, opts[:timeout] || :timer.seconds(15))
         |> maybe_put_private(:database, opts[:database])
         |> maybe_put_private(:username, opts[:username])
         |> maybe_put_private(:password, opts[:password])

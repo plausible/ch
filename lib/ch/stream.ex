@@ -8,7 +8,7 @@ defmodule Ch.Stream do
           conn: DBConnection.conn(),
           ref: Mint.Types.request_ref() | nil,
           query: Ch.Query.t(),
-          params: term,
+          params: Ch.query_params(),
           opts: [Ch.query_option()]
         }
 
