@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- move rows for INSERT from `params` to `statement`
+
 ## 0.2.8 (2024-09-06)
 
 - support named tuples https://github.com/plausible/ch/pull/197
