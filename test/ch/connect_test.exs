@@ -6,7 +6,7 @@ defmodule Ch.ConnectTest do
     {:ok, conn} =
       Ch.start_link(database: Ch.Test.database(), transport_opts: [sndbuf: nil])
 
-    :timer.sleep(:timer.seconds(5))
+    :timer.sleep(100)
 
     assert Process.alive?(conn)
   end
