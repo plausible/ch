@@ -50,6 +50,8 @@ defmodule Ch.Connection do
           {:error, reason}
       end
     end
+  catch
+    _kind, reason -> {:error, reason}
   end
 
   @impl true
