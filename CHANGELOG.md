@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- catch all errors in `connect/1` to avoid triggering Supervisor https://github.com/plausible/ch/pull/209
+
 ## 0.2.8 (2024-09-06)
 
 - support named tuples https://github.com/plausible/ch/pull/197
