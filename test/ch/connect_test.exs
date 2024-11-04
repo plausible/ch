@@ -3,7 +3,7 @@ defmodule Ch.ConnectTest do
   import ExUnit.CaptureLog
 
   @tag :slow
-  test "retries to connect even with exceptions" do
+  test "retries to connect even with exceptions / exits / throws" do
     # See https://github.com/plausible/ch/issues/208
     bad_transport_opts = [sndbuf: nil]
 
