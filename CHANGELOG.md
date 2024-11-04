@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.9 (2024-11-04)
 
 - catch all errors in `connect/1` to avoid triggering Supervisor https://github.com/plausible/ch/pull/209
 
