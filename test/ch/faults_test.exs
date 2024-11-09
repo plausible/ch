@@ -340,6 +340,65 @@ defmodule Ch.FaultsTest do
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
     end
 
+    test "reconnects after Connection: close response from server", ctx do
+      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+      test = self()
+
+      log =
+        capture_async_log(fn ->
+          {:ok, conn} = Ch.start_link(port: port)
+
+          # connect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          spawn_link(fn ->
+            assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
+            send(test, :done)
+          end)
+
+          # first select 1 + 1
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+
+          response =
+            String.replace(
+              intercept_packets(clickhouse),
+              "Connection: Keep-Alive",
+              "Connection: Close"
+            )
+
+          :ok = :gen_tcp.send(mint, response)
+          :ok = :gen_tcp.close(mint)
+          assert_receive :done
+
+          # reconnect
+          {:ok, mint} = :gen_tcp.accept(listen)
+
+          # handshake
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          spawn_link(fn ->
+            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
+                     Ch.query(conn, "select 1 + 1")
+
+            send(test, :done)
+          end)
+
+          # select 1 + 1
+          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+          assert_receive :done
+        end)
+
+      refute log =~ "disconnected: **"
+      assert log =~ "connection was closed by the server"
+    end
+
     # TODO non-chunked request
 
     test "reconnects after closed before streaming request", ctx do
