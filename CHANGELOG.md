@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- gracefully handle `connection: closed` response from server https://github.com/plausible/ch/pull/211
+
 ## 0.2.9 (2024-11-04)
 
 - catch all errors in `connect/1` to avoid triggering Supervisor https://github.com/plausible/ch/pull/209
