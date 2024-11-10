@@ -419,9 +419,12 @@ defmodule Ch.Connection do
     mint_opts = [mode: :passive] ++ Keyword.take(opts, [:hostname, :transport_opts])
 
     with {:ok, conn} <- HTTP.connect(scheme, address, port, mint_opts) do
+      monitor_ref = monitor_socket(conn.socket)
+
       conn =
         conn
         |> HTTP.put_private(:timeout, opts[:timeout] || :timer.seconds(15))
+        |> HTTP.put_private(:monitor, monitor_ref)
         |> maybe_put_private(:database, opts[:database])
         |> maybe_put_private(:username, opts[:username])
         |> maybe_put_private(:password, opts[:password])
@@ -458,5 +461,16 @@ defmodule Ch.Connection do
       true ->
         conn
     end
+  end
+
+  # TODO use ssl_record.hrl
+  defp monitor_socket({:sslsocket, tcp_socket, _}) do
+    # TODO support :socket
+    {:gen_tcp, socket, _, _} = tcp_socket
+    :inet.monitor(socket)
+  end
+
+  defp monitor_socket(socket) do
+    :inet.monitor(socket)
   end
 end
