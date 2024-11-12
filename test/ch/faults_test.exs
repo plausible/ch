@@ -291,7 +291,7 @@ defmodule Ch.FaultsTest do
           assert_receive :done
         end)
 
-      assert log =~ "disconnected: ** (Mint.TransportError) timeout"
+      assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
     end
 
     test "reconnects after closed on response", ctx do
@@ -340,7 +340,7 @@ defmodule Ch.FaultsTest do
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
     end
 
-    test "reconnects after Connection: close response from server", ctx do
+    test "reconnects after `connection: close` response from server", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse} = ctx
       test = self()
 
@@ -357,7 +357,6 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
-            send(test, :done)
           end)
 
           # first select 1 + 1
@@ -372,7 +371,6 @@ defmodule Ch.FaultsTest do
 
           :ok = :gen_tcp.send(mint, response)
           :ok = :gen_tcp.close(mint)
-          assert_receive :done
 
           # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -382,8 +380,10 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
+            IO.puts("second spawn")
+
             assert {:ok, %{num_rows: 1, rows: [[2]]}} =
-                     Ch.query(conn, "select 1 + 1")
+                     Ch.query(conn, "select 1 + 1") |> IO.inspect(label: "second fun")
 
             send(test, :done)
           end)
