@@ -243,6 +243,18 @@ defmodule Ch.Connection do
     end
   end
 
+  def handle_info({:DOWN, _ref, :port, socket, _reason}, conn) do
+    if conn.socket == socket do
+      {:disconnect, Mint.TransportError.exception(reason: :closed)}
+    else
+      :ok
+    end
+  end
+
+  def handle_info(msg, _state) do
+    Logger.error(["Unhandled message in Ch.Connection: ", inspect(msg)])
+  end
+
   @impl true
   def disconnect(_error, conn) do
     {:ok = ok, _conn} = HTTP.close(conn)
@@ -419,12 +431,11 @@ defmodule Ch.Connection do
     mint_opts = [mode: :passive] ++ Keyword.take(opts, [:hostname, :transport_opts])
 
     with {:ok, conn} <- HTTP.connect(scheme, address, port, mint_opts) do
-      monitor_ref = monitor_socket(conn.socket)
+      _ref = monitor_socket(conn.socket)
 
       conn =
         conn
         |> HTTP.put_private(:timeout, opts[:timeout] || :timer.seconds(15))
-        |> HTTP.put_private(:monitor, monitor_ref)
         |> maybe_put_private(:database, opts[:database])
         |> maybe_put_private(:username, opts[:username])
         |> maybe_put_private(:password, opts[:password])
