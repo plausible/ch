@@ -372,6 +372,12 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, response)
           :ok = :gen_tcp.close(mint)
 
+          IO.puts("""
+          ----------------------------
+          story starts here          !
+          ----------------------------
+          """)
+
           # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
 

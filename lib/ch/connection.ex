@@ -71,7 +71,10 @@ defmodule Ch.Connection do
 
   @impl true
   @spec checkout(conn) :: {:ok, conn}
-  def checkout(conn), do: {:ok, conn}
+  def checkout(conn) do
+    IO.inspect(conn.socket, label: "Ch.checkout")
+    {:ok, conn}
+  end
 
   # we "support" these four tx callbacks for Repo.checkout
   # even though ClickHouse doesn't support txs
