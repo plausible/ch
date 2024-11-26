@@ -42,6 +42,7 @@ jobs:
       - run: mix deps.get --only $MIX_ENV
       - run: mix compile --warnings-as-errors
       - run: mkdir results
+      - run: mix run bench/encode.exs | tee results/encode.txt
       - run: mix run bench/insert.exs | tee results/insert.txt
       - run: mix run bench/stream.exs | tee results/stream.txt
       - uses: actions/upload-artifact@v4
