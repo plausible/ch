@@ -34,7 +34,7 @@ defmodule Ch.MixProject do
   defp deps do
     [
       {:mint, "~> 1.0"},
-      {:db_connection, "~> 2.0"},
+      {:db_connection, github: "elixir-ecto/db_connection"},
       {:jason, "~> 1.0"},
       {:decimal, "~> 2.0"},
       {:ecto, "~> 3.12", optional: true},
