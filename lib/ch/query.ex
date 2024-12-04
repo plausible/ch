@@ -21,7 +21,7 @@ defmodule Ch.Query do
     {"DELETE", :delete},
     {"SYSTEM", :system},
     {"SHOW", :show},
-    # as of clickhouse 22.8, WITH is only allowed in SELECT
+    # as of ClickHouse 24.11, WITH is only allowed in SELECT
     # https://clickhouse.com/docs/en/sql-reference/statements/select/with/
     {"WITH", :select},
     {"GRANT", :grant},
@@ -40,7 +40,9 @@ defmodule Ch.Query do
     {"SET", :set},
     {"TRUNCATE", :truncate},
     {"USE", :use},
-    {"WATCH", :watch}
+    {"WATCH", :watch},
+    {"MOVE", :move},
+    {"UNDROP", :undrop}
   ]
 
   command_union =
