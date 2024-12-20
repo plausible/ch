@@ -35,6 +35,9 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [["a\t"]]}} =
              Ch.query(conn, "select {a:String}", %{"a" => "a\t"})
 
+    assert {:ok, %{num_rows: 1, rows: [[["a\tb"]]]}} =
+             Ch.query(conn, "select {a:Array(String)}", %{"a" => ["a\tb"]})
+
     assert {:ok, %{num_rows: 1, rows: [row]}} =
              Ch.query(conn, "select {a:Decimal(9,4)}", %{"a" => Decimal.new("2000.333")})
 
@@ -125,6 +128,17 @@ defmodule Ch.ConnectionTest do
 
     assert Ch.query!(conn, "select {$0:DateTime('Europe/Moscow')} as d, toString(d)", [utc]).rows ==
              [[msk, "2021-01-01 15:00:00"]]
+  end
+
+  test "non-utc datetime query param encoding", %{conn: conn} do
+    jp = DateTime.shift_zone!(~U[2021-01-01 12:34:56Z], "Asia/Tokyo")
+    assert inspect(jp) == "#DateTime<2021-01-01 21:34:56+09:00 JST Asia/Tokyo>"
+
+    assert [[utc, jp]] =
+             Ch.query!(conn, "select {$0:DateTime('UTC')}, {$0:DateTime('Asia/Tokyo')}", [jp]).rows
+
+    assert inspect(utc) == "~U[2021-01-01 12:34:56Z]"
+    assert inspect(jp) == "#DateTime<2021-01-01 21:34:56+09:00 JST Asia/Tokyo>"
   end
 
   test "utc datetime64 query param encoding", %{conn: conn} do
