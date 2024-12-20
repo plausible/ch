@@ -62,8 +62,7 @@ defaults = [
 Note on datetime encoding in query parameters:
 
 - `%NaiveDateTime{}` is encoded as text to make it assume the column's or ClickHouse server's timezone
-- `%DateTime{time_zone: "Etc/UTC"}` is encoded as unix timestamp and is treated as UTC timestamp by ClickHouse
-- encoding non UTC `%DateTime{}` raises `ArgumentError`
+- `%DateTime{}` is encoded as unix timestamp and is treated as UTC timestamp by ClickHouse
 
 #### Insert rows
 
