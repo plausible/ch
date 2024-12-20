@@ -1,6 +1,9 @@
 name: bench
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "42 9 * * *"
 
 jobs:
   benchee:
@@ -41,10 +44,8 @@ jobs:
 
       - run: mix deps.get --only $MIX_ENV
       - run: mix compile --warnings-as-errors
-      - run: mkdir results
-      - run: mix run bench/insert.exs | tee results/insert.txt
-      - run: mix run bench/stream.exs | tee results/stream.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: results
-          path: results/*.txt
+
+      # - run: mix run bench/cast.exs
+      - run: mix run bench/encode.exs
+      - run: mix run bench/insert.exs
+      - run: mix run bench/stream.exs

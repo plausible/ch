@@ -1,16 +1,34 @@
-IO.puts("This benchmark is based on https://github.com/ClickHouse/ch-bench\n")
+IO.puts("""
+This benchmark is based on https://github.com/ClickHouse/ch-bench
+
+It tests how quickly a client can select N rows from the system.numbers_mt table:
+
+    SELECT number FROM system.numbers_mt LIMIT {limit:UInt64} FORMAT RowBinary
+""")
 
 port = String.to_integer(System.get_env("CH_PORT") || "8123")
 hostname = System.get_env("CH_HOSTNAME") || "localhost"
 scheme = System.get_env("CH_SCHEME") || "http"
 
-{:ok, conn} = Ch.start_link(scheme: scheme, hostname: hostname, port: port)
+limits = fn limits ->
+  Map.new(limits, fn limit ->
+    {"limit=#{limit}", limit}
+  end)
+end
 
 Benchee.run(
   %{
-    "RowBinary stream without decode" => fn limit ->
+    # "Ch.query" => fn %{pool: pool, limit: limit} ->
+    #   Ch.query!(
+    #     pool,
+    #     "SELECT number FROM system.numbers_mt LIMIT {limit:UInt64}",
+    #     %{"limit" => limit},
+    #     timeout: :infinity
+    #   )
+    # end,
+    "Ch.stream w/o decoding (i.e. pass-through)" => fn %{pool: pool, limit: limit} ->
       DBConnection.run(
-        conn,
+        pool,
         fn conn ->
           conn
           |> Ch.stream(
@@ -22,19 +40,17 @@ Benchee.run(
         timeout: :infinity
       )
     end,
-    "RowBinary stream with manual decode" => fn limit ->
+    "Ch.stream with manual RowBinary decoding" => fn %{pool: pool, limit: limit} ->
       DBConnection.run(
-        conn,
+        pool,
         fn conn ->
           conn
           |> Ch.stream(
             "SELECT number FROM system.numbers_mt LIMIT {limit:UInt64} FORMAT RowBinary",
             %{"limit" => limit}
           )
-          |> Stream.map(fn %Ch.Result{data: data} ->
-            data
-            |> IO.iodata_to_binary()
-            |> Ch.RowBinary.decode_rows([:u64])
+          |> Stream.each(fn %Ch.Result{data: data} ->
+            data |> IO.iodata_to_binary() |> Ch.RowBinary.decode_rows([:u64])
           end)
           |> Stream.run()
         end,
@@ -42,9 +58,9 @@ Benchee.run(
       )
     end
   },
-  inputs: %{
-    "500 rows" => 500,
-    "500_000 rows" => 500_000,
-    "500_000_000 rows" => 500_000_000
-  }
+  before_scenario: fn limit ->
+    {:ok, pool} = Ch.start_link(scheme: scheme, hostname: hostname, port: port, pool_size: 1)
+    %{pool: pool, limit: limit}
+  end,
+  inputs: limits.([500, 500_000, 500_000_000])
 )
