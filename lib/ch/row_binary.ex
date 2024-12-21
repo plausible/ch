@@ -308,7 +308,7 @@ defmodule Ch.RowBinary do
   end
 
   def encode(:datetime, %DateTime{} = datetime) do
-    raise ArgumentError, "non-UTC timezones are not supported for encoding: #{datetime}"
+    encode(:datetime, DateTime.shift_zone!(datetime, "Etc/UTC"))
   end
 
   def encode(:datetime, nil), do: <<0::32>>
