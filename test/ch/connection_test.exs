@@ -141,6 +141,37 @@ defmodule Ch.ConnectionTest do
     assert inspect(jp) == "#DateTime<2021-01-01 21:34:56+09:00 JST Asia/Tokyo>"
   end
 
+  test "non-utc datetime rowbinary encoding", %{conn: conn} do
+    Ch.query!(
+      conn,
+      "create table ch_non_utc_datetimes(name String, datetime DateTime) engine Memory"
+    )
+
+    on_exit(fn -> Ch.Test.sql_exec("drop table ch_non_utc_datetimes") end)
+
+    utc = ~U[2024-12-21 05:35:19.886393Z]
+
+    taipei = DateTime.shift_zone!(utc, "Asia/Taipei")
+    tokyo = DateTime.shift_zone!(utc, "Asia/Tokyo")
+    vienna = DateTime.shift_zone!(utc, "Europe/Vienna")
+
+    rows = [["taipei", taipei], ["tokyo", tokyo], ["vienna", vienna]]
+
+    Ch.query!(conn, "insert into ch_non_utc_datetimes(name, datetime) format RowBinary", rows,
+      types: ["String", "DateTime"]
+    )
+
+    result =
+      conn
+      |> Ch.query!("select name, cast(datetime as DateTime('UTC')) from ch_non_utc_datetimes")
+      |> Map.fetch!(:rows)
+      |> Map.new(fn [name, datetime] -> {name, datetime} end)
+
+    assert result["taipei"] == ~U[2024-12-21 05:35:19Z]
+    assert result["tokyo"] == ~U[2024-12-21 05:35:19Z]
+    assert result["vienna"] == ~U[2024-12-21 05:35:19Z]
+  end
+
   test "utc datetime64 query param encoding", %{conn: conn} do
     utc = ~U[2021-01-01 12:00:00.123456Z]
     msk = DateTime.new!(~D[2021-01-01], ~T[15:00:00.123456], "Europe/Moscow")

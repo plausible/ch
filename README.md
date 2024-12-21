@@ -257,17 +257,33 @@ Mix.install([:ch, :tz])
 "2023-04-26 01:45:12+08:00 CST Asia/Taipei" = to_string(taipei)
 ```
 
-Encoding non-UTC datetimes raises an `ArgumentError`
+Encoding non-UTC datetimes works but might be slow due to timezone conversion:
 
 ```elixir
-Ch.query!(pid, "CREATE TABLE ch_datetimes(datetime DateTime) ENGINE Null")
+Mix.install([:ch, :tz])
+
+:ok = Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
+
+{:ok, pid} = Ch.start_link()
+
+Ch.query!(pid, "CREATE TABLE ch_datetimes(name String, datetime DateTime) ENGINE Memory")
 
 naive = NaiveDateTime.utc_now()
 utc = DateTime.utc_now()
 taipei = DateTime.shift_zone!(utc, "Asia/Taipei")
 
-# ** (ArgumentError) non-UTC timezones are not supported for encoding: 2023-04-26 01:49:43.044569+08:00 CST Asia/Taipei
-Ch.query!(pid, "INSERT INTO ch_datetimes(datetime) FORMAT RowBinary", [[naive], [utc], [taipei]], types: ["DateTime"])
+rows = [["naive", naive], ["utc", utc], ["taipei", taipei]]
+
+Ch.query!(pid, "INSERT INTO ch_datetimes(name, datetime) FORMAT RowBinary", rows, types: ["String", "DateTime"])
+
+%Ch.Result{
+  rows: [
+    ["naive", ~U[2024-12-21 05:24:40Z]],
+    ["utc", ~U[2024-12-21 05:24:40Z]],
+    ["taipei", ~U[2024-12-21 05:24:40Z]]
+  ]
+} =
+  Ch.query!(pid, "SELECT name, CAST(datetime as DateTime('UTC')) FROM ch_datetimes")
 ```
 
 ## [Benchmarks](./bench)

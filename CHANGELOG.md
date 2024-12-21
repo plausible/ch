@@ -4,6 +4,7 @@
 
 - gracefully handle `connection: closed` response from server https://github.com/plausible/ch/pull/211
 - allow non-UTC `DateTime.t()` in query params https://github.com/plausible/ch/pull/223
+- allow non-UTC `DateTime.t()` when encoding RowBinary https://github.com/plausible/ch/pull/225
 
 ## 0.2.9 (2024-11-04)
 
