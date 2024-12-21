@@ -46,8 +46,9 @@ defmodule Ch.RowBinary do
     _encode_row(row, encoding_types(types))
   end
 
-  defp _encode_row([el | els], [type | types]), do: [encode(type, el) | _encode_row(els, types)]
-  defp _encode_row([] = done, []), do: done
+  @doc false
+  def _encode_row([el | els], [type | types]), do: [encode(type, el) | _encode_row(els, types)]
+  def _encode_row([] = done, []), do: done
 
   @doc """
   Encodes multiple rows to [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) as iodata.
