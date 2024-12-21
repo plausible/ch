@@ -2,6 +2,8 @@ name: bench
 
 on:
   workflow_dispatch:
+  # TODO remove
+  pull_request:
   schedule:
     - cron: "42 9 * * *"
 
@@ -47,5 +49,6 @@ jobs:
 
       # - run: mix run bench/cast.exs
       - run: mix run bench/encode.exs
-      - run: mix run bench/insert.exs
-      - run: mix run bench/stream.exs
+      # TODO uncomment
+      # - run: mix run bench/insert.exs
+      # - run: mix run bench/stream.exs
