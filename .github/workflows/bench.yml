@@ -27,7 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: erlef/setup-beam@v1
+      - id: beam
+        uses: erlef/setup-beam@v1
         with:
           elixir-version: 1
           otp-version: 27
@@ -37,10 +38,10 @@ jobs:
           path: |
             deps
             _build
-          key: bench-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
+          key: bench-${{ steps.beam.outputs.elixir-version }}-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            bench-${{ github.head_ref || github.ref }}-
-            bench-refs/heads/master-
+            bench-${{ steps.beam.outputs.elixir-version }}-${{ github.head_ref || github.ref }}-
+            bench-${{ steps.beam.outputs.elixir-version }}-refs/heads/master-
 
       - run: mix deps.get --only $MIX_ENV
       - run: mix compile --warnings-as-errors
