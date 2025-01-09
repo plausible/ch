@@ -55,6 +55,7 @@ defmodule Ch do
           | {:command, Ch.Query.command()}
           | {:headers, [{String.t(), String.t()}]}
           | {:format, String.t()}
+          | {:types, [String.t() | atom | tuple]}
           # TODO remove
           | {:encode, boolean}
           | {:decode, boolean}
