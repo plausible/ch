@@ -8,6 +8,10 @@
 - add `:types` to `query_option` typespec https://github.com/plausible/ch/pull/234
 - handle missing `written_rows` in insert https://github.com/plausible/ch/pull/236
 
+## 0.2.10 (2025-02-03)
+
+- handle missing `written_rows` in insert https://github.com/plausible/ch/pull/236 (cherry-picked)
+
 ## 0.2.9 (2024-11-04)
 
 - catch all errors in `connect/1` to avoid triggering Supervisor https://github.com/plausible/ch/pull/209
