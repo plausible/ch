@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2025-02-03)
 
 - gracefully handle `connection: closed` response from server https://github.com/plausible/ch/pull/211
 - allow non-UTC `DateTime.t()` in query params https://github.com/plausible/ch/pull/223
 - allow non-UTC `DateTime.t()` when encoding RowBinary https://github.com/plausible/ch/pull/225
+- add `:types` to `query_option` typespec https://github.com/plausible/ch/pull/234
+- handle missing `written_rows` in insert https://github.com/plausible/ch/pull/236
 
 ## 0.2.9 (2024-11-04)
 
