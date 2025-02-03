@@ -158,8 +158,11 @@ defimpl DBConnection.Query, for: Ch.Query do
 
     num_rows =
       if summary = get_header(headers, "x-clickhouse-summary") do
-        %{"written_rows" => written_rows} = Jason.decode!(summary)
-        String.to_integer(written_rows)
+        summary = Jason.decode!(summary)
+
+        if written_rows = Map.get(summary, "written_rows") do
+          String.to_integer(written_rows)
+        end
       end
 
     %Result{num_rows: num_rows, rows: nil, command: :insert, headers: headers}
