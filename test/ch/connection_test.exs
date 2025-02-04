@@ -3,7 +3,7 @@ defmodule Ch.ConnectionTest do
   alias Ch.RowBinary
 
   setup do
-    {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
+    {:ok, conn: start_supervised!({Ch, Ch.Test.client_opts()})}
   end
 
   test "select without params", %{conn: conn} do

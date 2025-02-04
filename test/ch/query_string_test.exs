@@ -2,7 +2,7 @@ defmodule Ch.QueryStringTest do
   use ExUnit.Case, async: true
 
   setup do
-    {:ok, conn: start_supervised!(Ch)}
+    {:ok, conn: start_supervised!({Ch, Ch.Test.client_opts()})}
   end
 
   # For more info see

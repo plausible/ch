@@ -10,7 +10,7 @@ defmodule Ch.ConnectTest do
     logs =
       capture_log(fn ->
         {:ok, conn} =
-          Ch.start_link(database: Ch.Test.database(), transport_opts: bad_transport_opts)
+          Ch.start_link(Ch.Test.client_opts(transport_opts: bad_transport_opts))
 
         :timer.sleep(100)
 

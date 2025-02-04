@@ -2,7 +2,7 @@ defmodule Ch.AggregationTest do
   use ExUnit.Case
 
   setup do
-    conn = start_supervised!({Ch, database: Ch.Test.database()})
+    conn = start_supervised!({Ch, Ch.Test.client_opts()})
     {:ok, conn: conn}
   end
 

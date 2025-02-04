@@ -6,9 +6,11 @@ It tests how quickly a client can select N rows from the system.numbers_mt table
     SELECT number FROM system.numbers_mt LIMIT {limit:UInt64} FORMAT RowBinary
 """)
 
-port = String.to_integer(System.get_env("CH_PORT") || "8123")
-hostname = System.get_env("CH_HOSTNAME") || "localhost"
-scheme = System.get_env("CH_SCHEME") || "http"
+port = String.to_integer(System.get_env("CH_PORT", "8123"))
+hostname = System.get_env("CH_HOSTNAME", "localhost")
+scheme = System.get_env("CH_SCHEME", "http")
+username = System.get_env("CH_USERNAME", "default")
+password = System.get_env("CH_PASSWORD", "default")
 
 limits = fn limits ->
   Map.new(limits, fn limit ->
@@ -59,7 +61,16 @@ Benchee.run(
     end
   },
   before_scenario: fn limit ->
-    {:ok, pool} = Ch.start_link(scheme: scheme, hostname: hostname, port: port, pool_size: 1)
+    {:ok, pool} =
+      Ch.start_link(
+        scheme: scheme,
+        hostname: hostname,
+        port: port,
+        username: username,
+        password: password,
+        pool_size: 1
+      )
+
     %{pool: pool, limit: limit}
   end,
   inputs: limits.([500, 500_000, 500_000_000])

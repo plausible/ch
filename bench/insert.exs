@@ -8,10 +8,12 @@ It tests how quickly a client can insert one million rows of the following schem
 - col4 DateTime
 """)
 
-port = String.to_integer(System.get_env("CH_PORT") || "8123")
-hostname = System.get_env("CH_HOSTNAME") || "localhost"
-scheme = System.get_env("CH_SCHEME") || "http"
-database = System.get_env("CH_DATABASE") || "ch_bench"
+port = String.to_integer(System.get_env("CH_PORT", "8123"))
+hostname = System.get_env("CH_HOSTNAME", "localhost")
+scheme = System.get_env("CH_SCHEME", "http")
+database = System.get_env("CH_DATABASE", "ch_bench")
+username = System.get_env("CH_USERNAME", "default")
+password = System.get_env("CH_PASSWORD", "default")
 
 alias Ch.RowBinary
 
@@ -39,7 +41,15 @@ Benchee.run(
     end
   },
   before_scenario: fn rows ->
-    {:ok, pool} = Ch.start_link(scheme: scheme, hostname: hostname, port: port, pool_size: 1)
+    {:ok, pool} =
+      Ch.start_link(
+        scheme: scheme,
+        hostname: hostname,
+        port: port,
+        username: username,
+        password: password,
+        pool_size: 1
+      )
 
     Ch.query!(pool, "CREATE DATABASE IF NOT EXISTS {$0:Identifier}", [database])
 

@@ -1,14 +1,21 @@
 defmodule Ch.Test do
   @moduledoc false
 
-  def database, do: Application.fetch_env!(:ch, :database)
+  def client_opts(overrides \\ []) do
+    Application.fetch_env!(:ch, :default)
+    |> Keyword.merge(overrides)
+  end
+
+  def database do
+    Keyword.fetch!(client_opts(), :database)
+  end
 
   # makes a query in a short lived process so that pool automatically exits once finished
   def sql_exec(sql, params \\ [], opts \\ []) do
     task =
       Task.async(fn ->
-        {:ok, pid} = Ch.start_link(opts)
-        Ch.query(pid, sql, params, opts)
+        {:ok, pid} = Ch.start_link(client_opts(opts))
+        Ch.query!(pid, sql, params, opts)
       end)
 
     Task.await(task)

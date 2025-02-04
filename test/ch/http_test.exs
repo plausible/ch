@@ -5,7 +5,7 @@ defmodule Ch.HTTPTest do
 
   describe "user-agent" do
     setup do
-      {:ok, ch: start_supervised!(Ch)}
+      {:ok, ch: start_supervised!({Ch, Ch.Test.client_opts()})}
     end
 
     test "sets user-agent to ch/<version> by default", %{ch: ch} do

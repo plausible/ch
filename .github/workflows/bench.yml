@@ -18,6 +18,7 @@ jobs:
         ports:
           - 8123:8123
         env:
+          CLICKHOUSE_PASSWORD: default
           options: >-
             --health-cmd nc -zw3 localhost 8124
             --health-interval 10s

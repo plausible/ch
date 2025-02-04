@@ -3,7 +3,7 @@ defmodule Ch.StreamTest do
   alias Ch.{Result, RowBinary}
 
   setup do
-    {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
+    {:ok, conn: start_supervised!({Ch, Ch.Test.client_opts()})}
   end
 
   describe "enumerable Ch.stream/4" do

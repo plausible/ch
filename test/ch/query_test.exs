@@ -46,7 +46,7 @@ defmodule Ch.QueryTest do
   # adapted from https://github.com/elixir-ecto/postgrex/blob/master/test/query_test.exs
   describe "query" do
     setup do
-      {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
+      {:ok, conn: start_supervised!({Ch, Ch.Test.client_opts()})}
     end
 
     test "iodata", %{conn: conn} do
@@ -276,7 +276,8 @@ defmodule Ch.QueryTest do
   end
 
   test "query before and after idle ping" do
-    opts = [backoff_type: :stop, idle_interval: 1]
+    opts = Ch.Test.client_opts(backoff_type: :stop, idle_interval: 1)
+
     {:ok, pid} = Ch.start_link(opts)
     assert {:ok, _} = Ch.query(pid, "SELECT 42")
     :timer.sleep(20)

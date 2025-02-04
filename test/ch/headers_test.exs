@@ -2,7 +2,7 @@ defmodule Ch.HeadersTest do
   use ExUnit.Case, async: true
 
   setup do
-    {:ok, conn} = Ch.start_link()
+    {:ok, conn} = Ch.start_link(Ch.Test.client_opts())
     {:ok, conn: conn}
   end
 
