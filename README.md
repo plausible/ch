@@ -41,6 +41,9 @@ defaults = [
   timeout: :timer.seconds(15)
 ]
 
+# note that starting in ClickHouse 25.1.3.23 `default` user doesn't have
+# network access by default in the official Docker images
+# see https://github.com/ClickHouse/ClickHouse/pull/75259
 {:ok, pid} = Ch.start_link(defaults)
 ```
 
