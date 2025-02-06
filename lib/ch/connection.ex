@@ -212,25 +212,6 @@ defmodule Ch.Connection do
     end
   end
 
-  def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
-    conn = maybe_reconnect(conn)
-    {query_params, extra_headers, body} = params
-
-    path = path(conn, query_params, opts)
-    headers = headers(conn, extra_headers, opts)
-
-    result =
-      if is_function(body, 2) do
-        request_chunked(conn, "POST", path, headers, body, opts)
-      else
-        request(conn, "POST", path, headers, body, opts)
-      end
-
-    with {:ok, conn, responses} <- result do
-      {:ok, query, responses, conn}
-    end
-  end
-
   def handle_execute(query, params, opts, conn) do
     conn = maybe_reconnect(conn)
     {query_params, extra_headers, body} = params
@@ -258,33 +239,6 @@ defmodule Ch.Connection do
   defp request(conn, method, path, headers, body, opts) do
     with {:ok, conn, _ref} <- send_request(conn, method, path, headers, body) do
       receive_full_response(conn, timeout(conn, opts))
-    end
-  end
-
-  @spec request_chunked(conn, binary, binary, Mint.Types.headers(), Enumerable.t(), Keyword.t()) ::
-          {:ok, conn, [response]}
-          | {:error, Error.t(), conn}
-          | {:disconnect, Mint.Types.error(), conn}
-  def request_chunked(conn, method, path, headers, stream, opts) do
-    with {:ok, conn, ref} <- send_request(conn, method, path, headers, :stream),
-         {:ok, conn} <- stream_body(conn, ref, stream),
-         do: receive_full_response(conn, timeout(conn, opts))
-  end
-
-  @spec stream_body(conn, Mint.Types.request_ref(), Enumerable.t()) ::
-          {:ok, conn} | {:disconnect, Mint.Types.error(), conn}
-  defp stream_body(conn, ref, stream) do
-    result =
-      stream
-      |> Stream.concat([:eof])
-      |> Enum.reduce_while({:ok, conn}, fn
-        chunk, {:ok, conn} -> {:cont, HTTP.stream_request_body(conn, ref, chunk)}
-        _chunk, {:error, _conn, _reason} = error -> {:halt, error}
-      end)
-
-    case result do
-      {:ok, _conn} = ok -> ok
-      {:error, conn, reason} -> {:disconnect, reason, conn}
     end
   end
 

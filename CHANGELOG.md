@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- move rows for INSERT from `params` to `statement` for more control (compression, format, query params, etc.)
+
 ## 0.3.0 (2025-02-03)
 
 - gracefully handle `connection: closed` response from server https://github.com/plausible/ch/pull/211

@@ -1,16 +1,15 @@
 defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
-  defstruct [:statement, :command, :encode, :decode]
+  defstruct [:statement, :command, :decode]
 
-  @type t :: %__MODULE__{statement: iodata, command: command, encode: boolean, decode: boolean}
+  @type t :: %__MODULE__{statement: iodata, command: command, decode: boolean}
 
   @doc false
   @spec build(iodata, [Ch.query_option()]) :: t
   def build(statement, opts \\ []) do
     command = Keyword.get(opts, :command) || extract_command(statement)
-    encode = Keyword.get(opts, :encode, true)
     decode = Keyword.get(opts, :decode, true)
-    %__MODULE__{statement: statement, command: command, encode: encode, decode: decode}
+    %__MODULE__{statement: statement, command: command, decode: decode}
   end
 
   statements = [
@@ -64,6 +63,7 @@ defmodule Ch.Query do
   end
 
   defp extract_command([first_segment | _] = statement) do
+    # TODO
     extract_command(first_segment) || extract_command(IO.iodata_to_binary(statement))
   end
 
@@ -79,9 +79,11 @@ defimpl DBConnection.Query, for: Ch.Query do
   @spec describe(Query.t(), [Ch.query_option()]) :: Query.t()
   def describe(query, _opts), do: query
 
+  @type query_params :: [{String.t(), String.t()}]
+
   # stream: insert init
   @spec encode(Query.t(), {:stream, term}, [Ch.query_option()]) ::
-          {:stream, {[{String.t(), String.t()}], Mint.Types.headers(), iodata}}
+          {:stream, {query_params, Mint.Types.headers(), iodata}}
   def encode(query, {:stream, params}, opts) do
     {:stream, encode(query, params, opts)}
   end
@@ -93,55 +95,16 @@ defimpl DBConnection.Query, for: Ch.Query do
     {:stream, ref, data}
   end
 
-  @spec encode(Query.t(), params, [Ch.query_option()]) ::
-          {query_params, Mint.Types.headers(), body}
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t(),
-             query_params: [{String.t(), String.t()}],
-             body: iodata | Enumerable.t()
-
-  def encode(%Query{command: :insert, encode: false, statement: statement}, data, opts) do
-    body =
-      case data do
-        _ when is_list(data) or is_binary(data) -> [statement, ?\n | data]
-        _ -> Stream.concat([[statement, ?\n]], data)
-      end
-
-    {_query_params = [], headers(opts), body}
-  end
-
+  @spec encode(Query.t(), Ch.query_params(), [Ch.query_option()]) ::
+          {query_params, Mint.Types.headers(), iodata}
   def encode(%Query{command: :insert, statement: statement}, params, opts) do
-    cond do
-      names = Keyword.get(opts, :names) ->
-        types = Keyword.fetch!(opts, :types)
-        header = RowBinary.encode_names_and_types(names, types)
-        data = RowBinary.encode_rows(params, types)
-        {_query_params = [], headers(opts), [statement, ?\n, header | data]}
-
-      format_row_binary?(statement) ->
-        types = Keyword.fetch!(opts, :types)
-        data = RowBinary.encode_rows(params, types)
-        {_query_params = [], headers(opts), [statement, ?\n | data]}
-
-      true ->
-        {query_params(params), headers(opts), statement}
-    end
+    {query_params(params), headers(opts), statement}
   end
 
   def encode(%Query{statement: statement}, params, opts) do
-    types = Keyword.get(opts, :types)
-    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
+    default_format = "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
     {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
-  end
-
-  defp format_row_binary?(statement) when is_binary(statement) do
-    statement |> String.trim_trailing() |> String.ends_with?("RowBinary")
-  end
-
-  defp format_row_binary?(statement) when is_list(statement) do
-    statement
-    |> IO.iodata_to_binary()
-    |> format_row_binary?()
   end
 
   # stream: select result
@@ -174,16 +137,11 @@ defimpl DBConnection.Query, for: Ch.Query do
     %Result{rows: data, data: data, command: command, headers: headers}
   end
 
-  def decode(%Query{command: command}, responses, opts) when is_list(responses) do
+  def decode(%Query{command: command}, responses, _opts) when is_list(responses) do
     # TODO potentially fails on x-progress-headers
     [_status, headers | data] = responses
 
     case get_header(headers, "x-clickhouse-format") do
-      "RowBinary" ->
-        types = Keyword.fetch!(opts, :types)
-        rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows(types)
-        %Result{num_rows: length(rows), rows: rows, command: command, headers: headers}
-
       "RowBinaryWithNamesAndTypes" ->
         rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
         %Result{num_rows: length(rows), rows: rows, command: command, headers: headers}
@@ -204,6 +162,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     Enum.map(params, fn {k, v} -> {"param_#{k}", encode_param(v)} end)
   end
 
+  # TODO
   defp query_params(params) when is_list(params) do
     params
     |> Enum.with_index()

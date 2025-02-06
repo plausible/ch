@@ -14,7 +14,7 @@ defmodule Ch do
           | {:scheme, String.t()}
           | {:hostname, String.t()}
           | {:port, :inet.port_number()}
-          | {:transport_opts, :gen_tcp.connect_option()}
+          | {:transport_opts, [:gen_tcp.connect_option() | :ssl.client_option()]}
           | DBConnection.start_option()
 
   @doc """
@@ -56,10 +56,11 @@ defmodule Ch do
           | {:headers, [{String.t(), String.t()}]}
           | {:format, String.t()}
           | {:types, [String.t() | atom | tuple]}
-          # TODO remove
-          | {:encode, boolean}
           | {:decode, boolean}
           | DBConnection.connection_option()
+
+  @type query_param_key :: String.t() | atom
+  @type query_params :: %{query_param_key => term} | [term]
 
   @doc """
   Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
@@ -79,9 +80,8 @@ defmodule Ch do
     * [`DBConnection.connection_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:connection_option/0)
 
   """
-  @spec query(DBConnection.conn(), iodata, params, [query_option]) ::
+  @spec query(DBConnection.conn(), iodata, Ch.query_params(), [query_option]) ::
           {:ok, Result.t()} | {:error, Exception.t()}
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
   def query(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
 
@@ -94,15 +94,14 @@ defmodule Ch do
   Runs a query and returns the result or raises `Ch.Error` if
   there was an error. See `query/4`.
   """
-  @spec query!(DBConnection.conn(), iodata, params, [query_option]) :: Result.t()
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
+  @spec query!(DBConnection.conn(), iodata, Ch.query_params(), [query_option]) :: Result.t()
   def query!(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     DBConnection.execute!(conn, query, params, opts)
   end
 
   @doc false
-  @spec stream(DBConnection.t(), iodata, map | [term], [query_option]) :: Ch.Stream.t()
+  @spec stream(DBConnection.t(), iodata, Ch.query_params(), [query_option]) :: Ch.Stream.t()
   def stream(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     %Ch.Stream{conn: conn, query: query, params: params, opts: opts}

@@ -1,5 +1,5 @@
 defmodule Ch.RowBinary do
-  @moduledoc "Helpers for working with ClickHouse [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) format."
+  @moduledoc "Helpers for working with ClickHouse [`RowBinary`](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) format."
 
   # @compile {:bin_opt_info, true}
   @dialyzer :no_improper_lists
@@ -28,7 +28,7 @@ defmodule Ch.RowBinary do
   defp encode_types([] = done), do: done
 
   @doc """
-  Encodes a single row to [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) as iodata.
+  Encodes a single row to [`RowBinary`](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) as iodata.
 
   Examples:
 
@@ -50,7 +50,7 @@ defmodule Ch.RowBinary do
   defp _encode_row([] = done, []), do: done
 
   @doc """
-  Encodes multiple rows to [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) as iodata.
+  Encodes multiple rows to [`RowBinary`](https://clickhouse.com/docs/en/interfaces/formats/RowBinaryWithNamesAndTypes) as iodata.
 
   Examples:
 

@@ -7,26 +7,24 @@ Minimal HTTP [ClickHouse](https://clickhouse.com) client for Elixir.
 
 Used in [Ecto ClickHouse adapter.](https://github.com/plausible/ecto_ch)
 
-### Key features
-
-- RowBinary
-- Native query parameters
-- Per query settings
-- Minimal API
-
-Your ideas are welcome [here.](https://github.com/plausible/ch/issues/82)
-
 ## Installation
 
 ```elixir
 defp deps do
   [
-    {:ch, "~> 0.3.0"}
+    {:ch, "~> 0.4.0"}
   ]
 end
 ```
 
 ## Usage
+
+#### Start ClickHouse
+
+```sh
+# don't forget to stop the container once done
+docker run --rm -p 8123:8123 -e CLICKHOUSE_PASSWORD=secret --ulimit nofile=262144:262144 clickhouse/clickhouse-server:latest-alpine
+```
 
 #### Start [DBConnection](https://github.com/elixir-ecto/db_connection) pool
 
@@ -35,23 +33,28 @@ defaults = [
   scheme: "http",
   hostname: "localhost",
   port: 8123,
-  database: "default",
+  database: "default",  
   settings: [],
   pool_size: 1,
   timeout: :timer.seconds(15)
 ]
 
-# note that starting in ClickHouse 25.1.3.23 `default` user doesn't have
-# network access by default in the official Docker images
-# see https://github.com/ClickHouse/ClickHouse/pull/75259
-{:ok, pid} = Ch.start_link(defaults)
+custom = [
+  # note that starting in ClickHouse 25.1.3.23 `default` user doesn't have
+  # network access by default in the official Docker images
+  # see https://github.com/ClickHouse/ClickHouse/pull/75259
+  username: "default",
+  # this password was provided via `CLICKHOUSE_PASSWORD` to the container above
+  password: "secret",
+]
+
+config = Keyword.merge(defaults, custom)
+{:ok, pid} = Ch.start_link(config)
 ```
 
 #### Select rows
 
 ```elixir
-{:ok, pid} = Ch.start_link()
-
 {:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
   Ch.query(pid, "SELECT * FROM system.numbers LIMIT 3")
 
@@ -70,15 +73,10 @@ Note on datetime encoding in query parameters:
 #### Insert rows
 
 ```elixir
-{:ok, pid} = Ch.start_link()
-
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
 %Ch.Result{num_rows: 2} =
   Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES (0), (1)")
-
-%Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES ({$0:UInt8}), ({$1:UInt32})", [0, 1])
 
 %Ch.Result{num_rows: 2} =
   Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES ({a:UInt16}), ({b:UInt64})", %{"a" => 0, "b" => 1})
@@ -87,53 +85,64 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 2})
 ```
 
-#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary) (efficient)
+#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) (efficient)
 
 ```elixir
-{:ok, pid} = Ch.start_link()
+Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64, name String) ENGINE Null")
 
-Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
+rows = [
+  [0, "zero"],
+  [1, "one"],
+  [2, "two"]
+]
 
-types = ["UInt64"]
-# or
-types = [Ch.Types.u64()]
-# or
-types = [:u64]
+types = ["UInt64", "String"]
+# or types = [:u64, :string]
+# or types = [Ch.Types.u64(), Ch.Types.string()]
 
-%Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", [[0], [1]], types: types)
+sql = [
+  # note the \n -- ClickHouse uses it to separate SQL from the data
+  "INSERT INTO ch_demo(id, name) FORMAT RowBinary\n" | Ch.RowBinary.encode_rows(rows, types)
+]
+
+%Ch.Result{num_rows: 2} = Ch.query!(pid, sql)
 ```
 
-Note that RowBinary format encoding requires `:types` option to be provided.
-
-Similarly, you can use [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/interfaces/formats#rowbinarywithnamesandtypes) which would additionally do something like a type check.
+Similarly, you can use [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/interfaces/formats/RowBinaryWithNamesAndTypes) which would additionally do something like a type check.
 
 ```elixir
-sql = "INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes"
-opts = [names: ["id"], types: ["UInt64"]]
-rows = [[0], [1]]
+names = ["id", "name"]
+types = ["UInt64", "String"]
 
-%Ch.Result{num_rows: 2} = Ch.query!(pid, sql, rows, opts)
+rows = [
+  [0, "zero"],
+  [1, "one"],
+  [2, "two"]
+]
+
+sql = [
+  "INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes\n",
+  Ch.RowBinary.encode_names_and_types(names, types),
+  | Ch.RowBinary.encode_rows(rows, types) 
+]
+
+%Ch.Result{num_rows: 2} = Ch.query!(pid, sql)
 ```
 
 #### Insert rows in custom [format](https://clickhouse.com/docs/en/interfaces/formats)
 
 ```elixir
-{:ok, pid} = Ch.start_link()
-
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
 csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
 
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) FORMAT CSV", csv, encode: false)
+  Ch.query!(pid, ["INSERT INTO ch_demo(id) FORMAT CSV\n" | csv])
 ```
 
 #### Insert rows as chunked RowBinary stream
 
 ```elixir
-{:ok, pid} = Ch.start_link()
-
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
 stream = Stream.repeatedly(fn -> [:rand.uniform(100)] end)
@@ -150,8 +159,6 @@ This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/
 #### Query with custom [settings](https://clickhouse.com/docs/en/operations/settings/settings)
 
 ```elixir
-{:ok, pid} = Ch.start_link()
-
 settings = [async_insert: 1]
 
 %Ch.Result{rows: [["async_insert", "Bool", "0"]]} =
@@ -207,6 +214,8 @@ Ch.query!(pid, sql, inserted_rows, types: ["Nullable(UInt8)", "Nullable(UInt8)",
 %Ch.Result{rows: [[0], [10]]} =
   Ch.query!(pid, "SELECT b FROM ch_nulls ORDER BY b")
 ```
+
+Or [`RowBinaryWithDefaults`](https://clickhouse.com/docs/en/interfaces/formats/RowBinaryWithDefaults). TODO.
 
 #### UTF-8 in RowBinary
 
