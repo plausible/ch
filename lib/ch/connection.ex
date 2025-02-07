@@ -14,10 +14,16 @@ defmodule Ch.Connection do
   def connect(opts) do
     with {:ok, conn} <- do_connect(opts) do
       handshake = Query.build("select 1")
-      params = DBConnection.Query.encode(handshake, _params = [], _opts = [])
 
-      case handle_execute(handshake, params, _opts = [], conn) do
-        {:ok, handshake, responses, conn} ->
+      {query_params, extra_headers, body} =
+        DBConnection.Query.encode(handshake, _params = [], _opts = [])
+
+      path = path(conn, query_params, opts)
+      headers = headers(conn, extra_headers, opts)
+      timeout = HTTP.get_private(conn, :timeout) || :timer.seconds(15)
+
+      case request(conn, "POST", path, headers, body, timeout) do
+        {:ok, conn, responses} ->
           case DBConnection.Query.decode(handshake, responses, _opts = []) do
             %Result{rows: [[1]]} ->
               {:ok, conn}
@@ -44,8 +50,9 @@ defmodule Ch.Connection do
   def ping(conn) do
     conn = maybe_reconnect(conn)
     headers = [{"user-agent", @user_agent}]
+    timeout = HTTP.get_private(conn, :timeout) || :timer.seconds(5)
 
-    case request(conn, "GET", "/ping", headers, _body = "", _opts = []) do
+    case request(conn, "GET", "/ping", headers, _body = [], timeout) do
       {:ok, conn, _response} -> {:ok, conn}
       {:error, error, conn} -> {:disconnect, error, conn}
       {:disconnect, _error, _conn} = disconnect -> disconnect
@@ -88,7 +95,7 @@ defmodule Ch.Connection do
     headers = headers(conn, extra_headers, opts)
 
     with {:ok, conn, _ref} <- send_request(conn, "POST", path, headers, body),
-         {:ok, conn} <- eat_ok_status_and_headers(conn, timeout(conn, opts)) do
+         {:ok, conn} <- eat_ok_status_and_headers(conn, :infinity) do
       {:ok, query, %Result{command: command}, conn}
     end
   end
@@ -148,8 +155,8 @@ defmodule Ch.Connection do
     end
   end
 
-  def handle_fetch(_query, result, opts, conn) do
-    case HTTP.recv(conn, 0, timeout(conn, opts)) do
+  def handle_fetch(_query, result, _opts, conn) do
+    case HTTP.recv(conn, 0, :infinity) do
       {:ok, conn, responses} ->
         {halt_or_cont(responses), %Result{result | data: extract_data(responses)}, conn}
 
@@ -194,12 +201,12 @@ defmodule Ch.Connection do
     end
   end
 
-  def handle_execute(%Query{} = query, {:stream, ref, body}, opts, conn) do
+  def handle_execute(%Query{} = query, {:stream, ref, body}, _opts, conn) do
     case HTTP.stream_request_body(conn, ref, body) do
       {:ok, conn} ->
         case body do
           :eof ->
-            with {:ok, conn, responses} <- receive_full_response(conn, timeout(conn, opts)) do
+            with {:ok, conn, responses} <- receive_full_response(conn, :infinity) do
               {:ok, query, responses, conn}
             end
 
@@ -219,7 +226,7 @@ defmodule Ch.Connection do
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
 
-    with {:ok, conn, responses} <- request(conn, "POST", path, headers, body, opts) do
+    with {:ok, conn, responses} <- request(conn, "POST", path, headers, body, :infinity) do
       {:ok, query, responses, conn}
     end
   end
@@ -232,13 +239,13 @@ defmodule Ch.Connection do
 
   @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
 
-  @spec request(conn, binary, binary, Mint.Types.headers(), iodata, [Ch.query_option()]) ::
+  @spec request(conn, binary, binary, Mint.Types.headers(), iodata, timeout) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
           | {:disconnect, Mint.Types.error(), conn}
-  defp request(conn, method, path, headers, body, opts) do
+  defp request(conn, method, path, headers, body, timeout) do
     with {:ok, conn, _ref} <- send_request(conn, method, path, headers, body) do
-      receive_full_response(conn, timeout(conn, opts))
+      receive_full_response(conn, timeout)
     end
   end
 
@@ -275,7 +282,7 @@ defmodule Ch.Connection do
     end
   end
 
-  @spec recv_all(conn, [response], timeout()) ::
+  @spec recv_all(conn, [response], timeout) ::
           {:ok, conn, [response]} | {:disconnect, Mint.Types.error(), conn}
   defp recv_all(conn, acc, timeout) do
     case HTTP.recv(conn, 0, timeout) do
@@ -301,9 +308,6 @@ defmodule Ch.Connection do
 
   defp maybe_put_private(conn, _k, nil), do: conn
   defp maybe_put_private(conn, k, v), do: HTTP.put_private(conn, k, v)
-
-  defp timeout(conn), do: HTTP.get_private(conn, :timeout)
-  defp timeout(conn, opts), do: Keyword.get(opts, :timeout) || timeout(conn)
 
   defp settings(conn, opts) do
     default_settings = HTTP.get_private(conn, :settings, [])
@@ -375,7 +379,7 @@ defmodule Ch.Connection do
     with {:ok, conn} <- HTTP.connect(scheme, address, port, mint_opts) do
       conn =
         conn
-        |> HTTP.put_private(:timeout, opts[:timeout] || :timer.seconds(15))
+        |> maybe_put_private(:timeout, opts[:timeout])
         |> maybe_put_private(:database, opts[:database])
         |> maybe_put_private(:username, opts[:username])
         |> maybe_put_private(:password, opts[:password])

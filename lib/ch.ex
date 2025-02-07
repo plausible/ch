@@ -7,14 +7,14 @@ defmodule Ch do
           | {:username, String.t()}
           | {:password, String.t()}
           | {:settings, Keyword.t()}
-          | {:timeout, timeout}
 
   @type start_option ::
           common_option
           | {:scheme, String.t()}
           | {:hostname, String.t()}
           | {:port, :inet.port_number()}
-          | {:transport_opts, [:gen_tcp.connect_option() | :ssl.client_option()]}
+          | {:transport_opts, [:gen_tcp.connect_option() | :ssl.tls_client_option()]}
+          | {:timeout, timeout}
           | DBConnection.start_option()
 
   @doc """
@@ -30,8 +30,8 @@ defmodule Ch do
     * `:username` - Username
     * `:password` - User password
     * `:settings` - Keyword list of ClickHouse settings
-    * `:timeout` - HTTP receive timeout in milliseconds
     * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
+    * `:timeout` - Connection handshake and ping timeout in milliseconds
     * [`DBConnection.start_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:start_option/0)
 
   """
@@ -72,7 +72,6 @@ defmodule Ch do
     * `:username` - Username
     * `:password` - User password
     * `:settings` - Keyword list of settings
-    * `:timeout` - Query request timeout
     * `:command` - Command tag for the query
     * `:headers` - Custom HTTP headers for the request
     * `:format` - Custom response format for the request

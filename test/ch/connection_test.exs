@@ -1247,13 +1247,15 @@ defmodule Ch.ConnectionTest do
   end
 
   describe "options" do
-    # this test is flaky, sometimes it raises due to ownership timeout
-    @tag capture_log: true, skip: true
     test "can provide custom timeout", %{conn: conn} do
-      assert {:error, %Mint.TransportError{reason: :timeout} = error} =
-               Ch.query(conn, "select sleep(1)", _params = [], timeout: 100)
+      log =
+        ExUnit.CaptureLog.capture_log([async: true], fn ->
+          assert {:error, %Mint.TransportError{reason: :closed}} =
+                   Ch.query(conn, "select sleep(1)", _params = [], timeout: 100)
+        end)
 
-      assert Exception.message(error) == "timeout"
+      assert log =~
+               "timed out because it queued and checked out the connection for longer than 100ms"
     end
 
     test "errors on invalid creds", %{conn: conn} do

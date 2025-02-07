@@ -254,7 +254,7 @@ defmodule Ch.FaultsTest do
 
       log =
         capture_async_log(fn ->
-          {:ok, conn} = Ch.start_link(port: port, timeout: 100)
+          {:ok, conn} = Ch.start_link(port: port)
 
           # connect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -264,8 +264,8 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :timeout}} =
-                     Ch.query(conn, "select 1 + 1")
+            assert {:error, %Mint.TransportError{reason: :closed}} =
+                     Ch.query(conn, "select 1 + 1", [], timeout: 100)
           end)
 
           # failed select 1 + 1
@@ -280,7 +280,9 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
+            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
+                     Ch.query(conn, "select 1 + 1", [], timeout: 100)
+
             send(test, :done)
           end)
 
@@ -291,7 +293,10 @@ defmodule Ch.FaultsTest do
           assert_receive :done
         end)
 
-      assert log =~ "disconnected: ** (Mint.TransportError) timeout"
+      assert log =~ "disconnected: ** (DBConnection.ConnectionError)"
+
+      assert log =~
+               "timed out because it queued and checked out the connection for longer than 100ms"
     end
 
     test "reconnects after closed on response", ctx do
