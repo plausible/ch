@@ -14,7 +14,7 @@
 
 ## 0.2.10 (2025-02-03)
 
-- handle missing `written_rows` in insert https://github.com/plausible/ch/pull/236 (cherry-picked)
+- handle missing `written_rows` in insert https://github.com/plausible/ch/pull/236 (backported)
 
 ## 0.2.9 (2024-11-04)
 
