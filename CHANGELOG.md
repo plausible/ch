@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 (2025-02-08)
 
 - add column names to `%Ch.Result{}` https://github.com/plausible/ch/pull/243
 
