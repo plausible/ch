@@ -1,5 +1,5 @@
 defmodule Ch.RowBinary do
-  @moduledoc "Helpers for working with ClickHouse [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) format."
+  @moduledoc "Helpers for working with ClickHouse [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) format."
 
   # @compile {:bin_opt_info, true}
   @dialyzer :no_improper_lists
@@ -28,7 +28,7 @@ defmodule Ch.RowBinary do
   defp encode_types([] = done), do: done
 
   @doc """
-  Encodes a single row to [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) as iodata.
+  Encodes a single row to [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) as iodata.
 
   Examples:
 
@@ -50,7 +50,7 @@ defmodule Ch.RowBinary do
   defp _encode_row([] = done, []), do: done
 
   @doc """
-  Encodes multiple rows to [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) as iodata.
+  Encodes multiple rows to [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) as iodata.
 
   Examples:
 
@@ -453,7 +453,7 @@ defmodule Ch.RowBinary do
   defp d(?f), do: 15
 
   @doc """
-  Decodes [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinarywithnamesandtypes) into rows.
+  Decodes [RowBinaryWithNamesAndTypes](https://clickhouse.com/docs/en/interfaces/formats/RowBinaryWithNamesAndTypes) into rows.
 
   Example:
 
@@ -474,12 +474,14 @@ defmodule Ch.RowBinary do
       [["1+1"], [2]]
 
   """
+  def decode_names_and_rows(row_binary_with_names_and_types)
+
   def decode_names_and_rows(<<cols, rest::bytes>>) do
     decode_names(rest, cols, cols, _acc = [])
   end
 
   @doc """
-  Decodes [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) into rows.
+  Decodes [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) into rows.
 
   Example:
 

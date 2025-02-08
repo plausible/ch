@@ -87,7 +87,7 @@ Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
   Ch.query!(pid, "INSERT INTO ch_demo(id) SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 2})
 ```
 
-#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats#rowbinary) (efficient)
+#### Insert rows as [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) (efficient)
 
 ```elixir
 {:ok, pid} = Ch.start_link()
@@ -106,7 +106,7 @@ types = [:u64]
 
 Note that RowBinary format encoding requires `:types` option to be provided.
 
-Similarly, you can use [`RowBinaryWithNamesAndTypes`](https://clickhouse.com/docs/en/interfaces/formats#rowbinarywithnamesandtypes) which would additionally do something like a type check.
+Similarly, you can use [RowBinaryWithNamesAndTypes](https://clickhouse.com/docs/en/interfaces/formats/RowBinaryWithNamesAndTypes) which would additionally do something like a type check.
 
 ```elixir
 sql = "INSERT INTO ch_demo FORMAT RowBinaryWithNamesAndTypes"
@@ -165,7 +165,7 @@ settings = [async_insert: 1]
 
 #### NULL in RowBinary
 
-It's the same as in [`ch-go`](https://clickhouse.com/docs/en/integrations/go#nullable)
+It's the same as in [ch-go](https://clickhouse.com/docs/en/integrations/go#nullable)
 
 > At insert time, Nil can be passed for both the normal and Nullable version of a column. For the former, the default value for the type will be persisted, e.g., an empty string for string. For the nullable version, a NULL value will be stored in ClickHouse.
 
