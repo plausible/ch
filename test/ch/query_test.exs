@@ -237,8 +237,16 @@ defmodule Ch.QueryTest do
       assert {:ok, res} = Ch.query(conn, "SELECT 123 AS a, 456 AS b")
       assert %Ch.Result{} = res
       assert res.command == :select
-      # assert res.columns == ["a", "b"]
+      assert res.columns == ["a", "b"]
       assert res.num_rows == 1
+    end
+
+    test "empty result struct", %{conn: conn} do
+      assert %Ch.Result{} = res = Ch.query!(conn, "select number, 'a' as b from numbers(0)")
+      assert res.command == :select
+      assert res.columns == ["number", "b"]
+      assert res.rows == []
+      assert res.num_rows == 0
     end
 
     test "error struct", %{conn: conn} do

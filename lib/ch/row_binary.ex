@@ -466,6 +466,19 @@ defmodule Ch.RowBinary do
   def decode_rows(<<>>), do: []
 
   @doc """
+  Same as `decode_rows/1` but the first element is a list of column names.
+
+  Example:
+
+      iex> decode_names_and_rows(<<1, 3, "1+1"::bytes, 5, "UInt8"::bytes, 2>>)
+      [["1+1"], [2]]
+
+  """
+  def decode_names_and_rows(<<cols, rest::bytes>>) do
+    decode_names(rest, cols, cols, _acc = [])
+  end
+
+  @doc """
   Decodes [`RowBinary`](https://clickhouse.com/docs/en/sql-reference/formats#rowbinary) into rows.
 
   Example:
@@ -558,8 +571,6 @@ defmodule Ch.RowBinary do
     raise ArgumentError, "unsupported type for decoding: #{inspect(type)}"
   end
 
-  defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
-
   varints = [
     {_pattern = quote(do: <<0::1, v1::7>>), _value = quote(do: v1)},
     {quote(do: <<1::1, v1::7, 0::1, v2::7>>), quote(do: (v2 <<< 7) + v1)},
@@ -588,9 +599,26 @@ defmodule Ch.RowBinary do
      end}
   ]
 
+  defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
+
   for {pattern, value} <- varints do
     defp skip_names(<<unquote(pattern), _::size(unquote(value))-bytes, rest::bytes>>, left, count) do
       skip_names(rest, left - 1, count)
+    end
+  end
+
+  defp decode_names(<<rest::bytes>>, 0, count, names) do
+    [:lists.reverse(names) | decode_types(rest, count, _acc = [])]
+  end
+
+  for {pattern, value} <- varints do
+    defp decode_names(
+           <<unquote(pattern), name::size(unquote(value))-bytes, rest::bytes>>,
+           left,
+           count,
+           acc
+         ) do
+      decode_names(rest, left - 1, count, [name | acc])
     end
   end
 

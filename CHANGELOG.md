@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- add column names to `%Ch.Result{}` https://github.com/plausible/ch/pull/243
+
 ## 0.3.0 (2025-02-03)
 
 - gracefully handle `connection: closed` response from server https://github.com/plausible/ch/pull/211
