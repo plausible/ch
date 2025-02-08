@@ -87,22 +87,27 @@ defmodule Ch.AggregationTest do
     ) ENGINE AggregatingMergeTree ORDER BY uid
     """)
 
-    rows = [
-      [1, ~N[2020-01-02 00:00:00], "b"],
-      [1, ~N[2020-01-01 00:00:00], "a"]
-    ]
+    rowbinary =
+      Ch.RowBinary.encode_rows(
+        _rows = [
+          [1, ~N[2020-01-02 00:00:00], "b"],
+          [1, ~N[2020-01-01 00:00:00], "a"]
+        ],
+        _types = ["Int16", "DateTime", "String"]
+      )
 
     assert %{num_rows: 2} =
              Ch.query!(
                conn,
-               """
-               INSERT INTO test_insert_aggregate_function
-                 SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
-                 FROM input('uid Int16, updated DateTime, name String')
-                 FORMAT RowBinary\
-               """,
-               rows,
-               types: ["Int16", "DateTime", "String"]
+               [
+                 """
+                 INSERT INTO test_insert_aggregate_function
+                   SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
+                   FROM input('uid Int16, updated DateTime, name String')
+                   FORMAT RowBinary
+                 """
+                 | rowbinary
+               ]
              )
 
     assert Ch.query!(conn, """
@@ -124,14 +129,21 @@ defmodule Ch.AggregationTest do
       ) ENGINE AggregatingMergeTree ORDER BY uid
       """)
 
+      rowbinary =
+        Ch.RowBinary.encode_rows(
+          _rows = [
+            [1231, ~N[2020-01-02 00:00:00], "Jane"],
+            [1231, ~N[2020-01-01 00:00:00], "John"]
+          ],
+          _types = ["Int16", "DateTime", "String"]
+        )
+
       Ch.query!(
         conn,
-        "INSERT INTO test_users_ephemeral_column(uid, updated, name_stub) FORMAT RowBinary",
-        _rows = [
-          [1231, ~N[2020-01-02 00:00:00], "Jane"],
-          [1231, ~N[2020-01-01 00:00:00], "John"]
-        ],
-        types: ["Int16", "DateTime", "String"]
+        [
+          "INSERT INTO test_users_ephemeral_column(uid, updated, name_stub) FORMAT RowBinary\n"
+          | rowbinary
+        ]
       )
 
       assert Ch.query!(conn, """
@@ -150,18 +162,25 @@ defmodule Ch.AggregationTest do
       ) ENGINE AggregatingMergeTree ORDER BY uid
       """)
 
+      rowbinary =
+        Ch.RowBinary.encode_rows(
+          _rows = [
+            [1231, ~N[2020-01-02 00:00:00], "Jane"],
+            [1231, ~N[2020-01-01 00:00:00], "John"]
+          ],
+          _types = ["Int16", "DateTime", "String"]
+        )
+
       Ch.query!(
         conn,
-        """
-        INSERT INTO test_users_input_function
-          SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
-          FROM input('uid Int16, updated DateTime, name String') FORMAT RowBinary\
-        """,
-        _rows = [
-          [1231, ~N[2020-01-02 00:00:00], "Jane"],
-          [1231, ~N[2020-01-01 00:00:00], "John"]
-        ],
-        types: ["Int16", "DateTime", "String"]
+        [
+          """
+          INSERT INTO test_users_input_function
+            SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
+            FROM input('uid Int16, updated DateTime, name String') FORMAT RowBinary
+          """
+          | rowbinary
+        ]
       )
 
       assert Ch.query!(conn, """
@@ -194,15 +213,16 @@ defmodule Ch.AggregationTest do
         FROM test_users_ne
       """)
 
-      Ch.query!(
-        conn,
-        "INSERT INTO test_users_ne FORMAT RowBinary",
-        _rows = [
-          [1231, ~N[2020-01-02 00:00:00], "Jane"],
-          [1231, ~N[2020-01-01 00:00:00], "John"]
-        ],
-        types: ["Int16", "DateTime", "String"]
-      )
+      rowbinary =
+        Ch.RowBinary.encode_rows(
+          _rows = [
+            [1231, ~N[2020-01-02 00:00:00], "Jane"],
+            [1231, ~N[2020-01-01 00:00:00], "John"]
+          ],
+          _types = ["Int16", "DateTime", "String"]
+        )
+
+      Ch.query!(conn, ["INSERT INTO test_users_ne FORMAT RowBinary\n" | rowbinary])
 
       assert Ch.query!(conn, """
              SELECT uid, max(updated) AS updated, argMaxMerge(name)

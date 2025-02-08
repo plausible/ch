@@ -10,10 +10,6 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1")
   end
 
-  test "select with types", %{conn: conn} do
-    assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select 1", [], types: ["UInt8"])
-  end
-
   test "select with params", %{conn: conn} do
     assert {:ok, %{num_rows: 1, rows: [[1]]}} = Ch.query(conn, "select {a:UInt8}", %{"a" => 1})
 
@@ -155,11 +151,15 @@ defmodule Ch.ConnectionTest do
     tokyo = DateTime.shift_zone!(utc, "Asia/Tokyo")
     vienna = DateTime.shift_zone!(utc, "Europe/Vienna")
 
-    rows = [["taipei", taipei], ["tokyo", tokyo], ["vienna", vienna]]
+    rowbinary =
+      Ch.RowBinary.encode_rows(
+        _rows = [["taipei", taipei], ["tokyo", tokyo], ["vienna", vienna]],
+        _types = ["String", "DateTime"]
+      )
 
-    Ch.query!(conn, "insert into ch_non_utc_datetimes(name, datetime) format RowBinary", rows,
-      types: ["String", "DateTime"]
-    )
+    Ch.query!(conn, [
+      "insert into ch_non_utc_datetimes(name, datetime) format RowBinary\n" | rowbinary
+    ])
 
     result =
       conn
@@ -281,26 +281,14 @@ defmodule Ch.ConnectionTest do
       assert message =~ "Cannot execute query in readonly mode."
     end
 
-    test "automatic RowBinary", %{conn: conn, table: table} do
-      stmt = "insert into #{table}(a, b) format RowBinary"
-      types = ["UInt8", "String"]
-      rows = [[1, "a"], [2, "b"]]
-      assert %{num_rows: 2} = Ch.query!(conn, stmt, rows, types: types)
-
-      assert %{rows: rows} =
-               Ch.query!(conn, "select * from {table:Identifier}", %{"table" => table})
-
-      assert rows == [[1, "a"], [2, "b"]]
-    end
-
     test "manual RowBinary", %{conn: conn, table: table} do
-      stmt = "insert into #{table}(a, b) format RowBinary"
+      stmt = "insert into #{table}(a, b) format RowBinary\n"
 
       types = ["UInt8", "String"]
       rows = [[1, "a"], [2, "b"]]
       data = RowBinary.encode_rows(rows, types)
 
-      assert %{num_rows: 2} = Ch.query!(conn, stmt, data, encode: false)
+      assert %{num_rows: 2} = Ch.query!(conn, [stmt | data])
 
       assert %{rows: rows} =
                Ch.query!(conn, "select * from {table:Identifier}", %{"table" => table})
@@ -317,13 +305,15 @@ defmodule Ch.ConnectionTest do
         |> Stream.chunk_every(2)
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
 
-      assert {:ok, %{num_rows: 3}} =
-               Ch.query(
-                 conn,
-                 "insert into #{table}(a, b) format RowBinary",
-                 stream,
-                 encode: false
-               )
+      Ch.run(conn, fn conn ->
+        stream
+        |> Stream.into(
+          Ch.stream(conn, "insert into {table:Identifier}(a, b) format RowBinary\n", %{
+            "table" => table
+          })
+        )
+        |> Stream.run()
+      end)
 
       assert {:ok, %{rows: rows}} =
                Ch.query(conn, "select * from {table:Identifier}", %{"table" => table})
@@ -431,18 +421,19 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(conn, "create table fixed_string_t(a FixedString(3)) engine = Memory")
 
+      rowbinary =
+        RowBinary.encode_rows(
+          _rows = [
+            [""],
+            ["a"],
+            ["aa"],
+            ["aaa"]
+          ],
+          _types = ["FixedString(3)"]
+        )
+
       assert {:ok, %{num_rows: 4}} =
-               Ch.query(
-                 conn,
-                 "insert into fixed_string_t(a) format RowBinary",
-                 [
-                   [""],
-                   ["a"],
-                   ["aa"],
-                   ["aaa"]
-                 ],
-                 types: ["FixedString(3)"]
-               )
+               Ch.query(conn, ["insert into fixed_string_t(a) format RowBinary\n" | rowbinary])
 
       assert Ch.query!(conn, "select * from fixed_string_t").rows == [
                [<<0, 0, 0>>],
@@ -475,17 +466,18 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(conn, "create table decimal_t(d Decimal32(4)) engine = Memory")
 
+      rowbinary =
+        RowBinary.encode_rows(
+          _rows = [
+            [Decimal.new("2.66")],
+            [Decimal.new("2.6666")],
+            [Decimal.new("2.66666")]
+          ],
+          _types = ["Decimal32(4)"]
+        )
+
       assert %{num_rows: 3} =
-               Ch.query!(
-                 conn,
-                 "insert into decimal_t(d) format RowBinary",
-                 _rows = [
-                   [Decimal.new("2.66")],
-                   [Decimal.new("2.6666")],
-                   [Decimal.new("2.66666")]
-                 ],
-                 types: ["Decimal32(4)"]
-               )
+               Ch.query!(conn, ["insert into decimal_t(d) format RowBinary\n" | rowbinary])
 
       assert Ch.query!(conn, "select * from decimal_t").rows == [
                [Decimal.new("2.6600")],
@@ -507,12 +499,10 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(conn, "INSERT INTO test_bool VALUES (1, true),(2,0)")
 
-      Ch.query!(
-        conn,
-        "insert into test_bool(A, B) format RowBinary",
-        _rows = [[3, true], [4, false]],
-        types: ["Int64", "Bool"]
-      )
+      rowbinary =
+        RowBinary.encode_rows(_rows = [[3, true], [4, false]], _types = ["Int64", "Bool"])
+
+      Ch.query!(conn, ["insert into test_bool(A, B) format RowBinary\n" | rowbinary])
 
       # anything > 0 is `true`, here `2` is `true`
       Ch.query!(conn, "insert into test_bool(A, B) values (5, 2)")
@@ -550,12 +540,10 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(conn, "INSERT INTO t_uuid (y) VALUES ('Example 2')")
 
-      Ch.query!(
-        conn,
-        "insert into t_uuid(x,y) format RowBinary",
-        _rows = [[uuid, "Example 3"]],
-        types: ["UUID", "String"]
-      )
+      rowbinary =
+        RowBinary.encode_rows(_rows = [[uuid, "Example 3"]], _types = ["UUID", "String"])
+
+      Ch.query!(conn, ["insert into t_uuid(x,y) format RowBinary\n" | rowbinary])
 
       assert {:ok,
               %{
@@ -613,12 +601,13 @@ defmodule Ch.ConnectionTest do
                [2, "hello", 1]
              ]
 
-      Ch.query!(
-        conn,
-        "INSERT INTO t_enum(i, x) FORMAT RowBinary",
-        _rows = [[3, "hello"], [4, "world"], [5, 1], [6, 2]],
-        types: ["UInt8", "Enum8('hello' = 1, 'world' = 2)"]
-      )
+      rowbinary =
+        RowBinary.encode_rows(
+          _rows = [[3, "hello"], [4, "world"], [5, 1], [6, 2]],
+          _types = ["UInt8", "Enum8('hello' = 1, 'world' = 2)"]
+        )
+
+      Ch.query!(conn, ["INSERT INTO t_enum(i, x) FORMAT RowBinary\n" | rowbinary])
 
       assert Ch.query!(conn, "SELECT *, CAST(x, 'Int8') FROM t_enum ORDER BY i").rows == [
                [0, "hello", 1],
@@ -662,21 +651,22 @@ defmodule Ch.ConnectionTest do
                [0]
              ]
 
-      assert Ch.query!(
-               conn,
-               "INSERT INTO table_map FORMAT RowBinary",
-               _rows = [
-                 [%{"key10" => 20, "key20" => 40}],
-                 # empty map
-                 [%{}],
-                 # null map
-                 [nil],
-                 # empty proplist map
-                 [[]],
-                 [[{"key50", 100}]]
-               ],
-               types: ["Map(String, UInt64)"]
-             )
+      rowbinary =
+        RowBinary.encode_rows(
+          _rows = [
+            [%{"key10" => 20, "key20" => 40}],
+            # empty map
+            [%{}],
+            # null map
+            [nil],
+            # empty proplist map
+            [[]],
+            [[{"key50", 100}]]
+          ],
+          _types = ["Map(String, UInt64)"]
+        )
+
+      assert Ch.query!(conn, ["INSERT INTO table_map FORMAT RowBinary\n" | rowbinary])
 
       assert Ch.query!(conn, "SELECT * FROM table_map ORDER BY a ASC").rows == [
                [%{}],
@@ -713,13 +703,14 @@ defmodule Ch.ConnectionTest do
       assert %{num_rows: 2} =
                Ch.query!(conn, "INSERT INTO tuples_t VALUES (('y', 10)), (('x',-10))")
 
+      rowbinary =
+        RowBinary.encode_rows(
+          _rows = [[{"a", 20}], [{"b", 30}]],
+          _types = ["Tuple(String, Int64)"]
+        )
+
       assert %{num_rows: 2} =
-               Ch.query!(
-                 conn,
-                 "INSERT INTO tuples_t FORMAT RowBinary",
-                 _rows = [[{"a", 20}], [{"b", 30}]],
-                 types: ["Tuple(String, Int64)"]
-               )
+               Ch.query!(conn, ["INSERT INTO tuples_t FORMAT RowBinary\n" | rowbinary])
 
       assert Ch.query!(conn, "SELECT a FROM tuples_t ORDER BY a.1 ASC").rows == [
                [{"a", 20}],
@@ -825,12 +816,13 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 1, rows: [[~D[1900-01-01], "1900-01-01"]]}} =
                Ch.query(conn, "select {$0:Date32} as d, toString(d)", [~D[1900-01-01]])
 
-      Ch.query!(
-        conn,
-        "insert into new(timestamp, event_id) format RowBinary",
-        _rows = [[~D[1960-01-01], 3]],
-        types: ["Date32", "UInt8"]
-      )
+      rowbinary =
+        RowBinary.encode_rows(
+          _rows = [[~D[1960-01-01], 3]],
+          _types = ["Date32", "UInt8"]
+        )
+
+      Ch.query!(conn, ["insert into new(timestamp, event_id) format RowBinary\n" | rowbinary])
 
       assert %{
                num_rows: 3,
@@ -885,12 +877,13 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "insert into datetime64_t(event_id, timestamp) format RowBinary",
-        _rows = [
-          [4, ~N[2021-01-01 12:00:00.123456]],
-          [5, ~N[2021-01-01 12:00:00]]
-        ],
-        types: ["UInt8", "DateTime64(3)"]
+        [
+          "insert into datetime64_t(event_id, timestamp) format RowBinary\n"
+          | RowBinary.encode_rows(
+              _rows = [[4, ~N[2021-01-01 12:00:00.123456]], [5, ~N[2021-01-01 12:00:00]]],
+              _types = ["UInt8", "DateTime64(3)"]
+            )
+        ]
       )
 
       assert {:ok, %{num_rows: 2, rows: rows}} =
@@ -975,9 +968,7 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 5}} =
                Ch.query(
                  conn,
-                 "insert into nullable format RowBinary",
-                 <<1, 2, 3, 4, 5>>,
-                 encode: false
+                 ["insert into nullable format RowBinary\n" | <<1, 2, 3, 4, 5>>]
                )
 
       assert %{num_rows: 1, rows: [[count]]} =
@@ -996,12 +987,13 @@ defmodule Ch.ConnectionTest do
       ) ENGINE Memory
       """)
 
-      Ch.query!(
-        conn,
-        "INSERT INTO ch_nulls(a, b, c, d) FORMAT RowBinary",
-        [[nil, nil, nil, nil]],
-        types: ["UInt8", "Nullable(UInt8)", "UInt8", "Nullable(UInt8)"]
-      )
+      rowbinary =
+        RowBinary.encode_row(
+          _row = [nil, nil, nil, nil],
+          _types = ["UInt8", "Nullable(UInt8)", "UInt8", "Nullable(UInt8)"]
+        )
+
+      Ch.query!(conn, ["INSERT INTO ch_nulls(a, b, c, d) FORMAT RowBinary\n" | rowbinary])
 
       # default is ignored...
       assert Ch.query!(conn, "SELECT * FROM ch_nulls").rows == [[0, nil, 0, nil]]
@@ -1016,16 +1008,23 @@ defmodule Ch.ConnectionTest do
       ) ENGINE Memory
       """)
 
+      rowbinary =
+        RowBinary.encode_rows(
+          _rows = [[1, nil], [-1, nil]],
+          _types = ["Int32", "Nullable(String)"]
+        )
+
       Ch.query!(
         conn,
-        """
-        INSERT INTO test_insert_default_value
-          SELECT id, name
-          FROM input('id UInt32, name Nullable(String)')
-          FORMAT RowBinary\
-        """,
-        [[1, nil], [-1, nil]],
-        types: ["UInt32", "Nullable(String)"]
+        [
+          """
+          INSERT INTO test_insert_default_value
+            SELECT id, name
+            FROM input('id UInt32, name Nullable(String)')
+            FORMAT RowBinary
+          """
+          | rowbinary
+        ]
       )
 
       assert Ch.query!(conn, "SELECT * FROM test_insert_default_value ORDER BY n").rows ==
@@ -1050,7 +1049,10 @@ defmodule Ch.ConnectionTest do
     test "can insert and select Point", %{conn: conn} do
       Ch.query!(conn, "CREATE TABLE geo_point (p Point) ENGINE = Memory()")
       Ch.query!(conn, "INSERT INTO geo_point VALUES((10, 10))")
-      Ch.query!(conn, "INSERT INTO geo_point FORMAT RowBinary", [[{20, 20}]], types: ["Point"])
+
+      Ch.query!(conn, [
+        "INSERT INTO geo_point FORMAT RowBinary\n" | RowBinary.encode_row([{20, 20}], ["Point"])
+      ])
 
       assert Ch.query!(conn, "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC").rows == [
                [{10.0, 10.0}, "Point"],
@@ -1062,7 +1064,8 @@ defmodule Ch.ConnectionTest do
                conn,
                "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC FORMAT JSONCompact"
              ).rows
-             |> Jason.decode!()
+             |> IO.iodata_to_binary()
+             |> JSON.decode!()
              |> Map.fetch!("data") == [
                [[10, 10], "Point"],
                [[20, 20], "Point"]
@@ -1084,7 +1087,10 @@ defmodule Ch.ConnectionTest do
       Ch.query!(conn, "INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)])")
 
       ring = [{20, 20}, {0, 0}, {0, 20}]
-      Ch.query!(conn, "INSERT INTO geo_ring FORMAT RowBinary", [[ring]], types: ["Ring"])
+
+      Ch.query!(conn, [
+        "INSERT INTO geo_ring FORMAT RowBinary\n" | RowBinary.encode_row([ring], ["Ring"])
+      ])
 
       assert Ch.query!(conn, "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC").rows == [
                [[{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}], "Ring"],
@@ -1096,7 +1102,8 @@ defmodule Ch.ConnectionTest do
                conn,
                "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC FORMAT JSONCompact"
              ).rows
-             |> Jason.decode!()
+             |> IO.iodata_to_binary()
+             |> JSON.decode!()
              |> Map.fetch!("data") == [
                [[[0, 0], [10, 0], [10, 10], [0, 10]], "Ring"],
                [[[20, 20], [0, 0], [0, 20]], "Ring"]
@@ -1125,7 +1132,11 @@ defmodule Ch.ConnectionTest do
       )
 
       polygon = [[{0, 1.0}, {10, 3.2}], [], [{2, 2}]]
-      Ch.query!(conn, "INSERT INTO geo_polygon FORMAT RowBinary", [[polygon]], types: ["Polygon"])
+
+      Ch.query!(conn, [
+        "INSERT INTO geo_polygon FORMAT RowBinary\n"
+        | RowBinary.encode_row([polygon], ["Polygon"])
+      ])
 
       assert Ch.query!(conn, "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC").rows ==
                [
@@ -1144,7 +1155,8 @@ defmodule Ch.ConnectionTest do
                conn,
                "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC FORMAT JSONCompact"
              ).rows
-             |> Jason.decode!()
+             |> IO.iodata_to_binary()
+             |> JSON.decode!()
              |> Map.fetch!("data") == [
                [[[[0, 1], [10, 3.2]], [], [[2, 2]]], "Polygon"],
                [
@@ -1183,9 +1195,10 @@ defmodule Ch.ConnectionTest do
 
       multipolygon = [[[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]], [], [[{3, 3}]]]
 
-      Ch.query!(conn, "INSERT INTO geo_multipolygon FORMAT RowBinary", [[multipolygon]],
-        types: ["MultiPolygon"]
-      )
+      Ch.query!(conn, [
+        "INSERT INTO geo_multipolygon FORMAT RowBinary\n"
+        | RowBinary.encode_row([multipolygon], ["MultiPolygon"])
+      ])
 
       assert Ch.query!(conn, "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC").rows ==
                [
@@ -1222,7 +1235,8 @@ defmodule Ch.ConnectionTest do
                conn,
                "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC FORMAT JSONCompact"
              ).rows
-             |> Jason.decode!()
+             |> IO.iodata_to_binary()
+             |> JSON.decode!()
              |> Map.fetch!("data") == [
                [
                  [
@@ -1237,13 +1251,15 @@ defmodule Ch.ConnectionTest do
   end
 
   describe "options" do
-    # this test is flaky, sometimes it raises due to ownership timeout
-    @tag capture_log: true, skip: true
     test "can provide custom timeout", %{conn: conn} do
-      assert {:error, %Mint.TransportError{reason: :timeout} = error} =
-               Ch.query(conn, "select sleep(1)", _params = [], timeout: 100)
+      log =
+        ExUnit.CaptureLog.capture_log([async: true], fn ->
+          assert {:error, %Mint.TransportError{reason: :closed}} =
+                   Ch.query(conn, "select sleep(1)", _params = [], timeout: 100)
+        end)
 
-      assert Exception.message(error) == "timeout"
+      assert log =~
+               "timed out because it queued and checked out the connection for longer than 100ms"
     end
 
     test "errors on invalid creds", %{conn: conn} do
@@ -1362,46 +1378,58 @@ defmodule Ch.ConnectionTest do
     end
 
     test "error on type mismatch", %{conn: conn} do
-      stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes"
+      stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes\n"
       rows = [["AB", "rare", -42]]
       names = ["country_code", "rare_string", "maybe_int32"]
 
-      opts = [
-        names: names,
-        types: [Ch.Types.fixed_string(2), Ch.Types.string(), Ch.Types.nullable(Ch.Types.u32())]
+      bad_types_1 = [
+        Ch.Types.fixed_string(2),
+        Ch.Types.string(),
+        Ch.Types.nullable(Ch.Types.u32())
       ]
 
-      assert {:error, %Ch.Error{code: 117, message: message}} = Ch.query(conn, stmt, rows, opts)
+      assert {:error, %Ch.Error{code: 117, message: message}} =
+               Ch.query(conn, [
+                 stmt,
+                 RowBinary.encode_names_and_types(names, bad_types_1)
+                 | RowBinary.encode_rows(rows, bad_types_1)
+               ])
+
       assert message =~ "Type of 'rare_string' must be LowCardinality(String), not String"
 
-      opts = [
-        names: names,
-        types: [
-          Ch.Types.fixed_string(2),
-          Ch.Types.low_cardinality(Ch.Types.string()),
-          Ch.Types.nullable(Ch.Types.u32())
-        ]
+      bad_types_2 = [
+        Ch.Types.fixed_string(2),
+        Ch.Types.low_cardinality(Ch.Types.string()),
+        Ch.Types.nullable(Ch.Types.u32())
       ]
 
-      assert {:error, %Ch.Error{code: 117, message: message}} = Ch.query(conn, stmt, rows, opts)
+      assert {:error, %Ch.Error{code: 117, message: message}} =
+               Ch.query(conn, [
+                 stmt,
+                 RowBinary.encode_names_and_types(names, bad_types_2)
+                 | RowBinary.encode_rows(rows, bad_types_2)
+               ])
+
       assert message =~ "Type of 'maybe_int32' must be Nullable(Int32), not Nullable(UInt32)"
     end
 
     test "ok on valid types", %{conn: conn} do
-      stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes"
+      stmt = "insert into row_binary_names_and_types_t format RowBinaryWithNamesAndTypes\n"
       rows = [["AB", "rare", -42]]
       names = ["country_code", "rare_string", "maybe_int32"]
 
-      opts = [
-        names: names,
-        types: [
-          Ch.Types.fixed_string(2),
-          Ch.Types.low_cardinality(Ch.Types.string()),
-          Ch.Types.nullable(Ch.Types.i32())
-        ]
+      types = [
+        Ch.Types.fixed_string(2),
+        Ch.Types.low_cardinality(Ch.Types.string()),
+        Ch.Types.nullable(Ch.Types.i32())
       ]
 
-      assert {:ok, %{num_rows: 1}} = Ch.query(conn, stmt, rows, opts)
+      assert {:ok, %{num_rows: 1}} =
+               Ch.query(conn, [
+                 stmt,
+                 RowBinary.encode_names_and_types(names, types)
+                 | RowBinary.encode_rows(rows, types)
+               ])
     end
   end
 end

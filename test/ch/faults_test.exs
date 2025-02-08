@@ -254,7 +254,7 @@ defmodule Ch.FaultsTest do
 
       log =
         capture_async_log(fn ->
-          {:ok, conn} = Ch.start_link(port: port, timeout: 100)
+          {:ok, conn} = Ch.start_link(port: port)
 
           # connect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -264,8 +264,8 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :timeout}} =
-                     Ch.query(conn, "select 1 + 1")
+            assert {:error, %Mint.TransportError{reason: :closed}} =
+                     Ch.query(conn, "select 1 + 1", [], timeout: 100)
           end)
 
           # failed select 1 + 1
@@ -280,7 +280,9 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
+            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
+                     Ch.query(conn, "select 1 + 1", [], timeout: 100)
+
             send(test, :done)
           end)
 
@@ -291,7 +293,10 @@ defmodule Ch.FaultsTest do
           assert_receive :done
         end)
 
-      assert log =~ "disconnected: ** (Mint.TransportError) timeout"
+      assert log =~ "disconnected: ** (DBConnection.ConnectionError)"
+
+      assert log =~
+               "timed out because it queued and checked out the connection for longer than 100ms"
     end
 
     test "reconnects after closed on response", ctx do
@@ -423,13 +428,22 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.close(mint)
 
           spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(
-                       conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       encode: false
-                     )
+            err =
+              catch_error(
+                Ch.run(conn, fn conn ->
+                  stream
+                  |> Stream.into(
+                    Ch.stream(conn, "insert into unknown_table(a,b) format RowBinary\n")
+                  )
+                  |> Stream.run()
+                end)
+              )
+
+            assert {err.__struct__, Exception.message(err)} in [
+                     {DBConnection.ConnectionError,
+                      "connection is closed because of an error, disconnect or timeout"},
+                     {Mint.TransportError, "socket closed"}
+                   ]
           end)
 
           # reconnect
@@ -440,15 +454,15 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(
-                       conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       encode: false
-                     )
-
-            assert message =~ ~r/UNKNOWN_TABLE/
+            assert_raise Ch.Error, ~r/UNKNOWN_TABLE/, fn ->
+              Ch.run(conn, fn conn ->
+                stream
+                |> Stream.into(
+                  Ch.stream(conn, "insert into unknown_table(a,b) format RowBinary\n")
+                )
+                |> Stream.run()
+              end)
+            end
 
             send(test, :done)
           end)
@@ -482,13 +496,22 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(
-                       conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       encode: false
-                     )
+            err =
+              catch_error(
+                Ch.run(conn, fn conn ->
+                  stream
+                  |> Stream.into(
+                    Ch.stream(conn, "insert into unknown_table(a,b) format RowBinary\n")
+                  )
+                  |> Stream.run()
+                end)
+              )
+
+            assert {err.__struct__, Exception.message(err)} in [
+                     {DBConnection.ConnectionError,
+                      "connection is closed because of an error, disconnect or timeout"},
+                     {Mint.TransportError, "socket closed"}
+                   ]
           end)
 
           # close after first packet from mint arrives
@@ -503,15 +526,15 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(
-                       conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       encode: false
-                     )
-
-            assert message =~ ~r/UNKNOWN_TABLE/
+            assert_raise Ch.Error, ~r/UNKNOWN_TABLE/, fn ->
+              Ch.run(conn, fn conn ->
+                stream
+                |> Stream.into(
+                  Ch.stream(conn, "insert into unknown_table(a,b) format RowBinary\n")
+                )
+                |> Stream.run()
+              end)
+            end
 
             send(test, :done)
           end)

@@ -7,7 +7,6 @@ defmodule Ch do
           | {:username, String.t()}
           | {:password, String.t()}
           | {:settings, Keyword.t()}
-          | {:timeout, timeout}
 
   @type start_option ::
           common_option
@@ -15,6 +14,7 @@ defmodule Ch do
           | {:hostname, String.t()}
           | {:port, :inet.port_number()}
           | {:transport_opts, [:gen_tcp.connect_option() | :ssl.tls_client_option()]}
+          | {:timeout, timeout}
           | DBConnection.start_option()
 
   @doc """
@@ -30,8 +30,8 @@ defmodule Ch do
     * `:username` - Username
     * `:password` - User password
     * `:settings` - Keyword list of ClickHouse settings
-    * `:timeout` - HTTP receive timeout in milliseconds
     * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
+    * `:timeout` - Connection handshake and ping timeout in milliseconds
     * [`DBConnection.start_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:start_option/0)
 
   """
@@ -56,10 +56,11 @@ defmodule Ch do
           | {:headers, [{String.t(), String.t()}]}
           | {:format, String.t()}
           | {:types, [String.t() | atom | tuple]}
-          # TODO remove
-          | {:encode, boolean}
           | {:decode, boolean}
           | DBConnection.connection_option()
+
+  @type query_param_key :: String.t() | atom
+  @type query_params :: %{query_param_key => term} | [term]
 
   @doc """
   Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
@@ -71,7 +72,6 @@ defmodule Ch do
     * `:username` - Username
     * `:password` - User password
     * `:settings` - Keyword list of settings
-    * `:timeout` - Query request timeout
     * `:command` - Command tag for the query
     * `:headers` - Custom HTTP headers for the request
     * `:format` - Custom response format for the request
@@ -79,9 +79,8 @@ defmodule Ch do
     * [`DBConnection.connection_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:connection_option/0)
 
   """
-  @spec query(DBConnection.conn(), iodata, params, [query_option]) ::
+  @spec query(DBConnection.conn(), iodata, Ch.query_params(), [query_option]) ::
           {:ok, Result.t()} | {:error, Exception.t()}
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
   def query(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
 
@@ -94,25 +93,17 @@ defmodule Ch do
   Runs a query and returns the result or raises `Ch.Error` if
   there was an error. See `query/4`.
   """
-  @spec query!(DBConnection.conn(), iodata, params, [query_option]) :: Result.t()
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
+  @spec query!(DBConnection.conn(), iodata, Ch.query_params(), [query_option]) :: Result.t()
   def query!(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     DBConnection.execute!(conn, query, params, opts)
   end
 
   @doc false
-  @spec stream(DBConnection.t(), iodata, map | [term], [query_option]) :: Ch.Stream.t()
+  @spec stream(DBConnection.t(), iodata, Ch.query_params(), [query_option]) :: Ch.Stream.t()
   def stream(conn, statement, params \\ [], opts \\ []) do
     query = Query.build(statement, opts)
     %Ch.Stream{conn: conn, query: query, params: params, opts: opts}
-  end
-
-  # TODO drop
-  @doc false
-  @spec run(DBConnection.conn(), (DBConnection.t() -> any), Keyword.t()) :: any
-  def run(conn, f, opts \\ []) when is_function(f, 1) do
-    DBConnection.run(conn, f, opts)
   end
 
   if Code.ensure_loaded?(Ecto.ParameterizedType) do

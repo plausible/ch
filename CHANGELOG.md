@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- move rows for INSERT from `params` to `statement` for more control (compression, format, query params, etc.) https://github.com/plausible/ch/pull/240
+- replace `Jason` dependency with `JSON`
+- remove Mint timeout from `Ch.query/4` https://github.com/plausible/ch/pull/241
+
 ## 0.3.1 (2025-02-08)
 
 - add column names to `%Ch.Result{}` https://github.com/plausible/ch/pull/243

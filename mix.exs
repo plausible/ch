@@ -2,13 +2,13 @@ defmodule Ch.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/plausible/ch"
-  @version "0.3.1"
+  @version "1.0.0-rc.0"
 
   def project do
     [
       app: :ch,
       version: @version,
-      elixir: "~> 1.14",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       name: "Ch",
@@ -35,7 +35,6 @@ defmodule Ch.MixProject do
     [
       {:mint, "~> 1.0"},
       {:db_connection, "~> 2.0"},
-      {:jason, "~> 1.0"},
       {:decimal, "~> 2.0"},
       {:ecto, "~> 3.12", optional: true},
       {:benchee, "~> 1.0", only: [:bench]},
