@@ -41,7 +41,8 @@ defmodule Ch.MixProject do
       {:benchee, "~> 1.0", only: [:bench]},
       {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
-      {:tz, "~> 0.28.1", only: [:test]}
+      {:tz, "~> 0.28.1", only: [:test]},
+      {:nimble_lz4, "~> 1.1", only: [:test]}
     ]
   end
 

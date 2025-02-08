@@ -3,6 +3,7 @@
 ## Unreleased
 
 - add column names to `%Ch.Result{}` https://github.com/plausible/ch/pull/243
+- move rows for INSERT from `params` to `statement` for more control (compression, format, query params, etc.)
 
 ## 0.3.0 (2025-02-03)
 
