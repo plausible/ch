@@ -185,8 +185,15 @@ defimpl DBConnection.Query, for: Ch.Query do
         %Result{num_rows: length(rows), rows: rows, command: command, headers: headers}
 
       "RowBinaryWithNamesAndTypes" ->
-        rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows()
-        %Result{num_rows: length(rows), rows: rows, command: command, headers: headers}
+        [names | rows] = data |> IO.iodata_to_binary() |> RowBinary.decode_names_and_rows()
+
+        %Result{
+          num_rows: length(rows),
+          columns: names,
+          rows: rows,
+          command: command,
+          headers: headers
+        }
 
       _other ->
         %Result{rows: data, data: data, command: command, headers: headers}
