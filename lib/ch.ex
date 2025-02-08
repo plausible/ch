@@ -14,7 +14,7 @@ defmodule Ch do
           | {:scheme, String.t()}
           | {:hostname, String.t()}
           | {:port, :inet.port_number()}
-          | {:transport_opts, :gen_tcp.connect_option()}
+          | {:transport_opts, [:gen_tcp.connect_option() | :ssl.tls_client_option()]}
           | DBConnection.start_option()
 
   @doc """
