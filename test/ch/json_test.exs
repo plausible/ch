@@ -13,13 +13,16 @@ defmodule Ch.JSONTest do
          ]}
       )
 
+    on_exit(fn ->
+      Ch.Test.sql_exec("DROP TABLE test", [], database: Ch.Test.database())
+    end)
+
     {:ok, conn: conn}
   end
 
   # https://clickhouse.com/docs/en/sql-reference/data-types/newjson#creating-json
   test "Creating JSON", %{conn: conn} do
     Ch.query!(conn, "CREATE TABLE test (json JSON) ENGINE = Memory")
-    on_exit(fn -> Ch.Test.sql_exec("DROP TABLE test") end)
 
     Ch.query!(conn, """
     INSERT INTO test VALUES
@@ -35,10 +38,8 @@ defmodule Ch.JSONTest do
            ]
   end
 
-  @tag :skip
   test "Creating JSON (explicit types and SKIP)", %{conn: conn} do
     Ch.query!(conn, "CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory")
-    on_exit(fn -> Ch.Test.sql_exec("DROP TABLE test") end)
 
     Ch.query!(conn, """
     INSERT INTO test VALUES
@@ -47,7 +48,11 @@ defmodule Ch.JSONTest do
     ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}')
     """)
 
-    assert Ch.query!(conn, "SELECT json FROM test").rows == []
+    assert Ch.query!(conn, "SELECT json FROM test").rows == [
+             [%{"a" => %{"b" => 42}, "c" => ["1", "2", "3"]}],
+             [%{"a" => %{"b" => 0}, "f" => "Hello, World!"}],
+             [%{"a" => %{"b" => 43}, "c" => ["4", "5", "6"]}]
+           ]
   end
 
   test "Creating JSON using CAST from String", %{conn: conn} do
@@ -81,6 +86,20 @@ defmodule Ch.JSONTest do
   end
 
   # https://clickhouse.com/docs/en/sql-reference/data-types/newjson#reading-json-paths-as-subcolumns
-  test "Reading JSON paths as subcolumns", %{conn: _conn} do
+  test "Reading JSON paths as subcolumns", %{conn: conn} do
+    Ch.query!(conn, "CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory")
+
+    Ch.query!(conn, """
+    INSERT INTO test VALUES
+    ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'),
+    ('{"f" : "Hello, World!", "d" : "2020-01-02"}'),
+    ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}')
+    """)
+
+    assert Ch.query!(conn, "SELECT json FROM test").rows == [
+             [%{"a" => %{"b" => 42, "g" => 42.42}, "c" => ["1", "2", "3"], "d" => "2020-01-01"}],
+             [%{"a" => %{"b" => 0}, "d" => "2020-01-02", "f" => "Hello, World!"}],
+             [%{"a" => %{"b" => 43, "g" => 43.43}, "c" => ["4", "5", "6"]}]
+           ]
   end
 end
