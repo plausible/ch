@@ -516,6 +516,7 @@ defmodule Ch.RowBinary do
               :uuid,
               :date,
               :date32,
+              :json,
               :ipv4,
               :ipv6,
               :point,
@@ -697,6 +698,20 @@ defmodule Ch.RowBinary do
   defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
   defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
+  @compile inline: [decode_json_decode_rows: 5]
+
+  for {pattern, size} <- varints do
+    defp decode_json_decode_rows(
+           <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_rows(types_rest, bin, [Jason.decode!(s) | row], rows, types)
+    end
+  end
+
   @compile inline: [decode_binary_decode_rows: 5]
 
   for {pattern, size} <- varints do
@@ -864,6 +879,9 @@ defmodule Ch.RowBinary do
       :date32 ->
         <<d::32-little-signed, bin::bytes>> = bin
         decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
+
+      :json ->
+        decode_json_decode_rows(bin, types_rest, row, rows, types)
 
       {:datetime, timezone} ->
         <<s::32-little, bin::bytes>> = bin

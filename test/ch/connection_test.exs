@@ -568,19 +568,97 @@ defmodule Ch.ConnectionTest do
               }} = Ch.query(conn, "SELECT * FROM t_uuid ORDER BY y")
     end
 
+    test "read json as string", %{conn: conn} do
+      assert Ch.query!(conn, ~s|select '{"a":42}'::JSON|, [],
+               settings: [
+                 enable_json_type: 1,
+                 output_format_binary_write_json_as_string: 1
+               ]
+             ).rows == [[%{"a" => "42"}]]
+    end
+
+    @tag :skip
+    test "read json with invalid utf8 string", %{conn: conn} do
+      assert Ch.query!(
+               conn,
+               ~s|select map('a', 42)::JSON|,
+               %{"bin" => "\x61\xF0\x80\x80\x80b"},
+               settings: [
+                 enable_json_type: 1,
+                 output_format_binary_write_json_as_string: 1
+               ]
+             ).rows == [[%{"a" => "a����b"}]]
+    end
+
+    test "write->read json as string", %{conn: conn} do
+      Ch.query!(conn, "CREATE TABLE test_write_json(json JSON) ENGINE = Memory", [],
+        settings: [
+          enable_json_type: 1
+        ]
+      )
+
+      rowbinary =
+        Ch.RowBinary.encode_rows(
+          [
+            [Jason.encode_to_iodata!(%{"a" => 42})],
+            [Jason.encode_to_iodata!(%{"b" => 10})]
+          ],
+          _types = [:string]
+        )
+
+      Ch.query!(conn, ["insert into test_write_json(json) format RowBinary\n" | rowbinary], [],
+        settings: [
+          enable_json_type: 1,
+          input_format_binary_read_json_as_string: 1
+        ]
+      )
+
+      assert Ch.query!(conn, "select json from test_write_json", [],
+               settings: [
+                 enable_json_type: 1,
+                 output_format_binary_write_json_as_string: 1
+               ]
+             ).rows ==
+               [[%{"a" => "42"}], [%{"b" => "10"}]]
+    end
+
+    # https://clickhouse.com/docs/en/sql-reference/data-types/newjson
+    # https://clickhouse.com/docs/en/integrations/data-formats/json/overview
+    # https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse
+    # https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql
+    # https://github.com/ClickHouse/ClickHouse/pull/70288
+    # https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/TypeId.h
     @tag :skip
     test "json", %{conn: conn} do
-      settings = [allow_experimental_object_type: 1]
+      settings = [enable_json_type: 1]
 
-      Ch.query!(conn, "CREATE TABLE json(o JSON) ENGINE = Memory", [], settings: settings)
+      assert Ch.query!(
+               conn,
+               ~s|select '{"a":42,"b":10}'::JSON|,
+               [],
+               settings: settings,
+               decode: false,
+               format: "RowBinary"
+             ).rows == [
+               <<2, 1, 97, 10, 42, 0, 0, 0, 0, 0, 0, 0, 1, 98, 10, 10, 0, 0, 0, 0, 0, 0, 0>>
+             ]
 
-      Ch.query!(conn, ~s|INSERT INTO json VALUES ('{"a": 1, "b": { "c": 2, "d": [1, 2, 3] }}')|)
+      # Ch.query!(conn, "CREATE TABLE test_json(json JSON) ENGINE = Memory", [], settings: settings)
 
-      assert Ch.query!(conn, "SELECT o.a, o.b.c, o.b.d[3] FROM json").rows == [[1, 2, 3]]
+      # Ch.query!(
+      #   conn,
+      #   ~s|INSERT INTO test_json VALUES ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'), ('{"f" : "Hello, World!"}'), ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}')|
+      # )
 
-      # named tuples are not supported yet
-      assert_raise ArgumentError, fn -> Ch.query!(conn, "SELECT o FROM json") end
+      # assert Ch.query!(conn, "SELECT json FROM test_json") == :asdf
+
+      # assert Ch.query!(conn, "SELECT json.a, json.b.c, json.b.d[3] FROM test_json").rows == [
+      #          [1, 2, 3]
+      #        ]
     end
+
+    # TODO variant (is there?)
+    # TODO dynamic
 
     # TODO enum16
 
