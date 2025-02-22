@@ -480,6 +480,12 @@ defmodule Ch.RowBinary do
     decode_names(rest, cols, cols, _acc = [])
   end
 
+  def decode_names_and_binary_types_rows(row_binary_with_names_and_types)
+
+  def decode_names_and_binary_types_rows(<<cols, rest::bytes>>) do
+    decode_names_then_types_binary(rest, cols, cols, _acc = [])
+  end
+
   @doc """
   Decodes [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) into rows.
 
@@ -624,6 +630,22 @@ defmodule Ch.RowBinary do
     end
   end
 
+  defp decode_names_then_types_binary(<<rest::bytes>>, 0, count, names) do
+    [:lists.reverse(names) | decode_types_binary(rest, count, _acc = [])]
+  end
+
+  for {pattern, value} <- varints do
+    defp decode_names_then_types_binary(
+           <<unquote(pattern), name::size(unquote(value))-bytes, rest::bytes>>,
+           left,
+           count,
+           acc
+         ) do
+      decode_names_then_types_binary(rest, left - 1, count, [name | acc])
+    end
+  end
+
+  # TODO
   defp decode_types(<<>>, 0, _types), do: []
 
   defp decode_types(<<rest::bytes>>, 0, types) do
@@ -641,6 +663,74 @@ defmodule Ch.RowBinary do
   end
 
   def decode_types([] = done), do: done
+
+  # TODO
+  defp decode_types_binary(<<>>, 0, _types), do: []
+
+  defp decode_types_binary(<<rest::bytes>>, 0, types) do
+    types = :lists.reverse(types)
+    decode_rows(types, rest, _row = [], _rows = [], types)
+  end
+
+  # https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding
+
+  binary_types = [
+    {:nothing, 0x00},
+    {:u8, 0x01},
+    {:u16, 0x02},
+    {:u32, 0x03},
+    {:u64, 0x04},
+    {:u128, 0x05},
+    {:u256, 0x06},
+    {:i8, 0x07},
+    {:i16, 0x08},
+    {:i32, 0x09},
+    {:i64, 0x0A},
+    {:i128, 0x0B},
+    {:i256, 0x0C},
+    {:f32, 0x0D},
+    {:f64, 0x0E},
+    {:date, 0x0F},
+    {:date32, 0x10},
+    {:datetime, 0x11},
+    # TODO DateTime(time_zone)
+    # TODO DateTime64(P)
+    # TODO DateTime64(P, time_zone)
+    {:string, 0x15},
+    # TODO FixedString(N)
+    # TODO Enum8
+    # TODO Enum16
+    # TODO Decimal32(P, S)
+    # TODO Decimal64(P, S)
+    # TODO Decimal128(P, S)
+    # TODO Decimal256(P, S)
+    {:uuid, 0x1D},
+    # TODO Array(T)
+    # TODO Tuple(T1, ..., TN)
+    # TODO Tuple(name1 T1, ..., nameN TN)
+    {:set, 0x21},
+    # TODO Interval
+    # TODO Nullable(T)
+    # TODO Function
+    # TODO AggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)
+    # TODO LowCardinality(T)
+    # TODO Map(K, V)
+    {:ipv4, 0x28},
+    {:ipv6, 0x29},
+    # TODO Variant(T1, ..., TN)
+    # TODO Dynamic(max_types=N)
+    # TODO Custom type (Ring, Polygon, etc)
+    {:boolean, 0x2D}
+    # TODO SimpleAggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)
+    # TODO Nested(name1 T1, ..., nameN TN)
+    # TODO JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)
+  ]
+
+  for {name, code} <- binary_types do
+    defp decode_types_binary(<<unquote(code), rest::bytes>>, count, types) do
+      decode_types_binary(rest, count - 1, [unquote(name) | types])
+    end
+  end
 
   @compile inline: [decode_string_decode_rows: 5]
 

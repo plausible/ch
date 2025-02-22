@@ -1,8 +1,14 @@
 defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
-  defstruct [:statement, :command, :encode, :decode]
+  defstruct [:statement, :command, :encode, :decode, :settings]
 
-  @type t :: %__MODULE__{statement: iodata, command: command, encode: boolean, decode: boolean}
+  @type t :: %__MODULE__{
+          statement: iodata,
+          command: command,
+          encode: boolean,
+          decode: boolean,
+          settings: Keyword.t()
+        }
 
   @doc false
   @spec build(iodata, [Ch.query_option()]) :: t
@@ -10,7 +16,15 @@ defmodule Ch.Query do
     command = Keyword.get(opts, :command) || extract_command(statement)
     encode = Keyword.get(opts, :encode, true)
     decode = Keyword.get(opts, :decode, true)
-    %__MODULE__{statement: statement, command: command, encode: encode, decode: decode}
+    settings = Keyword.get(opts, :settings, [])
+
+    %__MODULE__{
+      statement: statement,
+      command: command,
+      encode: encode,
+      decode: decode,
+      settings: settings
+    }
   end
 
   statements = [
@@ -174,7 +188,8 @@ defimpl DBConnection.Query, for: Ch.Query do
     %Result{rows: data, data: data, command: command, headers: headers}
   end
 
-  def decode(%Query{command: command}, responses, opts) when is_list(responses) do
+  def decode(%Query{command: command, settings: settings}, responses, opts)
+      when is_list(responses) do
     # TODO potentially fails on x-progress-headers
     [_status, headers | data] = responses
 
@@ -185,7 +200,15 @@ defimpl DBConnection.Query, for: Ch.Query do
         %Result{num_rows: length(rows), rows: rows, command: command, headers: headers}
 
       "RowBinaryWithNamesAndTypes" ->
-        [names | rows] = data |> IO.iodata_to_binary() |> RowBinary.decode_names_and_rows()
+        binary_types? =
+          Keyword.get(settings, :output_format_binary_encode_types_in_binary_format) in [true, 1]
+
+        [names | rows] =
+          if binary_types? do
+            data |> IO.iodata_to_binary() |> RowBinary.decode_names_and_binary_types_rows()
+          else
+            data |> IO.iodata_to_binary() |> RowBinary.decode_names_and_rows()
+          end
 
         %Result{
           num_rows: length(rows),
