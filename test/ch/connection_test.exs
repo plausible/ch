@@ -583,9 +583,26 @@ defmodule Ch.ConnectionTest do
     end
 
     test "json as string", %{conn: conn} do
+      # after v25 ClickHouse started rendering numbers in JSON as strings
+      [[version]] = Ch.query!(conn, "select version()").rows
+      numbers_as_strings? = version >= "25"
+
+      [expected1, expected2] =
+        if numbers_as_strings? do
+          [
+            [[~s|{"answer":"42"}|]],
+            [[~s|{"a":"42"}|], [~s|{"b":"10"}|]]
+          ]
+        else
+          [
+            [[~s|{"answer":42}|]],
+            [[~s|{"a":"42"}|], [~s|{"b":"10"}|]]
+          ]
+        end
+
       assert Ch.query!(conn, ~s|select '{"answer":42}'::JSON::String|, [],
                settings: [enable_json_type: 1]
-             ).rows == [[~s|{"answer":"42"}|]]
+             ).rows == expected1
 
       Ch.query!(conn, "CREATE TABLE test_json_as_string(json JSON) ENGINE = Memory", [],
         settings: [enable_json_type: 1]
@@ -604,8 +621,7 @@ defmodule Ch.ConnectionTest do
 
       assert Ch.query!(conn, "select json::String from test_json_as_string", [],
                settings: [enable_json_type: 1]
-             ).rows ==
-               [[~s|{"a":"42"}|], [~s|{"b":"10"}|]]
+             ).rows == expected2
     end
 
     # TODO enum16
