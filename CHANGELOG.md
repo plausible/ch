@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2 (2025-02-25)
 
 - fix type decoding when type name exceeds 127 bytes https://github.com/plausible/ch/pull/248
 
