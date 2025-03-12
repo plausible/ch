@@ -395,7 +395,7 @@ defmodule Ch.Connection do
   # reconnect once. If the re-connect failed, return the old
   # connection and let the error bubble up to the caller.
   defp maybe_reconnect(conn) do
-    if HTTP.open?(conn) do
+    if HTTP.open?(conn) and internal_open?(conn.socket) do
       conn
     else
       opts = HTTP.get_private(conn, :connect_options)
@@ -409,6 +409,25 @@ defmodule Ch.Connection do
       else
         _ -> conn
       end
+    end
+  end
+
+  require Record
+  Record.defrecordp(:sslsocket, Record.extract(:sslsocket, from_lib: "ssl/src/ssl_api.hrl"))
+
+  @spec internal_open?(:gen_tcp.socket() | :ssl.sslsocket()) :: boolean
+  defp internal_open?(socket) do
+    peername_result =
+      case socket do
+        # plain
+        _ when is_port(socket) -> :inet.peername(socket)
+        # ssl
+        sslsocket() -> :ssl.peername(socket)
+      end
+
+    case peername_result do
+      {:ok, {_host, _port}} -> true
+      {:error, reason} when reason in [:einval, :enotconn] -> false
     end
   end
 
