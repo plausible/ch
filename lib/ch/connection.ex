@@ -415,6 +415,7 @@ defmodule Ch.Connection do
   require Record
   Record.defrecordp(:sslsocket, Record.extract(:sslsocket, from_lib: "ssl/src/ssl_api.hrl"))
 
+  # TODO :socket
   @spec internal_open?(:gen_tcp.socket() | :ssl.sslsocket()) :: boolean
   defp internal_open?(socket) do
     peername_result =
