@@ -8,7 +8,13 @@ defmodule Ch.JSONTest do
       Ch.Test.sql_exec("DROP TABLE test", [], database: Ch.Test.database())
     end)
 
-    {:ok, conn: conn}
+    [[ch_version]] = Ch.query!(conn, "select version()").rows
+
+    if ch_version < "25" do
+      {:ok, skip: true}
+    else
+      {:ok, conn: conn}
+    end
   end
 
   # https://clickhouse.com/docs/en/sql-reference/data-types/newjson#creating-json
