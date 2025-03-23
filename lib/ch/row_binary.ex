@@ -42,8 +42,11 @@ defmodule Ch.RowBinary do
       [3, [5 | "hello"]]
 
   """
-  def encode_row(row, types) do
-    _encode_row(row, encoding_types(types))
+  @spec encode_row([term], [type], [Ch.query_option()]) :: iodata
+        when type: String.t() | atom | tuple
+  def encode_row(row, types, opts \\ []) do
+    # opts here are the same opts that are passed to Ch.query/4 in the last argument
+    _encode_row(row, encoding_types(types, opts))
   end
 
   defp _encode_row([el | els], [type | types]), do: [encode(type, el) | _encode_row(els, types)]
@@ -64,8 +67,11 @@ defmodule Ch.RowBinary do
       [3, [5 | "hello"], 4, [2 | "hi"]]
 
   """
-  def encode_rows(rows, types) do
-    _encode_rows(rows, encoding_types(types))
+  @spec encode_rows([row], [type], [Ch.query_option()]) :: iodata
+        when row: [term], type: String.t() | atom | tuple
+  def encode_rows(rows, types, opts \\ []) do
+    # `opts` here is what's passed to `Ch.query/4` in the last argument
+    _encode_rows(rows, encoding_types(types, opts))
   end
 
   @doc false
@@ -79,17 +85,17 @@ defmodule Ch.RowBinary do
   defp _encode_rows([], [], rows, types), do: _encode_rows(rows, types)
 
   @doc false
-  def encoding_types([type | types]) do
-    [encoding_type(type) | encoding_types(types)]
+  def encoding_types([type | types], opts) do
+    [encoding_type(type, opts) | encoding_types(types, opts)]
   end
 
-  def encoding_types([] = done), do: done
+  def encoding_types([] = done, _opts), do: done
 
-  defp encoding_type(type) when is_binary(type) do
-    encoding_type(Ch.Types.decode(type))
+  defp encoding_type(type, opts) when is_binary(type) do
+    encoding_type(Ch.Types.decode(type), opts)
   end
 
-  defp encoding_type(t)
+  defp encoding_type(t, _opts)
        when t in [
               :string,
               :binary,
@@ -105,37 +111,37 @@ defmodule Ch.RowBinary do
             ],
        do: t
 
-  defp encoding_type({:datetime = d, "UTC"}), do: d
+  defp encoding_type({:datetime = d, "UTC"}, _opts), do: d
 
-  defp encoding_type({:datetime, tz}) do
+  defp encoding_type({:datetime, tz}, _opts) do
     raise ArgumentError, "can't encode DateTime with non-UTC timezone: #{inspect(tz)}"
   end
 
-  defp encoding_type({:fixed_string, _len} = t), do: t
+  defp encoding_type({:fixed_string, _len} = t, _opts), do: t
 
   for size <- [8, 16, 32, 64, 128, 256] do
-    defp encoding_type(unquote(:"u#{size}") = u), do: u
-    defp encoding_type(unquote(:"i#{size}") = i), do: i
+    defp encoding_type(unquote(:"u#{size}") = u, _opts), do: u
+    defp encoding_type(unquote(:"i#{size}") = i, _opts), do: i
   end
 
   for size <- [32, 64] do
-    defp encoding_type(unquote(:"f#{size}") = f), do: f
+    defp encoding_type(unquote(:"f#{size}") = f, _opts), do: f
   end
 
-  defp encoding_type({:array = a, t}), do: {a, encoding_type(t)}
+  defp encoding_type({:array = a, t}, opts), do: {a, encoding_type(t, opts)}
 
-  defp encoding_type({:tuple = t, ts}) do
-    {t, Enum.map(ts, &encoding_type/1)}
+  defp encoding_type({:tuple = t, ts}, opts) do
+    {t, Enum.map(ts, fn t -> encoding_type(t, opts) end)}
   end
 
-  defp encoding_type({:map = m, kt, vt}) do
-    {m, encoding_type(kt), encoding_type(vt)}
+  defp encoding_type({:map = m, kt, vt}, opts) do
+    {m, encoding_type(kt, opts), encoding_type(vt, opts)}
   end
 
-  defp encoding_type({:nullable = n, t}), do: {n, encoding_type(t)}
-  defp encoding_type({:low_cardinality, t}), do: encoding_type(t)
+  defp encoding_type({:nullable = n, t}, opts), do: {n, encoding_type(t, opts)}
+  defp encoding_type({:low_cardinality, t}, opts), do: encoding_type(t, opts)
 
-  defp encoding_type({:decimal, p, s}) do
+  defp encoding_type({:decimal, p, s}, _opts) do
     case decimal_size(p) do
       32 -> {:decimal32, s}
       64 -> {:decimal64, s}
@@ -144,29 +150,55 @@ defmodule Ch.RowBinary do
     end
   end
 
-  defp encoding_type({d, _scale} = t)
+  defp encoding_type({d, _scale} = t, _opts)
        when d in [:decimal32, :decimal64, :decimal128, :decimal256],
        do: t
 
-  defp encoding_type({:datetime64 = t, p}), do: {t, time_unit(p)}
+  defp encoding_type({:datetime64 = t, p}, _opts), do: {t, time_unit(p)}
 
-  defp encoding_type({:datetime64 = t, p, "UTC"}), do: {t, time_unit(p)}
+  defp encoding_type({:datetime64 = t, p, "UTC"}, _opts), do: {t, time_unit(p)}
 
-  defp encoding_type({:datetime64, _, tz}) do
+  defp encoding_type({:datetime64, _, tz}, _opts) do
     raise ArgumentError, "can't encode DateTime64 with non-UTC timezone: #{inspect(tz)}"
   end
 
-  defp encoding_type({e, mappings}) when e in [:enum8, :enum16] do
+  defp encoding_type({e, mappings}, _opts) when e in [:enum8, :enum16] do
     {e, Map.new(mappings)}
   end
 
-  defp encoding_type({:simple_aggregate_function, _f, t}), do: encoding_type(t)
+  defp encoding_type({:simple_aggregate_function, _f, t}, opts), do: encoding_type(t, opts)
 
-  defp encoding_type(:ring), do: {:array, :point}
-  defp encoding_type(:polygon), do: {:array, {:array, :point}}
-  defp encoding_type(:multipolygon), do: {:array, {:array, {:array, :point}}}
+  defp encoding_type(:ring, _opts), do: {:array, :point}
+  defp encoding_type(:polygon, _opts), do: {:array, {:array, :point}}
+  defp encoding_type(:multipolygon, _opts), do: {:array, {:array, {:array, :point}}}
 
-  defp encoding_type(type) do
+  defp encoding_type(:json, opts) do
+    json_as_string = get_in(opts, [:settings, :input_format_binary_read_json_as_string])
+    json_as_string = with 0 <- json_as_string, do: false
+
+    if json_as_string do
+      :string_json
+    else
+      raise ArgumentError, """
+      Native JSON encoding is not yet supported, please use :input_format_binary_read_json_as_string setting to encode JSON as string.
+
+      Example:
+
+          Ch.query(
+            conn,
+            "insert into test(json) format RowBinary",
+            [%{"a" => 42}],
+            settings: [
+              enable_json_type: 1,
+              input_format_binary_read_json_as_string: 1
+            ]
+          )
+
+      """
+    end
+  end
+
+  defp encoding_type(type, _opts) do
     raise ArgumentError, "unsupported type for encoding: #{inspect(type)}"
   end
 
@@ -182,6 +214,10 @@ defmodule Ch.RowBinary do
       _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
       nil -> 0
     end
+  end
+
+  def encode(:string_json, json) do
+    encode(:string, Jason.encode_to_iodata!(json))
   end
 
   def encode({:fixed_string, size}, str) when byte_size(str) == size do
@@ -292,7 +328,9 @@ defmodule Ch.RowBinary do
   end
 
   def encode({:tuple, types}, values) when is_list(types) and is_list(values) do
-    encode_row(values, types)
+    # it's OK to pass empty `opts` since they are currently only used for `decoding_types`
+    # and `types` here have already been pre-processed
+    encode_row(values, types, _no_opts_needed = [])
   end
 
   def encode({:tuple, types}, nil) when is_list(types) do
@@ -461,6 +499,7 @@ defmodule Ch.RowBinary do
       [[2]]
 
   """
+  @deprecated "Use `decode_names_and_rows/2` instead"
   def decode_rows(row_binary_with_names_and_types)
   def decode_rows(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
   def decode_rows(<<>>), do: []
@@ -470,14 +509,16 @@ defmodule Ch.RowBinary do
 
   Example:
 
-      iex> decode_names_and_rows(<<1, 3, "1+1"::bytes, 5, "UInt8"::bytes, 2>>)
+      iex> decode_names_and_rows(<<1, 3, "1+1"::bytes, 5, "UInt8"::bytes, 2>>, _opts = [])
       [["1+1"], [2]]
 
   """
-  def decode_names_and_rows(row_binary_with_names_and_types)
+  @spec decode_names_and_rows(binary, [Ch.query_option()]) :: [row]
+        when row: [term]
+  def decode_names_and_rows(row_binary_with_names_and_types, opts \\ [])
 
-  def decode_names_and_rows(<<cols, rest::bytes>>) do
-    decode_names(rest, cols, cols, _acc = [])
+  def decode_names_and_rows(<<cols, rest::bytes>>, opts) do
+    decode_names(rest, cols, cols, _acc = [], opts)
   end
 
   @doc """
@@ -489,26 +530,28 @@ defmodule Ch.RowBinary do
       [[1]]
 
   """
-  def decode_rows(row_binary, types)
-  def decode_rows(<<>>, _types), do: []
+  @spec decode_rows(binary, [type], [Ch.query_option()]) :: [row]
+        when row: [term], type: String.t() | atom | tuple
+  def decode_rows(row_binary, types, opts \\ [])
+  def decode_rows(<<>>, _types, _opts), do: []
 
-  def decode_rows(<<data::bytes>>, types) do
-    types = decoding_types(types)
-    decode_rows(types, data, [], [], types)
+  def decode_rows(<<data::bytes>>, types, opts) do
+    types = decoding_types(types, opts)
+    decode_rows(types, data, _row = [], _rows = [], types)
   end
 
   @doc false
-  def decoding_types([type | types]) do
-    [decoding_type(type) | types]
+  def decoding_types([type | types], opts) do
+    [decoding_type(type, opts) | decoding_types(types, opts)]
   end
 
-  def decoding_types([] = done), do: done
+  def decoding_types([] = done, _opts), do: done
 
-  defp decoding_type(t) when is_binary(t) do
-    decoding_type(Ch.Types.decode(t))
+  defp decoding_type(t, opts) when is_binary(t) do
+    decoding_type(Ch.Types.decode(t), opts)
   end
 
-  defp decoding_type(t)
+  defp decoding_type(t, _opts)
        when t in [
               :string,
               :binary,
@@ -516,7 +559,6 @@ defmodule Ch.RowBinary do
               :uuid,
               :date,
               :date32,
-              :json,
               :ipv4,
               :ipv6,
               :point,
@@ -524,53 +566,79 @@ defmodule Ch.RowBinary do
             ],
        do: t
 
-  defp decoding_type({:datetime, _tz} = t), do: t
-  defp decoding_type({:fixed_string, _len} = t), do: t
+  defp decoding_type({:datetime, _tz} = t, _opts), do: t
+  defp decoding_type({:fixed_string, _len} = t, _opts), do: t
 
   for size <- [8, 16, 32, 64, 128, 256] do
-    defp decoding_type(unquote(:"u#{size}") = u), do: u
-    defp decoding_type(unquote(:"i#{size}") = i), do: i
+    defp decoding_type(unquote(:"u#{size}") = u, _opts), do: u
+    defp decoding_type(unquote(:"i#{size}") = i, _opts), do: i
   end
 
   for size <- [32, 64] do
-    defp decoding_type(unquote(:"f#{size}") = f), do: f
+    defp decoding_type(unquote(:"f#{size}") = f, _opts), do: f
   end
 
-  defp decoding_type(:datetime = t), do: {t, _tz = nil}
+  defp decoding_type(:datetime = t, _opts), do: {t, _tz = nil}
 
-  defp decoding_type({:array = a, t}), do: {a, decoding_type(t)}
+  defp decoding_type({:array = a, t}, opts), do: {a, decoding_type(t, opts)}
 
-  defp decoding_type({:tuple = t, ts}) do
-    {t, Enum.map(ts, &decoding_type/1)}
+  defp decoding_type({:tuple = t, ts}, opts) do
+    {t, Enum.map(ts, fn t -> decoding_type(t, opts) end)}
   end
 
-  defp decoding_type({:map = m, kt, vt}) do
-    {m, decoding_type(kt), decoding_type(vt)}
+  defp decoding_type({:map = m, kt, vt}, opts) do
+    {m, decoding_type(kt, opts), decoding_type(vt, opts)}
   end
 
-  defp decoding_type({:nullable = n, t}), do: {n, decoding_type(t)}
-  defp decoding_type({:low_cardinality, t}), do: decoding_type(t)
+  defp decoding_type({:nullable = n, t}, opts), do: {n, decoding_type(t, opts)}
+  defp decoding_type({:low_cardinality, t}, opts), do: decoding_type(t, opts)
 
-  defp decoding_type({:decimal = t, p, s}), do: {t, decimal_size(p), s}
-  defp decoding_type({:decimal32, s}), do: {:decimal, 32, s}
-  defp decoding_type({:decimal64, s}), do: {:decimal, 64, s}
-  defp decoding_type({:decimal128, s}), do: {:decimal, 128, s}
-  defp decoding_type({:decimal256, s}), do: {:decimal, 256, s}
+  defp decoding_type({:decimal = t, p, s}, _opts), do: {t, decimal_size(p), s}
+  defp decoding_type({:decimal32, s}, _opts), do: {:decimal, 32, s}
+  defp decoding_type({:decimal64, s}, _opts), do: {:decimal, 64, s}
+  defp decoding_type({:decimal128, s}, _opts), do: {:decimal, 128, s}
+  defp decoding_type({:decimal256, s}, _opts), do: {:decimal, 256, s}
 
-  defp decoding_type({:datetime64 = t, p}), do: {t, time_unit(p), _tz = nil}
-  defp decoding_type({:datetime64 = t, p, tz}), do: {t, time_unit(p), tz}
+  defp decoding_type({:datetime64 = t, p}, _opts), do: {t, time_unit(p), _tz = nil}
+  defp decoding_type({:datetime64 = t, p, tz}, _opts), do: {t, time_unit(p), tz}
 
-  defp decoding_type({e, mappings}) when e in [:enum8, :enum16] do
+  defp decoding_type({e, mappings}, _opts) when e in [:enum8, :enum16] do
     {e, Map.new(mappings, fn {k, v} -> {v, k} end)}
   end
 
-  defp decoding_type({:simple_aggregate_function, _f, t}), do: decoding_type(t)
+  defp decoding_type({:simple_aggregate_function, _f, t}, opts), do: decoding_type(t, opts)
 
-  defp decoding_type(:ring), do: {:array, :point}
-  defp decoding_type(:polygon), do: {:array, {:array, :point}}
-  defp decoding_type(:multipolygon), do: {:array, {:array, {:array, :point}}}
+  defp decoding_type(:ring, _opts), do: {:array, :point}
+  defp decoding_type(:polygon, _opts), do: {:array, {:array, :point}}
+  defp decoding_type(:multipolygon, _opts), do: {:array, {:array, {:array, :point}}}
 
-  defp decoding_type(type) do
+  defp decoding_type(:json, opts) do
+    json_as_string = get_in(opts, [:settings, :output_format_binary_write_json_as_string])
+    json_as_string = with 0 <- json_as_string, do: false
+
+    if json_as_string do
+      :string_json
+    else
+      raise ArgumentError, """
+      Native JSON decoding is not yet supported, please use :output_format_binary_write_json_as_string setting to decode JSON as string.
+
+      Example:
+
+          Ch.query(
+            conn,
+            "select json from test",
+            _params = [],
+            settings: [
+              enable_json_type: 1,
+              output_format_binary_write_json_as_string: 1
+            ]
+          )
+
+      """
+    end
+  end
+
+  defp decoding_type(type, _opts) do
     raise ArgumentError, "unsupported type for decoding: #{inspect(type)}"
   end
 
@@ -602,7 +670,7 @@ defmodule Ch.RowBinary do
      end}
   ]
 
-  defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
+  defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [], _opts = [])
 
   for {pattern, value} <- varints do
     defp skip_names(<<unquote(pattern), _::size(unquote(value))-bytes, rest::bytes>>, left, count) do
@@ -610,8 +678,8 @@ defmodule Ch.RowBinary do
     end
   end
 
-  defp decode_names(<<rest::bytes>>, 0, count, names) do
-    [:lists.reverse(names) | decode_types(rest, count, _acc = [])]
+  defp decode_names(<<rest::bytes>>, 0, count, names, opts) do
+    [:lists.reverse(names) | decode_types(rest, count, _acc = [], opts)]
   end
 
   for {pattern, value} <- varints do
@@ -619,16 +687,17 @@ defmodule Ch.RowBinary do
            <<unquote(pattern), name::size(unquote(value))-bytes, rest::bytes>>,
            left,
            count,
-           acc
+           acc,
+           opts
          ) do
-      decode_names(rest, left - 1, count, [name | acc])
+      decode_names(rest, left - 1, count, [name | acc], opts)
     end
   end
 
-  defp decode_types(<<>>, 0, _types), do: []
+  defp decode_types(<<>>, 0, _types, _opts), do: []
 
-  defp decode_types(<<rest::bytes>>, 0, types) do
-    types = types |> decode_types() |> :lists.reverse()
+  defp decode_types(<<rest::bytes>>, 0, types, opts) do
+    types = types |> decode_types(opts) |> :lists.reverse()
     decode_rows(types, rest, _row = [], _rows = [], types)
   end
 
@@ -636,18 +705,19 @@ defmodule Ch.RowBinary do
     defp decode_types(
            <<unquote(pattern), type::size(unquote(value))-bytes, rest::bytes>>,
            count,
-           acc
+           acc,
+           opts
          ) do
-      decode_types(rest, count - 1, [type | acc])
+      decode_types(rest, count - 1, [type | acc], opts)
     end
   end
 
   @doc false
-  def decode_types([type | types]) do
-    [decoding_type(Ch.Types.decode(type)) | decode_types(types)]
+  def decode_types([type | types], opts) do
+    [decoding_type(Ch.Types.decode(type), opts) | decode_types(types, opts)]
   end
 
-  def decode_types([] = done), do: done
+  def decode_types([] = done, _opts), do: done
 
   @compile inline: [decode_string_decode_rows: 5]
 
@@ -704,10 +774,10 @@ defmodule Ch.RowBinary do
   defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
   defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
-  @compile inline: [decode_json_decode_rows: 5]
+  @compile inline: [decode_string_json_decode_rows: 5]
 
   for {pattern, size} <- varints do
-    defp decode_json_decode_rows(
+    defp decode_string_json_decode_rows(
            <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
            types_rest,
            row,
@@ -886,8 +956,8 @@ defmodule Ch.RowBinary do
         <<d::32-little-signed, bin::bytes>> = bin
         decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
 
-      :json ->
-        decode_json_decode_rows(bin, types_rest, row, rows, types)
+      :string_json ->
+        decode_string_json_decode_rows(bin, types_rest, row, rows, types)
 
       {:datetime, timezone} ->
         <<s::32-little, bin::bytes>> = bin

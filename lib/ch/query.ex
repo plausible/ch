@@ -114,12 +114,12 @@ defimpl DBConnection.Query, for: Ch.Query do
       names = Keyword.get(opts, :names) ->
         types = Keyword.fetch!(opts, :types)
         header = RowBinary.encode_names_and_types(names, types)
-        data = RowBinary.encode_rows(params, types)
+        data = RowBinary.encode_rows(params, types, opts)
         {_query_params = [], headers(opts), [statement, ?\n, header | data]}
 
       format_row_binary?(statement) ->
         types = Keyword.fetch!(opts, :types)
-        data = RowBinary.encode_rows(params, types)
+        data = RowBinary.encode_rows(params, types, opts)
         {_query_params = [], headers(opts), [statement, ?\n | data]}
 
       true ->
@@ -181,11 +181,11 @@ defimpl DBConnection.Query, for: Ch.Query do
     case get_header(headers, "x-clickhouse-format") do
       "RowBinary" ->
         types = Keyword.fetch!(opts, :types)
-        rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows(types)
+        rows = data |> IO.iodata_to_binary() |> RowBinary.decode_rows(types, opts)
         %Result{num_rows: length(rows), rows: rows, command: command, headers: headers}
 
       "RowBinaryWithNamesAndTypes" ->
-        [names | rows] = data |> IO.iodata_to_binary() |> RowBinary.decode_names_and_rows()
+        [names | rows] = data |> IO.iodata_to_binary() |> RowBinary.decode_names_and_rows(opts)
 
         %Result{
           num_rows: length(rows),
