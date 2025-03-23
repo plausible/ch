@@ -1,6 +1,8 @@
 defmodule Ch.JSONTest do
   use ExUnit.Case
 
+  @moduletag :json
+
   setup do
     conn = start_supervised!({Ch, database: Ch.Test.database(), settings: [enable_json_type: 1]})
 
@@ -8,13 +10,7 @@ defmodule Ch.JSONTest do
       Ch.Test.sql_exec("DROP TABLE test", [], database: Ch.Test.database())
     end)
 
-    [[ch_version]] = Ch.query!(conn, "select version()").rows
-
-    if ch_version < "25" do
-      {:ok, skip: true}
-    else
-      {:ok, conn: conn}
-    end
+    {:ok, conn: conn}
   end
 
   # https://clickhouse.com/docs/en/sql-reference/data-types/newjson#creating-json
