@@ -212,7 +212,6 @@ defmodule Ch.RowBinaryTest do
         {"Decimal(23, 11)", {:decimal, _size = 128, _scale = 11}},
         {"Bool", :boolean},
         {"String", :string},
-        {"JSON", :json},
         {"FixedString(2)", {:fixed_string, _size = 2}},
         {"FixedString(22)", {:fixed_string, _size = 22}},
         {"FixedString(222)", {:fixed_string, _size = 222}},
@@ -251,6 +250,17 @@ defmodule Ch.RowBinaryTest do
 
     test "preserves order" do
       assert decode_types(["UInt8", "UInt16"], _opts = []) == [:u8, :u16]
+    end
+
+    test "JSON raises without options" do
+      assert_raise ArgumentError,
+                   ~r/Native JSON decoding is not yet supported/,
+                   fn -> decode_types(["JSON"], _opts = []) end
+    end
+
+    test "JSON becomes string_json with options" do
+      opts = [settings: [output_format_binary_write_json_as_string: 1]]
+      assert decode_types(["JSON"], opts) == [:string_json]
     end
   end
 
