@@ -632,8 +632,14 @@ defmodule Ch.RowBinary do
     decode_rows(types, rest, _row = [], _rows = [], types)
   end
 
-  defp decode_types(<<size, type::size(size)-bytes, rest::bytes>>, count, acc) do
-    decode_types(rest, count - 1, [type | acc])
+  for {pattern, value} <- varints do
+    defp decode_types(
+           <<unquote(pattern), type::size(unquote(value))-bytes, rest::bytes>>,
+           count,
+           acc
+         ) do
+      decode_types(rest, count - 1, [type | acc])
+    end
   end
 
   @doc false

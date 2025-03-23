@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2 (2025-02-25)
+
+- fix type decoding when type name exceeds 127 bytes https://github.com/plausible/ch/pull/248
+
 ## 0.3.1 (2025-02-08)
 
 - add column names to `%Ch.Result{}` https://github.com/plausible/ch/pull/243
