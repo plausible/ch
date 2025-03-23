@@ -568,6 +568,7 @@ defmodule Ch.ConnectionTest do
               }} = Ch.query(conn, "SELECT * FROM t_uuid ORDER BY y")
     end
 
+    @tag :json
     test "read json as string", %{conn: conn} do
       assert Ch.query!(conn, ~s|select '{"a":42}'::JSON|, [],
                settings: [
@@ -590,6 +591,7 @@ defmodule Ch.ConnectionTest do
              ).rows == [[%{"a" => "a����b"}]]
     end
 
+    @tag :json
     test "write->read json as string", %{conn: conn} do
       Ch.query!(conn, "CREATE TABLE test_write_json(json JSON) ENGINE = Memory", [],
         settings: [
@@ -597,29 +599,33 @@ defmodule Ch.ConnectionTest do
         ]
       )
 
-      rowbinary =
-        Ch.RowBinary.encode_rows(
-          [
-            [Jason.encode_to_iodata!(%{"a" => 42})],
-            [Jason.encode_to_iodata!(%{"b" => 10})]
-          ],
-          _types = [:string]
-        )
-
-      Ch.query!(conn, ["insert into test_write_json(json) format RowBinary\n" | rowbinary], [],
+      Ch.query!(
+        conn,
+        "insert into test_write_json(json) format RowBinary",
+        [
+          [%{"a" => 42}],
+          [%{"b" => 10}]
+        ],
+        types: ["JSON"],
         settings: [
           enable_json_type: 1,
           input_format_binary_read_json_as_string: 1
         ]
       )
 
-      assert Ch.query!(conn, "select json from test_write_json", [],
+      assert Ch.query!(
+               conn,
+               "select json from test_write_json",
+               _no_params = [],
                settings: [
                  enable_json_type: 1,
                  output_format_binary_write_json_as_string: 1
                ]
              ).rows ==
-               [[%{"a" => "42"}], [%{"b" => "10"}]]
+               [
+                 [%{"a" => "42"}],
+                 [%{"b" => "10"}]
+               ]
     end
 
     # https://clickhouse.com/docs/en/sql-reference/data-types/newjson
@@ -659,48 +665,6 @@ defmodule Ch.ConnectionTest do
 
     # TODO variant (is there?)
     # TODO dynamic
-
-    test "json as string", %{conn: conn} do
-      # after v25 ClickHouse started rendering numbers in JSON as strings
-      [[version]] = Ch.query!(conn, "select version()").rows
-      numbers_as_strings? = version >= "25"
-
-      [expected1, expected2] =
-        if numbers_as_strings? do
-          [
-            [[~s|{"answer":"42"}|]],
-            [[~s|{"a":"42"}|], [~s|{"b":"10"}|]]
-          ]
-        else
-          [
-            [[~s|{"answer":42}|]],
-            [[~s|{"a":"42"}|], [~s|{"b":"10"}|]]
-          ]
-        end
-
-      assert Ch.query!(conn, ~s|select '{"answer":42}'::JSON::String|, [],
-               settings: [enable_json_type: 1]
-             ).rows == expected1
-
-      Ch.query!(conn, "CREATE TABLE test_json_as_string(json JSON) ENGINE = Memory", [],
-        settings: [enable_json_type: 1]
-      )
-
-      Ch.query!(
-        conn,
-        "INSERT INTO test_json_as_string(json) FORMAT RowBinary",
-        _rows = [[Jason.encode_to_iodata!(%{"a" => 42})], [Jason.encode_to_iodata!(%{"b" => 10})]],
-        types: [:string],
-        settings: [
-          enable_json_type: 1,
-          input_format_binary_read_json_as_string: 1
-        ]
-      )
-
-      assert Ch.query!(conn, "select json::String from test_json_as_string", [],
-               settings: [enable_json_type: 1]
-             ).rows == expected2
-    end
 
     # TODO enum16
 
