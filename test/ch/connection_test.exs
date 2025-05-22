@@ -215,6 +215,12 @@ defmodule Ch.ConnectionTest do
              Ch.query(conn, "show settings like 'async_insert'", [], settings: [async_insert: 0])
   end
 
+  # https://github.com/plausible/ch/issues/250
+  test "topk", %{conn: conn} do
+    assert Ch.query!(conn, "select topK({$0:Int64})(n.number) FROM numbers(1000) AS n", [10]).rows ==
+             [[[896, 897, 898, 899, 900, 901, 902, 903, 904, 905]]]
+  end
+
   test "create", %{conn: conn} do
     assert {:ok, %{command: :create, num_rows: nil, rows: [], data: []}} =
              Ch.query(conn, "create table create_example(a UInt8) engine = Memory")
