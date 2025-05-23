@@ -219,6 +219,40 @@ defmodule Ch.ConnectionTest do
   test "topk", %{conn: conn} do
     assert Ch.query!(conn, "select topK({$0:Int64})(n.number) FROM numbers(1000) AS n", [10]).rows ==
              [[[896, 897, 898, 899, 900, 901, 902, 903, 904, 905]]]
+
+    Ch.query!(conn, """
+    CREATE TABLE topk_events_web_d(
+      part_dt Date,
+      cart_price Int32
+    ) ENGINE = MergeTree() ORDER BY (part_dt)
+    """)
+
+    on_exit(fn ->
+      Ch.Test.sql_exec("DROP TABLE topk_events_web_d")
+    end)
+
+    Ch.query!(
+      conn,
+      """
+      INSERT INTO topk_events_web_d VALUES
+        (2025-05-10, 100),
+        (2025-05-11, 100),
+        (2025-05-11, 300),
+        (2025-05-12, 300),
+        (2025-05-12, 500)
+      """
+    )
+
+    assert Ch.query!(
+             conn,
+             """
+             SELECT topK({$0:Int64})(e0.cart_price)
+               FROM topk_events_web_d AS e0
+               WHERE (e0.part_dt >= {$1:DateTime64(6)}) AND
+                     (e0.part_dt <= {$2:DateTime64(6)})
+             """,
+             [50, ~N[2025-05-08 23:59:59.999999], ~N[2025-05-22 23:59:59.999999]]
+           ).rows == [[[]]]
   end
 
   test "create", %{conn: conn} do
