@@ -141,17 +141,17 @@ defmodule Ch.Connection do
   defp eat_ok_status_and_headers([]), do: :more
 
   @impl true
-  def handle_fetch(query, result, opts, %{conn: conn, buffer: buffer}) do
+  def handle_fetch(query, %Result{} = result, opts, %{conn: conn, buffer: buffer}) do
     case buffer do
       [] -> handle_fetch(query, result, opts, conn)
-      _not_empty -> {halt_or_cont(buffer), %Result{result | data: extract_data(buffer)}, conn}
+      _not_empty -> {halt_or_cont(buffer), %{result | data: extract_data(buffer)}, conn}
     end
   end
 
-  def handle_fetch(_query, result, opts, conn) do
+  def handle_fetch(_query, %Result{} = result, opts, conn) do
     case HTTP.recv(conn, 0, timeout(conn, opts)) do
       {:ok, conn, responses} ->
-        {halt_or_cont(responses), %Result{result | data: extract_data(responses)}, conn}
+        {halt_or_cont(responses), %{result | data: extract_data(responses)}, conn}
 
       {:error, conn, reason, _responses} ->
         {:disconnect, reason, conn}
@@ -167,11 +167,11 @@ defmodule Ch.Connection do
   defp extract_data([{:done, _ref}]), do: []
 
   @impl true
-  def handle_deallocate(_query, result, _opts, conn) do
+  def handle_deallocate(_query, %Result{} = result, _opts, conn) do
     case HTTP.open_request_count(conn) do
       0 ->
         # TODO data: [], anything else?
-        {:ok, %Result{result | data: []}, conn}
+        {:ok, %{result | data: []}, conn}
 
       1 ->
         {:disconnect, Error.exception("cannot stop stream before receiving full response"), conn}
