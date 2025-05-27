@@ -244,21 +244,28 @@ defmodule Ch.RowBinaryTest do
       ]
 
       Enum.each(spec, fn {encoded, decoded} ->
-        assert decode_types([encoded]) == [decoded]
+        assert decode_types([encoded], _opts = []) == [decoded]
       end)
     end
 
     test "preserves order" do
-      assert decode_types(["UInt8", "UInt16"]) == [:u8, :u16]
+      assert decode_types(["UInt8", "UInt16"], _opts = []) == [:u8, :u16]
+    end
+
+    test "JSON raises without options" do
+      assert_raise ArgumentError,
+                   ~r/Native JSON decoding is not yet supported/,
+                   fn -> decode_types(["JSON"], _opts = []) end
+    end
+
+    test "JSON becomes string_json with options" do
+      opts = [settings: [output_format_binary_write_json_as_string: 1]]
+      assert decode_types(["JSON"], opts) == [:string_json]
     end
   end
 
   describe "decode_rows/1" do
     test "empty" do
-      assert decode_rows(<<>>) == []
-    end
-
-    test "empty rows" do
       types = [:u8, :string]
       num_cols = length(types)
 
@@ -269,6 +276,20 @@ defmodule Ch.RowBinaryTest do
       ]
 
       assert decode_rows(IO.iodata_to_binary(encoded)) == []
+    end
+
+    test "non empty" do
+      types = [:u8, :string]
+      num_cols = length(types)
+
+      encoded = [
+        num_cols,
+        Enum.map(1..num_cols, fn col -> encode(:string, "col#{col}") end),
+        Enum.map(types, fn type -> encode(:string, Ch.Types.encode(type)) end),
+        <<1, 2, "ab">>
+      ]
+
+      assert decode_rows(IO.iodata_to_binary(encoded)) == [[1, "ab"]]
     end
 
     test "nan floats" do
