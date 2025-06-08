@@ -849,7 +849,7 @@ defmodule Ch.RowBinary do
 
       # TODO utf8?
       {:fixed_string, size} ->
-        <<s::size(^size)-bytes, bin::bytes>> = bin
+        <<s::size(size)-bytes, bin::bytes>> = bin
         decode_rows(types_rest, bin, [s | row], rows, types)
 
       :boolean ->
@@ -884,7 +884,7 @@ defmodule Ch.RowBinary do
         decode_rows(types_rest, bin, [dt | row], rows, types)
 
       {:decimal, size, scale} ->
-        <<val::size(^size)-little-signed, bin::bytes>> = bin
+        <<val::size(size)-little-signed, bin::bytes>> = bin
         sign = if val < 0, do: -1, else: 1
         d = Decimal.new(sign, abs(val), -scale)
         decode_rows(types_rest, bin, [d | row], rows, types)

@@ -34,7 +34,8 @@ jobs:
             otp: 27
             clickhouse: latest
             timezone: UTC
-          - elixir: main-otp-28
+          # TODO
+          - elixir: 1.18.4-otp-27
             otp: 28
             clickhouse: latest
             timezone: UTC
@@ -75,10 +76,10 @@ jobs:
           path: |
             deps
             _build
-          key: test-${{ steps.beam.outputs.elixir-version }}-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
+          key: test-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            test-${{ steps.beam.outputs.elixir-version }}-${{ github.head_ref || github.ref }}-
-            test-${{ steps.beam.outputs.elixir-version }}-refs/heads/master-
+            test-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ github.head_ref || github.ref }}-
+            test-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-refs/heads/master-
 
       - run: mix deps.get --only $MIX_ENV
       - run: mix compile --warnings-as-errors
