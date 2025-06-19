@@ -7,20 +7,21 @@ clickhouse_available? =
       false
   end
 
-Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
-default_test_db = System.get_env("CH_DATABASE", "ch_elixir_test")
-Application.put_env(:ch, :database, default_test_db)
-
-if clickhouse_available? do
-  Ch.Test.query("DROP DATABASE IF EXISTS {db:Identifier}", %{"db" => default_test_db})
-  Ch.Test.query("CREATE DATABASE {db:Identifier}", %{"db" => default_test_db})
-  ExUnit.start(exclude: [:slow])
-else
+unless clickhouse_available? do
   Mix.shell().error("""
   ClickHouse is not detected at localhost:8123! Please start the local container with the following command:
 
       docker compose up -d clickhouse
   """)
 
-  :init.stop(1)
+  System.halt(1)
 end
+
+Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
+default_test_db = System.get_env("CH_DATABASE", "ch_elixir_test")
+Application.put_env(:ch, :database, default_test_db)
+
+Ch.Test.query("DROP DATABASE IF EXISTS {db:Identifier}", %{"db" => default_test_db})
+Ch.Test.query("CREATE DATABASE {db:Identifier}", %{"db" => default_test_db})
+
+ExUnit.start(exclude: [:slow])
