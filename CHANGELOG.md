@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0 (2025-06-19)
+
+- restrict to Ecto v3.13
+
 ## 0.3.3 (2025-06-19)
 
 - restrict to Ecto v3.12
