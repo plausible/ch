@@ -147,7 +147,9 @@ defmodule Ch.ConnectionTest do
       "create table ch_non_utc_datetimes(name String, datetime DateTime) engine Memory"
     )
 
-    on_exit(fn -> Ch.Test.sql_exec("drop table ch_non_utc_datetimes") end)
+    on_exit(fn ->
+      Ch.Test.query("drop table ch_non_utc_datetimes", [], database: Ch.Test.database())
+    end)
 
     utc = ~U[2024-12-21 05:35:19.886393Z]
 
@@ -1336,14 +1338,14 @@ defmodule Ch.ConnectionTest do
       results =
         Ch.run(conn, fn conn ->
           conn
-          |> Ch.stream("select number from system.numbers limit 1000")
+          |> Ch.stream("select number from system.numbers limit 10000")
           |> Enum.into([])
         end)
 
       assert length(results) >= 2
 
       assert results |> Enum.map(& &1.data) |> IO.iodata_to_binary() |> RowBinary.decode_rows() ==
-               Enum.map(0..999, &[&1])
+               Enum.map(0..9999, &[&1])
     end
 
     test "disconnects on early halt", %{conn: conn} do
@@ -1373,10 +1375,10 @@ defmodule Ch.ConnectionTest do
   describe "start_link/1" do
     test "can pass options to start_link/1" do
       db = "#{Ch.Test.database()}_#{System.unique_integer([:positive])}"
-      {:ok, _} = Ch.Test.sql_exec("CREATE DATABASE {db:Identifier}", %{"db" => db})
+      Ch.Test.query("CREATE DATABASE {db:Identifier}", %{"db" => db})
 
       on_exit(fn ->
-        {:ok, _} = Ch.Test.sql_exec("DROP DATABASE {db:Identifier}", %{"db" => db})
+        Ch.Test.query("DROP DATABASE {db:Identifier}", %{"db" => db})
       end)
 
       {:ok, conn} = Ch.start_link(database: db)
@@ -1400,7 +1402,9 @@ defmodule Ch.ConnectionTest do
       ) engine Memory
       """)
 
-      on_exit(fn -> Ch.Test.sql_exec("truncate row_binary_names_and_types_t") end)
+      on_exit(fn ->
+        Ch.Test.query("truncate row_binary_names_and_types_t", [], database: Ch.Test.database())
+      end)
     end
 
     test "error on type mismatch", %{conn: conn} do
