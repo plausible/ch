@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3 (2025-06-19)
+
+- restrict to Ecto v3.12
+
 ## 0.3.2 (2025-02-25)
 
 - fix type decoding when type name exceeds 127 bytes https://github.com/plausible/ch/pull/248
