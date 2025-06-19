@@ -34,8 +34,12 @@ jobs:
             otp: 27
             clickhouse: latest
             timezone: UTC
+          - elixir: 1.18
+            otp: 28
+            clickhouse: latest
+            timezone: UTC
           # TODO
-          - elixir: 1.19.0-rc.0-otp-28
+          - elixir: 1.19.0-rc.0
             otp: 28
             clickhouse: latest
             timezone: UTC
@@ -91,7 +95,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: 1.18.4-otp-28
+          elixir-version: 1
           otp-version: 28
       - run: elixir -v
       - run: mix format --check-formatted

@@ -32,8 +32,7 @@ jobs:
       - id: beam
         uses: erlef/setup-beam@v1
         with:
-          # TODO
-          elixir-version: 1.18.4-otp-27
+          elixir-version: 1
           otp-version: 28
 
       - uses: actions/cache@v4
