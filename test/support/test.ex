@@ -3,12 +3,13 @@ defmodule Ch.Test do
 
   def database, do: Application.fetch_env!(:ch, :database)
 
-  # makes a query in a short lived process so that pool automatically exits once finished
+  # makes a query in a short-lived process so that pool automatically exits once finished
+  # useful for tearing down tables in `on_exit/1` hooks
   def query(sql, params \\ [], opts \\ []) do
     task =
       Task.async(fn ->
-        {:ok, pid} = Ch.start_link(opts)
-        Ch.query!(pid, sql, params, opts)
+        {:ok, pool} = Ch.start_link(opts)
+        Ch.query!(pool, sql, params, opts)
       end)
 
     Task.await(task)
@@ -74,11 +75,11 @@ defmodule Ch.Test do
   # shifts naive datetimes for non-utc timezones into utc to match ClickHouse behaviour
   # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime#usage-remarks
   def to_clickhouse_naive(conn, %NaiveDateTime{} = naive_datetime) do
-    case Ch.query!(conn, "select timezone()").rows do
-      [["UTC"]] ->
+    case clickhouse_tz(conn) do
+      "Etc/UTC" ->
         naive_datetime
 
-      [[timezone]] ->
+      timezone ->
         naive_datetime
         |> DateTime.from_naive!(timezone)
         |> DateTime.shift_zone!("Etc/UTC")
