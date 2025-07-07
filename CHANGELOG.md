@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4 (2025-07-07)
+
+- fix column decoding when count exceeds 127 https://github.com/plausible/ch/pull/257
+
 ## 0.3.3 (2025-06-19)
 
 - restrict to Ecto v3.12
