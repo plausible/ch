@@ -452,6 +452,34 @@ defmodule Ch.RowBinary do
   defp d(?e), do: 14
   defp d(?f), do: 15
 
+  varints = [
+    {_pattern = quote(do: <<0::1, v1::7>>), _value = quote(do: v1)},
+    {quote(do: <<1::1, v1::7, 0::1, v2::7>>), quote(do: (v2 <<< 7) + v1)},
+    {quote(do: <<1::1, v1::7, 1::1, v2::7, 0::1, v3::7>>),
+     quote(do: (v3 <<< 14) + (v2 <<< 7) + v1)},
+    {quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 0::1, v4::7>>),
+     quote(do: (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)},
+    {quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 0::1, v5::7>>),
+     quote(do: (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)},
+    {quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 0::1, v6::7>>),
+     quote(do: (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)},
+    {quote do
+       <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 0::1,
+         v7::7>>
+     end,
+     quote do
+       (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1
+     end},
+    {quote do
+       <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 1::1,
+         v7::7, 0::1, v8::7>>
+     end,
+     quote do
+       (v8 <<< 49) + (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) +
+         (v2 <<< 7) + v1
+     end}
+  ]
+
   @doc """
   Decodes [RowBinaryWithNamesAndTypes](https://clickhouse.com/docs/en/interfaces/formats/RowBinaryWithNamesAndTypes) into rows.
 
@@ -462,8 +490,13 @@ defmodule Ch.RowBinary do
 
   """
   def decode_rows(row_binary_with_names_and_types)
-  def decode_rows(<<cols, rest::bytes>>), do: skip_names(rest, cols, cols)
   def decode_rows(<<>>), do: []
+
+  for {pattern, value} <- varints do
+    def decode_rows(<<unquote(pattern), rest::bytes>>) do
+      skip_names(rest, unquote(value), unquote(value))
+    end
+  end
 
   @doc """
   Same as `decode_rows/1` but the first element is a list of column names.
@@ -476,8 +509,10 @@ defmodule Ch.RowBinary do
   """
   def decode_names_and_rows(row_binary_with_names_and_types)
 
-  def decode_names_and_rows(<<cols, rest::bytes>>) do
-    decode_names(rest, cols, cols, _acc = [])
+  for {pattern, value} <- varints do
+    def decode_names_and_rows(<<unquote(pattern), rest::bytes>>) do
+      decode_names(rest, unquote(value), unquote(value), _acc = [])
+    end
   end
 
   @doc """
@@ -572,34 +607,6 @@ defmodule Ch.RowBinary do
   defp decoding_type(type) do
     raise ArgumentError, "unsupported type for decoding: #{inspect(type)}"
   end
-
-  varints = [
-    {_pattern = quote(do: <<0::1, v1::7>>), _value = quote(do: v1)},
-    {quote(do: <<1::1, v1::7, 0::1, v2::7>>), quote(do: (v2 <<< 7) + v1)},
-    {quote(do: <<1::1, v1::7, 1::1, v2::7, 0::1, v3::7>>),
-     quote(do: (v3 <<< 14) + (v2 <<< 7) + v1)},
-    {quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 0::1, v4::7>>),
-     quote(do: (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)},
-    {quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 0::1, v5::7>>),
-     quote(do: (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)},
-    {quote(do: <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 0::1, v6::7>>),
-     quote(do: (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1)},
-    {quote do
-       <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 0::1,
-         v7::7>>
-     end,
-     quote do
-       (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) + (v2 <<< 7) + v1
-     end},
-    {quote do
-       <<1::1, v1::7, 1::1, v2::7, 1::1, v3::7, 1::1, v4::7, 1::1, v5::7, 1::1, v6::7, 1::1,
-         v7::7, 0::1, v8::7>>
-     end,
-     quote do
-       (v8 <<< 49) + (v7 <<< 42) + (v6 <<< 35) + (v5 <<< 28) + (v4 <<< 21) + (v3 <<< 14) +
-         (v2 <<< 7) + v1
-     end}
-  ]
 
   defp skip_names(<<rest::bytes>>, 0, count), do: decode_types(rest, count, _acc = [])
 
