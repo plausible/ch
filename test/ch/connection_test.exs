@@ -1449,5 +1449,20 @@ defmodule Ch.ConnectionTest do
 
       assert {:ok, %{num_rows: 1}} = Ch.query(conn, stmt, rows, opts)
     end
+
+    test "select with lots of columns", %{conn: conn} do
+      select = Enum.map_join(1..1000, ", ", fn i -> "#{i} as col_#{i}" end)
+      stmt = "select #{select} format RowBinaryWithNamesAndTypes"
+
+      assert %Ch.Result{columns: columns, rows: [row]} = Ch.query!(conn, stmt)
+
+      assert length(columns) == 1000
+      assert List.first(columns) == "col_1"
+      assert List.last(columns) == "col_1000"
+
+      assert length(row) == 1000
+      assert List.first(row) == 1
+      assert List.last(row) == 1000
+    end
   end
 end
