@@ -161,6 +161,26 @@ settings = [async_insert: 1]
   Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: settings)
 ```
 
+#### Sending query params through the body
+
+> Use this if you want to interpolate your query params inside the body.
+> The URL will be empty.
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
+
+{:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
+  Ch.query(pid, "SELECT * FROM system.numbers LIMIT {$0:UInt8}", [3], params: :body)
+
+{:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
+  Ch.query(pid, "SELECT * FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 3}, params: :body)
+
+%Ch.Result{num_rows: 2} =
+  Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES ({$0:UInt8}), ({$1:UInt32})", [0, 1], params: :body)
+```
+
 ## Caveats
 
 #### NULL in RowBinary

@@ -122,7 +122,7 @@ defimpl DBConnection.Query, for: Ch.Query do
         data = RowBinary.encode_rows(params, types)
         {_query_params = [], headers(opts), [statement, ?\n | data]}
 
-      Keyword.get(opts, :encode_in_body) ->
+      Keyword.get(opts, :params) == :body ->
         {[], headers(opts), add_params_to_statement(params, statement)}
 
       true ->
@@ -136,7 +136,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     format = Keyword.get(opts, :format) || default_format
     headers = [{"x-clickhouse-format", format} | headers(opts)]
 
-    if Keyword.get(opts, :encode_in_body) do
+    if Keyword.get(opts, :params) == :body do
       {[], headers, add_params_to_statement(params, statement)}
     else
       {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
