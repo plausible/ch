@@ -139,7 +139,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     if Keyword.get(opts, :interpolate_params) do
       {[], headers, add_params_to_statement(params, statement)}
     else
-      {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+      {query_params(params), headers, statement}
     end
   end
 
