@@ -216,8 +216,8 @@ defmodule Ch.Connection do
   def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
     conn = maybe_reconnect(conn)
 
-    multipart_request = Keyword.get(opts, :multipart_request, false)
-    {query_params, extra_headers, body} = parse_params(params, multipart_request)
+    multipart = Keyword.get(opts, :multipart, false)
+    {query_params, extra_headers, body} = parse_params(params, multipart)
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
@@ -237,8 +237,8 @@ defmodule Ch.Connection do
   def handle_execute(query, params, opts, conn) do
     conn = maybe_reconnect(conn)
 
-    multipart_request = Keyword.get(opts, :multipart_request, false)
-    {query_params, extra_headers, body} = parse_params(params, multipart_request)
+    multipart = Keyword.get(opts, :multipart, false)
+    {query_params, extra_headers, body} = parse_params(params, multipart)
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)

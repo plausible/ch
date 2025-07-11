@@ -161,6 +161,26 @@ settings = [async_insert: 1]
   Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: settings)
 ```
 
+#### Sending request as multipart
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
+
+{:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
+  Ch.query(pid, "SELECT * FROM system.numbers LIMIT {$0:UInt8}", [3], multipart: true)
+
+{:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
+  Ch.query(pid, "SELECT * FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 3}, multipart: true)
+
+%Ch.Result{num_rows: 2} =
+  Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES ({$0:UInt8}), ({$1:UInt32})", [0, 1], multipart: true)
+```
+
+Adding the `multipart: true` option to a query sends its Clickhouse request as a multipart request.
+This encodes all the request data inside the body, and leaves the URL empty.
+
 ## Caveats
 
 #### NULL in RowBinary
