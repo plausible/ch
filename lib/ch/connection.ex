@@ -386,8 +386,6 @@ defmodule Ch.Connection do
 
   @spec parse_params(tuple, boolean) :: tuple
   defp parse_params({query_params, headers, body}, true = _multipart?) when is_binary(body) do
-    body = to_string(body)
-
     multipart =
       query_params
       |> Enum.reduce(Multipart.new(), fn {k, v}, acc ->
