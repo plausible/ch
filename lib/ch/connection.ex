@@ -2,6 +2,7 @@ defmodule Ch.Connection do
   @moduledoc false
   use DBConnection
   require Logger
+  alias Multipart.Part
   alias Ch.{Error, Query, Result}
   alias Mint.HTTP1, as: HTTP
 
@@ -214,7 +215,9 @@ defmodule Ch.Connection do
 
   def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
     conn = maybe_reconnect(conn)
-    {query_params, extra_headers, body} = params
+
+    multipart_request = Keyword.get(opts, :multipart_request, true)
+    {query_params, extra_headers, body} = parse_params(params, multipart_request)
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
@@ -233,7 +236,9 @@ defmodule Ch.Connection do
 
   def handle_execute(query, params, opts, conn) do
     conn = maybe_reconnect(conn)
-    {query_params, extra_headers, body} = params
+
+    multipart_request = Keyword.get(opts, :multipart_request, true)
+    {query_params, extra_headers, body} = parse_params(params, multipart_request)
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
@@ -377,6 +382,32 @@ defmodule Ch.Connection do
     else
       [{name, value} | headers]
     end
+  end
+
+  @spec parse_params(tuple, boolean) :: tuple
+  defp parse_params({query_params, headers, body}, true = _multipart?) when is_binary(body) do
+    body = to_string(body)
+
+    multipart =
+      query_params
+      |> Enum.reduce(Multipart.new(), fn {k, v}, acc ->
+        Multipart.add_part(acc, Part.text_field(v, k))
+      end)
+      |> Multipart.add_part(Part.text_field(body, "query"))
+
+    content_length = Multipart.content_length(multipart)
+    content_type = Multipart.content_type(multipart, "multipart/form-data")
+
+    multipart_headers = [
+      {"Content-Type", content_type},
+      {"Content-Length", to_string(content_length)}
+    ]
+
+    {[], headers ++ multipart_headers, Multipart.body_binary(multipart)}
+  end
+
+  defp parse_params(params, _) do
+    params
   end
 
   defp get_header(headers, key) do
