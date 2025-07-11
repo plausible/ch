@@ -122,6 +122,9 @@ defimpl DBConnection.Query, for: Ch.Query do
         data = RowBinary.encode_rows(params, types)
         {_query_params = [], headers(opts), [statement, ?\n | data]}
 
+      Keyword.get(opts, :encode_in_body) ->
+        {[], headers(opts), add_params_to_statement(params, statement)}
+
       true ->
         {query_params(params), headers(opts), statement}
     end
@@ -131,14 +134,12 @@ defimpl DBConnection.Query, for: Ch.Query do
     types = Keyword.get(opts, :types)
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
+    headers = [{"x-clickhouse-format", format} | headers(opts)]
 
-    cond do
-      Keyword.get(opts, :encode_in_body) ->
-        {[], [{"x-clickhouse-format", format} | headers(opts)],
-         add_params_to_statement(params, statement)}
-
-      true ->
-        {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+    if Keyword.get(opts, :encode_in_body) do
+      {[], headers, add_params_to_statement(params, statement)}
+    else
+      {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
     end
   end
 
@@ -224,13 +225,13 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp add_params_to_statement(params, statement) when is_list(params) do
     params
     |> Enum.with_index()
-    |> Enum.reduce(statement, fn {v, k}, statement ->
-      regex = ~r/\{\s*\$#{k}\s*(?::(?<type>[^}]+))?\s*\}/
+    |> Enum.reduce(statement, fn {v, index}, statement ->
+      regex = ~r/\{\s*\$#{index}\s*(?::(?<type>[^}]+))?\s*\}/
       captures = Regex.scan(regex, statement)
 
       Enum.reduce(captures, statement, fn [_, type], statement ->
         escaped_type = Regex.escape(type)
-        regex = ~r/\{\s*\$#{k}\s*:#{escaped_type}\s*\}/
+        regex = ~r/\{\s*\$#{index}\s*:#{escaped_type}\s*\}/
         Regex.replace(regex, statement, encode_param_body(v, type))
       end)
     end)
@@ -256,11 +257,8 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp encode_param_body(m, "Map" <> _ = type) when is_map(m) do
     {key_type, value_type} = map_types(type)
 
-    IO.inspect([m, key_type, value_type])
-
     m
-    |> Enum.map(&Tuple.to_list/1)
-    |> List.flatten()
+    |> Enum.flat_map(&Tuple.to_list/1)
     |> Enum.zip(Stream.cycle([key_type, value_type]))
     |> Enum.map(fn {k, t} -> encode_param_body(k, t) end)
     |> Enum.join(",")
