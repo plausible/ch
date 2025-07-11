@@ -172,13 +172,13 @@ settings = [async_insert: 1]
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
 {:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
-  Ch.query(pid, "SELECT * FROM system.numbers LIMIT {$0:UInt8}", [3], params: :body)
+  Ch.query(pid, "SELECT * FROM system.numbers LIMIT {$0:UInt8}", [3], interpolate_params: true)
 
 {:ok, %Ch.Result{rows: [[0], [1], [2]]}} =
-  Ch.query(pid, "SELECT * FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 3}, params: :body)
+  Ch.query(pid, "SELECT * FROM system.numbers LIMIT {limit:UInt8}", %{"limit" => 3}, interpolate_params: true)
 
 %Ch.Result{num_rows: 2} =
-  Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES ({$0:UInt8}), ({$1:UInt32})", [0, 1], params: :body)
+  Ch.query!(pid, "INSERT INTO ch_demo(id) VALUES ({$0:UInt8}), ({$1:UInt32})", [0, 1], interpolate_params: true)
 ```
 
 ## Caveats
