@@ -211,10 +211,9 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   defp add_params_to_statement(params, statement) when is_map(params) do
     Enum.reduce(params, statement, fn {k, v}, statement ->
-      regex = ~r/\{\s*#{k}\s*(?::(?<type>[^}]+))?\s*\}/
-      captures = Regex.scan(regex, statement)
-
-      Enum.reduce(captures, statement, fn [_, type], statement ->
+      ~r/\{\s*#{k}\s*(?::(?<type>[^}]+))?\s*\}/
+      |> Regex.scan(statement)
+      |> Enum.reduce(statement, fn [_, type], statement ->
         escaped_type = Regex.escape(type)
         regex = ~r/\{\s*#{k}\s*:#{escaped_type}\s*\}/
         Regex.replace(regex, statement, encode_param_body(v, type))
@@ -226,10 +225,9 @@ defimpl DBConnection.Query, for: Ch.Query do
     params
     |> Enum.with_index()
     |> Enum.reduce(statement, fn {v, index}, statement ->
-      regex = ~r/\{\s*\$#{index}\s*(?::(?<type>[^}]+))?\s*\}/
-      captures = Regex.scan(regex, statement)
-
-      Enum.reduce(captures, statement, fn [_, type], statement ->
+      ~r/\{\s*\$#{index}\s*(?::(?<type>[^}]+))?\s*\}/
+      |> Regex.scan(statement)
+      |> Enum.reduce(statement, fn [_, type], statement ->
         escaped_type = Regex.escape(type)
         regex = ~r/\{\s*\$#{index}\s*:#{escaped_type}\s*\}/
         Regex.replace(regex, statement, encode_param_body(v, type))
