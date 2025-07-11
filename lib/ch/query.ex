@@ -131,7 +131,17 @@ defimpl DBConnection.Query, for: Ch.Query do
     types = Keyword.get(opts, :types)
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
-    {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+
+    cond do
+      true or Keyword.get(opts, :encode_in_body) ->
+        IO.inspect(add_params_to_statement(params, statement))
+
+        {[], [{"x-clickhouse-format", format} | headers(opts)],
+         add_params_to_statement(params, statement)}
+
+      true ->
+        {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+    end
   end
 
   defp format_row_binary?(statement) when is_binary(statement) do
@@ -200,6 +210,35 @@ defimpl DBConnection.Query, for: Ch.Query do
     end
   end
 
+  defp add_params_to_statement(params, statement) when is_map(params) do
+    params
+    |> Enum.reduce(statement, fn {k, v}, statement ->
+      regex = ~r/\{\s*#{k}\s*(?::(?<type>[^}]+))?\s*\}/
+      captures = Regex.scan(regex, statement)
+
+      Enum.reduce(captures, statement, fn [_, type], statement ->
+        escaped_type = Regex.escape(type)
+        regex = ~r/\{\s*#{k}\s*:#{escaped_type}\s*\}/
+        Regex.replace(regex, statement, encode_param_body(v, type))
+      end)
+    end)
+  end
+
+  defp add_params_to_statement(params, statement) when is_list(params) do
+    params
+    |> Enum.with_index()
+    |> Enum.reduce(statement, fn {v, k}, statement ->
+      regex = ~r/\{\s*\$#{k}\s*(?::(?<type>[^}]+))?\s*\}/
+      captures = Regex.scan(regex, statement)
+
+      Enum.reduce(captures, statement, fn [_, type], statement ->
+        escaped_type = Regex.escape(type)
+        regex = ~r/\{\s*\$#{k}\s*:#{escaped_type}\s*\}/
+        Regex.replace(regex, statement, encode_param_body(v, type))
+      end)
+    end)
+  end
+
   defp get_header(headers, key) do
     case List.keyfind(headers, key, 0) do
       {_, value} -> value
@@ -215,6 +254,23 @@ defimpl DBConnection.Query, for: Ch.Query do
     params
     |> Enum.with_index()
     |> Enum.map(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
+  end
+
+  defp encode_param_body(p, type) do
+    p = encode_param(p)
+
+    cond do
+      type =~ "Identifier" ->
+        p
+
+      type =~ "Array" ->
+        p = escape_param([{"\\", "\\\\"}], p)
+        "#{p}::#{type}"
+
+      true ->
+        p = escape_param([{"'", "''"}, {"\\", "\\\\"}], p)
+        "'#{p}'::#{type}"
+    end
   end
 
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
