@@ -133,9 +133,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     format = Keyword.get(opts, :format) || default_format
 
     cond do
-      true or Keyword.get(opts, :encode_in_body) ->
-        IO.inspect(add_params_to_statement(params, statement))
-
+      Keyword.get(opts, :encode_in_body) ->
         {[], [{"x-clickhouse-format", format} | headers(opts)],
          add_params_to_statement(params, statement)}
 
@@ -211,8 +209,7 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   defp add_params_to_statement(params, statement) when is_map(params) do
-    params
-    |> Enum.reduce(statement, fn {k, v}, statement ->
+    Enum.reduce(params, statement, fn {k, v}, statement ->
       regex = ~r/\{\s*#{k}\s*(?::(?<type>[^}]+))?\s*\}/
       captures = Regex.scan(regex, statement)
 
@@ -254,6 +251,20 @@ defimpl DBConnection.Query, for: Ch.Query do
     params
     |> Enum.with_index()
     |> Enum.map(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
+  end
+
+  defp encode_param_body(m, "Map" <> _ = type) when is_map(m) do
+    {key_type, value_type} = map_types(type)
+
+    IO.inspect([m, key_type, value_type])
+
+    m
+    |> Enum.map(&Tuple.to_list/1)
+    |> List.flatten()
+    |> Enum.zip(Stream.cycle([key_type, value_type]))
+    |> Enum.map(fn {k, t} -> encode_param_body(k, t) end)
+    |> Enum.join(",")
+    |> then(&"map(#{&1})")
   end
 
   defp encode_param_body(p, type) do
@@ -358,6 +369,13 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   defp escape_param([], param), do: param
+
+  defp map_types(type) do
+    case Regex.run(~r/Map\((?<key_type>[^,()]+),\s*(?<value_type>.+)\)$/, type) do
+      [_, key_type, value_type] -> {key_type, value_type}
+      _ -> {"String", "String"}
+    end
+  end
 
   @spec headers(Keyword.t()) :: Mint.Types.headers()
   defp headers(opts), do: Keyword.get(opts, :headers, [])
