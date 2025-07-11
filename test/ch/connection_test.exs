@@ -687,6 +687,12 @@ defmodule Ch.ConnectionTest do
                "map" => %{"pg" => 13, "hello" => 100}
              }).rows == [[%{"hello" => 100, "pg" => 13}]]
 
+      assert Ch.query!(conn, "select {map:Map(String, Map(Date, UInt8))}", %{
+               "map" => %{"pg" => %{~D[2022-01-01] => 13}, "hello" => %{~D[2022-01-02] => 100}}
+             }).rows == [
+               [%{"pg" => %{~D[2022-01-01] => 13}, "hello" => %{~D[2022-01-02] => 100}}]
+             ]
+
       Ch.query!(conn, "CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory")
 
       Ch.query!(

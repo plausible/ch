@@ -122,6 +122,9 @@ defimpl DBConnection.Query, for: Ch.Query do
         data = RowBinary.encode_rows(params, types)
         {_query_params = [], headers(opts), [statement, ?\n | data]}
 
+      Keyword.get(opts, :interpolate_params) ->
+        {[], headers(opts), add_params_to_statement(params, statement)}
+
       true ->
         {query_params(params), headers(opts), statement}
     end
@@ -131,7 +134,13 @@ defimpl DBConnection.Query, for: Ch.Query do
     types = Keyword.get(opts, :types)
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
-    {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+    headers = [{"x-clickhouse-format", format} | headers(opts)]
+
+    if Keyword.get(opts, :interpolate_params) do
+      {[], headers, add_params_to_statement(params, statement)}
+    else
+      {query_params(params), headers, statement}
+    end
   end
 
   defp format_row_binary?(statement) when is_binary(statement) do
@@ -200,6 +209,32 @@ defimpl DBConnection.Query, for: Ch.Query do
     end
   end
 
+  defp add_params_to_statement(params, statement) when is_map(params) do
+    Enum.reduce(params, statement, fn {k, v}, statement ->
+      ~r/\{\s*#{k}\s*(?::(?<type>[^}]+))?\s*\}/
+      |> Regex.scan(statement)
+      |> Enum.reduce(statement, fn [_, type], statement ->
+        escaped_type = Regex.escape(type)
+        regex = ~r/\{\s*#{k}\s*:#{escaped_type}\s*\}/
+        Regex.replace(regex, statement, encode_param_body(v, type))
+      end)
+    end)
+  end
+
+  defp add_params_to_statement(params, statement) when is_list(params) do
+    params
+    |> Enum.with_index()
+    |> Enum.reduce(statement, fn {v, index}, statement ->
+      ~r/\{\s*\$#{index}\s*(?::(?<type>[^}]+))?\s*\}/
+      |> Regex.scan(statement)
+      |> Enum.reduce(statement, fn [_, type], statement ->
+        escaped_type = Regex.escape(type)
+        regex = ~r/\{\s*\$#{index}\s*:#{escaped_type}\s*\}/
+        Regex.replace(regex, statement, encode_param_body(v, type))
+      end)
+    end)
+  end
+
   defp get_header(headers, key) do
     case List.keyfind(headers, key, 0) do
       {_, value} -> value
@@ -215,6 +250,34 @@ defimpl DBConnection.Query, for: Ch.Query do
     params
     |> Enum.with_index()
     |> Enum.map(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
+  end
+
+  defp encode_param_body(m, "Map" <> _ = type) when is_map(m) do
+    {key_type, value_type} = map_types(type)
+
+    m
+    |> Enum.flat_map(&Tuple.to_list/1)
+    |> Enum.zip(Stream.cycle([key_type, value_type]))
+    |> Enum.map(fn {k, t} -> encode_param_body(k, t) end)
+    |> Enum.join(",")
+    |> then(&"map(#{&1})")
+  end
+
+  defp encode_param_body(p, type) do
+    p = encode_param(p)
+
+    cond do
+      type =~ "Identifier" ->
+        p
+
+      type =~ "Array" ->
+        p = escape_param([{"\\", "\\\\"}], p)
+        "#{p}::#{type}"
+
+      true ->
+        p = escape_param([{"'", "''"}, {"\\", "\\\\"}], p)
+        "'#{p}'::#{type}"
+    end
   end
 
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
@@ -302,6 +365,13 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   defp escape_param([], param), do: param
+
+  defp map_types(type) do
+    case Regex.run(~r/Map\((?<key_type>[^,()]+),\s*(?<value_type>.+)\)$/, type) do
+      [_, key_type, value_type] -> {key_type, value_type}
+      _ -> {"String", "String"}
+    end
+  end
 
   @spec headers(Keyword.t()) :: Mint.Types.headers()
   defp headers(opts), do: Keyword.get(opts, :headers, [])

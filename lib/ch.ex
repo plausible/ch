@@ -76,6 +76,7 @@ defmodule Ch do
     * `:headers` - Custom HTTP headers for the request
     * `:format` - Custom response format for the request
     * `:decode` - Whether to automatically decode the response
+    * `:interpolate_params` - Whether to interpolate params in the statement.
     * [`DBConnection.connection_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:connection_option/0)
 
   """
