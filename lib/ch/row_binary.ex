@@ -157,6 +157,8 @@ defmodule Ch.RowBinary do
     raise ArgumentError, "can't encode DateTime64 with non-UTC timezone: #{inspect(tz)}"
   end
 
+  defp encoding_type({:time64 = t, p}), do: {t, time_unit(p)}
+
   defp encoding_type({e, mappings}) when e in [:enum8, :enum16] do
     {e, Map.new(mappings)}
   end
@@ -322,11 +324,11 @@ defmodule Ch.RowBinary do
     <<DateTime.diff(datetime, @epoch_utc_datetime, time_unit)::64-little-signed>>
   end
 
-  def encode({:datetime64, _precision}, %DateTime{} = datetime) do
+  def encode({:datetime64, _time_unit}, %DateTime{} = datetime) do
     raise ArgumentError, "non-UTC timezones are not supported for encoding: #{datetime}"
   end
 
-  def encode({:datetime64, _precision}, nil), do: <<0::64>>
+  def encode({:datetime64, _time_unit}, nil), do: <<0::64>>
 
   def encode(:date, %Date{} = date) do
     <<Date.diff(date, @epoch_date)::16-little>>
@@ -346,6 +348,22 @@ defmodule Ch.RowBinary do
   end
 
   def encode(:time, nil), do: <<0::32>>
+
+  def encode({:time64, time_unit}, %Time{} = time) do
+    {s, micros} = Time.to_seconds_after_midnight(time)
+
+    micros_as_ticks =
+      cond do
+        time_unit < 1_000_000 -> div(micros, time_unit)
+        time_unit == 1_000_000 -> micros
+        true -> rem(micros, time_unit)
+      end
+
+    ticks = s * time_unit + micros_as_ticks
+    <<ticks::64-little-signed>>
+  end
+
+  def encode({:time64, _time_unit}, nil), do: <<0::64>>
 
   def encode(:uuid, <<u1::64, u2::64>>), do: <<u1::64-little, u2::64-little>>
 
@@ -897,13 +915,13 @@ defmodule Ch.RowBinary do
           if s >= 0 and s < 86400 do
             Time.from_seconds_after_midnight(s)
           else
-            # since ClickHouse supports time values of [-999:59:59, 999:59:59]
+            # since ClickHouse supports Time values of [-999:59:59, 999:59:59]
             # and Elixir's Time supports values of [00:00:00, 23:59:59]
-            # we raise an error when ClickHouse's time value is out of Elixir's Time range
+            # we raise an error when ClickHouse's Time value is out of Elixir's Time range
             raise ArgumentError,
                   "ClickHouse Time value #{s} (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)"
 
-            # TODO: we could potentially decode ClickHouse's time values as Elixir's Duration when it's out of Elixir's Time range
+            # TODO: we could potentially decode ClickHouse's Time values as Elixir's Duration when it's out of Elixir's Time range
           end
 
         decode_rows(types_rest, bin, [t | row], rows, types)
@@ -915,13 +933,13 @@ defmodule Ch.RowBinary do
           if ticks >= 0 and ticks < 86400 * time_unit do
             ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
           else
-            # since ClickHouse supports time values of [-999:59:59.999999999, 999:59:59.999999999]
+            # since ClickHouse supports Time64 values of [-999:59:59.999999999, 999:59:59.999999999]
             # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
-            # we raise an error when ClickHouse's time value is out of Elixir's Time range
+            # we raise an error when ClickHouse's Time64 value is out of Elixir's Time range
             raise ArgumentError,
                   "ClickHouse Time value #{ticks / time_unit} (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)"
 
-            # TODO: we could potentially decode ClickHouse's time values as Elixir's Duration when it's out of Elixir's Time range
+            # TODO: we could potentially decode ClickHouse's Time64 values as Elixir's Duration when it's out of Elixir's Time range
           end
 
         decode_rows(types_rest, bin, [t | row], rows, types)

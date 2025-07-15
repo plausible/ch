@@ -112,9 +112,9 @@ defmodule Ch.QueryTest do
                  [[expected]]
       end
 
-      # ClickHouse supports time values of [-999:59:59, 999:59:59]
+      # ClickHouse supports Time values of [-999:59:59, 999:59:59]
       # and Elixir's Time supports values of [00:00:00, 23:59:59]
-      # so we raise an error when ClickHouse's time value is out of Elixir's Time range
+      # so we raise an error when ClickHouse's Time value is out of Elixir's Time range
 
       assert_raise ArgumentError,
                    "ClickHouse Time value -1 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
@@ -187,9 +187,9 @@ defmodule Ch.QueryTest do
                  [[expected]]
       end
 
-      # ClickHouse supports time values of [-999:59:59.999999999, 999:59:59.999999999]
+      # ClickHouse supports Time64 values of [-999:59:59.999999999, 999:59:59.999999999]
       # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
-      # so we raise an error when ClickHouse's time value is out of Elixir's Time range
+      # so we raise an error when ClickHouse's Time64 value is out of Elixir's Time range
 
       assert_raise ArgumentError,
                    "ClickHouse Time value -1.0 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",

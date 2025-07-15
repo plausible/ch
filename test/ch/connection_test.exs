@@ -908,9 +908,9 @@ defmodule Ch.ConnectionTest do
         settings: settings
       )
 
-      # ClickHouse supports time values of [-999:59:59, 999:59:59]
+      # ClickHouse supports Time values of [-999:59:59, 999:59:59]
       # and Elixir's Time supports values of [00:00:00, 23:59:59]
-      # so we raise an error when ClickHouse's time value is out of Elixir's Time range
+      # so we raise an error when ClickHouse's Time value is out of Elixir's Time range
 
       assert_raise ArgumentError,
                    "ClickHouse Time value 360000 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
@@ -932,6 +932,63 @@ defmodule Ch.ConnectionTest do
                settings: settings
              ).rows ==
                [[~T[03:27:33], 2], [~T[00:00:00], 3], [~T[12:34:56], 4], [~T[23:59:59], 5]]
+    end
+
+    # https://clickhouse.com/docs/sql-reference/data-types/time64
+    @tag :time
+    test "Time64(3)", %{conn: conn} do
+      settings = [enable_time_time64_type: 1]
+
+      Ch.query!(
+        conn,
+        "CREATE TABLE time64_t(`time` Time64(3), `event_id` UInt8) ENGINE = Memory",
+        [],
+        settings: settings
+      )
+
+      Ch.query!(
+        conn,
+        "INSERT INTO time64_t VALUES (15463123, 1), (154600.123, 2), ('100:00:00', 3);",
+        [],
+        settings: settings
+      )
+
+      # ClickHouse supports Time64 values of [-999:59:59.999999999, 999:59:59.999999999]
+      # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
+      # so we raise an error when ClickHouse's Time64 value is out of Elixir's Time range
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value 154600.123 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
+                   fn -> Ch.query!(conn, "select * from time64_t", [], settings: settings) end
+
+      Ch.query!(
+        conn,
+        "INSERT INTO time64_t(time, event_id) FORMAT RowBinary",
+        _rows = [
+          [~T[00:00:00.000000], 4],
+          [~T[12:34:56.012300], 5],
+          [~T[12:34:56.123456], 6],
+          [~T[12:34:56.120000], 7],
+          [~T[23:59:59.999999], 8]
+        ],
+        settings: settings,
+        types: ["Time64(3)", "UInt8"]
+      )
+
+      assert Ch.query!(
+               conn,
+               "select * from time64_t where time < {max_elixir_time:Time64(6)} order by event_id",
+               %{"max_elixir_time" => ~T[23:59:59.999999]},
+               settings: settings
+             ).rows ==
+               [
+                 [~T[04:17:43.123], 1],
+                 [~T[00:00:00.000], 4],
+                 [~T[12:34:56.012], 5],
+                 [~T[12:34:56.123], 6],
+                 [~T[12:34:56.120], 7],
+                 [~T[23:59:59.999], 8]
+               ]
     end
 
     test "datetime64", %{conn: conn} do
