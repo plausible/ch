@@ -24,4 +24,14 @@ Application.put_env(:ch, :database, default_test_db)
 Ch.Test.query("DROP DATABASE IF EXISTS {db:Identifier}", %{"db" => default_test_db})
 Ch.Test.query("CREATE DATABASE {db:Identifier}", %{"db" => default_test_db})
 
-ExUnit.start(exclude: [:slow])
+%{rows: [[ch_version]]} = Ch.Test.query("SELECT version()")
+
+extra_exclude =
+  if ch_version >= "25" do
+    []
+  else
+    # Time type is not supported in ClickHouse < 25
+    [:time]
+  end
+
+ExUnit.start(exclude: [:slow | extra_exclude])

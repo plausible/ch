@@ -91,6 +91,7 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::UUID").rows
     end
 
+    @tag :time
     test "decode time", %{conn: conn} do
       settings = [enable_time_time64_type: 1]
 
@@ -99,6 +100,7 @@ defmodule Ch.QueryTest do
              ]
     end
 
+    @tag :time
     test "decode time64", %{conn: conn} do
       settings = [enable_time_time64_type: 1]
 
