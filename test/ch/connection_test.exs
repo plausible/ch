@@ -991,6 +991,7 @@ defmodule Ch.ConnectionTest do
                ]
     end
 
+    @tag :time
     test "Time64(6)", %{conn: conn} do
       settings = [enable_time_time64_type: 1]
 
@@ -1030,6 +1031,7 @@ defmodule Ch.ConnectionTest do
                ]
     end
 
+    @tag :time
     test "Time64(9)", %{conn: conn} do
       settings = [enable_time_time64_type: 1]
 
