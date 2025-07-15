@@ -144,30 +144,44 @@ defmodule Ch.QueryTest do
       settings = [enable_time_time64_type: 1]
 
       times = [
-        %{precision: 0, expected: ~T[12:34:56]},
-        %{precision: 1, expected: ~T[12:34:56.1]},
-        %{precision: 2, expected: ~T[12:34:56.12]},
-        %{precision: 3, expected: ~T[12:34:56.123]},
-        %{precision: 4, expected: ~T[12:34:56.1234]},
-        %{precision: 5, expected: ~T[12:34:56.12345]},
-        %{precision: 6, expected: ~T[12:34:56.123456]},
-        %{precision: 7, expected: ~T[12:34:56.123456]},
-        %{precision: 8, expected: ~T[12:34:56.123456]},
-        %{precision: 9, expected: ~T[12:34:56.123456]}
+        %{value: "00:00:00.000000000", precision: 0, expected: ~T[00:00:00]},
+        %{value: "12:34:56.123456789", precision: 0, expected: ~T[12:34:56]},
+        %{value: "23:59:59.999999999", precision: 0, expected: ~T[23:59:59]},
+        %{value: "12:34:56.123456789", precision: 1, expected: ~T[12:34:56.1]},
+        %{value: "23:59:59.999999999", precision: 1, expected: ~T[23:59:59.9]},
+        %{value: "12:34:56.123456789", precision: 2, expected: ~T[12:34:56.12]},
+        %{value: "23:59:59.999999999", precision: 2, expected: ~T[23:59:59.99]},
+        %{value: "12:34:56.123456789", precision: 3, expected: ~T[12:34:56.123]},
+        %{value: "23:59:59.999999999", precision: 3, expected: ~T[23:59:59.999]},
+        %{value: "12:34:56.123456789", precision: 4, expected: ~T[12:34:56.1234]},
+        %{value: "23:59:59.999999999", precision: 4, expected: ~T[23:59:59.9999]},
+        %{value: "12:34:56.001200000", precision: 4, expected: ~T[12:34:56.0012]},
+        %{value: "12:34:56.123456789", precision: 5, expected: ~T[12:34:56.12345]},
+        %{value: "23:59:59.999999999", precision: 5, expected: ~T[23:59:59.99999]},
+        %{value: "12:34:56.123456789", precision: 6, expected: ~T[12:34:56.123456]},
+        %{value: "12:34:56.123000", precision: 6, expected: ~T[12:34:56.123000]},
+        %{value: "12:34:56.000123000", precision: 6, expected: ~T[12:34:56.000123]},
+        %{value: "00:00:00.000000000", precision: 6, expected: ~T[00:00:00.000000]},
+        %{value: "12:34:56.123456789", precision: 6, expected: ~T[12:34:56.123456]},
+        %{value: "00:00:00.123000", precision: 6, expected: ~T[00:00:00.123000]},
+        %{value: "00:00:00.000123000", precision: 6, expected: ~T[00:00:00.000123]},
+        %{value: "23:59:59.999999999", precision: 6, expected: ~T[23:59:59.999999]},
+        %{value: "12:34:56.123456789", precision: 7, expected: ~T[12:34:56.123456]},
+        %{value: "12:34:56.123456789", precision: 8, expected: ~T[12:34:56.123456]},
+        %{value: "12:34:56.123456789", precision: 9, expected: ~T[12:34:56.123456]},
+        %{value: "23:59:59.999999999", precision: 9, expected: ~T[23:59:59.999999]}
       ]
 
       for time <- times do
-        %{precision: precision, expected: expected} = time
+        %{value: value, precision: precision, expected: expected} = time
 
-        assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(#{precision})", [],
-                 settings: settings
-               ).rows ==
+        assert Ch.query!(conn, "SELECT '#{value}'::time64(#{precision})", [], settings: settings).rows ==
                  [[expected]]
 
         assert Ch.query!(
                  conn,
                  "SELECT {time:time64(#{precision})}",
-                 %{"time" => ~T[12:34:56.123456]},
+                 %{"time" => expected},
                  settings: settings
                ).rows ==
                  [[expected]]
