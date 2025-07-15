@@ -941,14 +941,14 @@ defmodule Ch.ConnectionTest do
 
       Ch.query!(
         conn,
-        "CREATE TABLE time64_t(`time` Time64(3), `event_id` UInt8) ENGINE = Memory",
+        "CREATE TABLE time64_3_t(`time` Time64(3), `event_id` UInt8) ENGINE = Memory",
         [],
         settings: settings
       )
 
       Ch.query!(
         conn,
-        "INSERT INTO time64_t VALUES (15463123, 1), (154600.123, 2), ('100:00:00', 3);",
+        "INSERT INTO time64_3_t VALUES (15463123, 1), (154600.123, 2), ('100:00:00', 3);",
         [],
         settings: settings
       )
@@ -959,11 +959,11 @@ defmodule Ch.ConnectionTest do
 
       assert_raise ArgumentError,
                    "ClickHouse Time value 154600.123 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
-                   fn -> Ch.query!(conn, "select * from time64_t", [], settings: settings) end
+                   fn -> Ch.query!(conn, "select * from time64_3_t", [], settings: settings) end
 
       Ch.query!(
         conn,
-        "INSERT INTO time64_t(time, event_id) FORMAT RowBinary",
+        "INSERT INTO time64_3_t(time, event_id) FORMAT RowBinary",
         _rows = [
           [~T[00:00:00.000000], 4],
           [~T[12:34:56.012300], 5],
@@ -977,7 +977,7 @@ defmodule Ch.ConnectionTest do
 
       assert Ch.query!(
                conn,
-               "select * from time64_t where time < {max_elixir_time:Time64(6)} order by event_id",
+               "select * from time64_3_t where time < {max_elixir_time:Time64(6)} order by event_id",
                %{"max_elixir_time" => ~T[23:59:59.999999]},
                settings: settings
              ).rows ==
@@ -988,6 +988,84 @@ defmodule Ch.ConnectionTest do
                  [~T[12:34:56.123], 6],
                  [~T[12:34:56.120], 7],
                  [~T[23:59:59.999], 8]
+               ]
+    end
+
+    test "Time64(6)", %{conn: conn} do
+      settings = [enable_time_time64_type: 1]
+
+      Ch.query!(
+        conn,
+        "CREATE TABLE time64_6_t(`time` Time64(6), `event_id` UInt8) ENGINE = Memory",
+        [],
+        settings: settings
+      )
+
+      Ch.query!(
+        conn,
+        "INSERT INTO time64_6_t(time, event_id) FORMAT RowBinary",
+        _rows = [
+          [~T[00:00:00.000000], 1],
+          [~T[12:34:56.123456], 2],
+          [~T[12:34:56.123000], 3],
+          [~T[12:34:56.000123], 4],
+          [~T[23:59:59.999999], 5]
+        ],
+        settings: settings,
+        types: ["Time64(6)", "UInt8"]
+      )
+
+      assert Ch.query!(
+               conn,
+               "select * from time64_6_t order by event_id",
+               [],
+               settings: settings
+             ).rows ==
+               [
+                 [~T[00:00:00.000000], 1],
+                 [~T[12:34:56.123456], 2],
+                 [~T[12:34:56.123000], 3],
+                 [~T[12:34:56.000123], 4],
+                 [~T[23:59:59.999999], 5]
+               ]
+    end
+
+    test "Time64(9)", %{conn: conn} do
+      settings = [enable_time_time64_type: 1]
+
+      Ch.query!(
+        conn,
+        "CREATE TABLE time64_9_t(`time` Time64(9), `event_id` UInt8) ENGINE = Memory",
+        [],
+        settings: settings
+      )
+
+      Ch.query!(
+        conn,
+        "INSERT INTO time64_9_t(time, event_id) FORMAT RowBinary",
+        _rows = [
+          [~T[00:00:00.000000], 1],
+          [~T[12:34:56.123456], 2],
+          [~T[12:34:56.123000], 3],
+          [~T[12:34:56.000123], 4],
+          [~T[23:59:59.999999], 5]
+        ],
+        settings: settings,
+        types: ["Time64(9)", "UInt8"]
+      )
+
+      assert Ch.query!(
+               conn,
+               "select * from time64_9_t order by event_id",
+               [],
+               settings: settings
+             ).rows ==
+               [
+                 [~T[00:00:00.000000], 1],
+                 [~T[12:34:56.123456], 2],
+                 [~T[12:34:56.123000], 3],
+                 [~T[12:34:56.000123], 4],
+                 [~T[23:59:59.999999], 5]
                ]
     end
 

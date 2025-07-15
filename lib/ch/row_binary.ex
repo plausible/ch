@@ -356,7 +356,7 @@ defmodule Ch.RowBinary do
       cond do
         time_unit < 1_000_000 -> div(micros, time_unit)
         time_unit == 1_000_000 -> micros
-        true -> rem(micros, time_unit)
+        true -> micros * div(time_unit, 1_000_000)
       end
 
     ticks = s * time_unit + micros_as_ticks
