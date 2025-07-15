@@ -91,12 +91,28 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::UUID").rows
     end
 
+    # https://clickhouse.com/docs/sql-reference/data-types/time
     @tag :time
     test "decode time", %{conn: conn} do
       settings = [enable_time_time64_type: 1]
 
       assert Ch.query!(conn, "SELECT '12:34:56'::time", [], settings: settings).rows == [
                [~T[12:34:56]]
+             ]
+
+      # since ClickHouse supports time values of [-999:59:59, 999:59:59]
+      # and Elixir's Time supports values of [00:00:00, 23:59:59]
+      # we decode ClickHouse's time values as Elixir's Duration when it's out of Elixir's Time range
+      assert Ch.query!(conn, "SELECT '-00:00:01'::time", [], settings: settings).rows == [
+               [%Duration{second: -1}]
+             ]
+
+      assert Ch.query!(conn, "SELECT '999:59:59'::time", [], settings: settings).rows == [
+               [%Duration{second: 3_599_999}]
+             ]
+
+      assert Ch.query!(conn, "SELECT '-999:59:59'::time", [], settings: settings).rows == [
+               [%Duration{second: -3_599_999}]
              ]
 
       assert Ch.query!(conn, "SELECT {time:Time}", %{"time" => ~T[12:34:56]}, settings: settings).rows ==
@@ -112,6 +128,7 @@ defmodule Ch.QueryTest do
       end
     end
 
+    # https://clickhouse.com/docs/sql-reference/data-types/time64
     @tag :time
     test "decode time64", %{conn: conn} do
       settings = [enable_time_time64_type: 1]

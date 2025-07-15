@@ -895,6 +895,31 @@ defmodule Ch.ConnectionTest do
                Ch.query!(conn, "SELECT event_id FROM new WHERE timestamp = '1960-01-01'")
     end
 
+    # https://clickhouse.com/docs/sql-reference/data-types/time
+    @tag :time
+    test "time", %{conn: conn} do
+      settings = [enable_time_time64_type: 1]
+
+      Ch.query!(conn, "CREATE TABLE time_t(`time` Time, `event_id` UInt8) ENGINE = Memory", [],
+        settings: settings
+      )
+
+      Ch.query!(conn, "INSERT INTO time_t VALUES ('100:00:00', 1), (12453, 3)", [],
+        settings: settings
+      )
+
+      # since ClickHouse supports time values of [-999:59:59, 999:59:59]
+      # and Elixir's Time supports values of [00:00:00, 23:59:59]
+      # we decode ClickHouse's time values as Elixir's Duration when it's out of Elixir's Time range
+      assert Ch.query!(conn, "select * from time_t order by event_id asc", [], settings: settings).rows ==
+               [
+                 # ('100:00:00', 1)
+                 [Duration.new!(second: 360_000), 1],
+                 # (12453, 3)
+                 [~T[03:27:33], 3]
+               ]
+    end
+
     test "datetime64", %{conn: conn} do
       Ch.query!(
         conn,

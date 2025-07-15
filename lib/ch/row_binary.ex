@@ -883,8 +883,19 @@ defmodule Ch.RowBinary do
         decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
 
       :time ->
-        <<s::32-little, bin::bytes>> = bin
-        t = Time.from_seconds_after_midnight(s)
+        <<s::32-little-signed, bin::bytes>> = bin
+
+        # since ClickHouse supports time values of [-999:59:59, 999:59:59]
+        # and Elixir's Time supports values of [00:00:00, 23:59:59]
+        # we decode ClickHouse's time values as Elixir's Duration when it's out of Elixir's Time range
+
+        t =
+          if s > 0 and s < 86400 do
+            Time.from_seconds_after_midnight(s)
+          else
+            Duration.new!(second: s)
+          end
+
         decode_rows(types_rest, bin, [t | row], rows, types)
 
       {:time64, time_unit} ->
