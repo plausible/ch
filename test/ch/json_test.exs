@@ -19,6 +19,12 @@ defmodule Ch.JSONTest do
     assert Ch.query!(conn, ~s|select '{"a":"b","c":"d"}'::json|).rows == [
              [%{"a" => "b", "c" => "d"}]
            ]
+
+    assert Ch.query!(conn, ~s|select '{"a":42}'::json|).rows == [[%{"a" => 42}]]
+
+    assert Ch.query!(conn, ~s|select '{}'::json|).rows == [[%{}]]
+
+    assert Ch.query!(conn, ~s|select '{"a":3.14}'::json|).rows == [[%{"a" => 3.14}]]
   end
 
   # TODO

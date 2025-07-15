@@ -786,6 +786,32 @@ defmodule Ch.RowBinary do
     decode_rows(types_rest, bin, [Map.new(acc) | row], rows, types)
   end
 
+  defp decode_json_continue_value(
+         <<0x0A, i64::64-little-signed, bin::bytes>>,
+         name,
+         count,
+         acc,
+         types_rest,
+         row,
+         rows,
+         types
+       ) do
+    decode_json_continue(bin, count - 1, [{name, i64} | acc], types_rest, row, rows, types)
+  end
+
+  defp decode_json_continue_value(
+         <<0x0E, f64::64-little-float, bin::bytes>>,
+         name,
+         count,
+         acc,
+         types_rest,
+         row,
+         rows,
+         types
+       ) do
+    decode_json_continue(bin, count - 1, [{name, f64} | acc], types_rest, row, rows, types)
+  end
+
   for {pattern, size} <- varints do
     defp decode_json_continue_value(
            <<0x15, unquote(pattern), string::size(unquote(size))-bytes, bin::bytes>>,
