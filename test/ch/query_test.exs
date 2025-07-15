@@ -99,6 +99,60 @@ defmodule Ch.QueryTest do
              ]
     end
 
+    test "decode time64", %{conn: conn} do
+      settings = [enable_time_time64_type: 1]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(0)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56]]
+               ]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(1)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56.1]]
+               ]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(2)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56.12]]
+               ]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(3)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56.123]]
+               ]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(4)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56.1234]]
+               ]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(5)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56.12345]]
+               ]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(6)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56.123456]]
+               ]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(7)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56.123456]]
+               ]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(8)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56.123456]]
+               ]
+
+      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(9)", [], settings: settings).rows ==
+               [
+                 [~T[12:34:56.123456]]
+               ]
+    end
+
     test "decode arrays", %{conn: conn} do
       assert [[[]]] = Ch.query!(conn, "SELECT []").rows
       assert [[[1]]] = Ch.query!(conn, "SELECT [1]").rows

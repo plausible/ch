@@ -24,7 +24,7 @@ defmodule Ch.Types do
       {"DateTime64", :datetime64, [:int, :string]},
       {"DateTime", :datetime, [:string]},
       # {"DateTime", :datetime, []},
-      {"Time64", :time64, []},
+      {"Time64", :time64, [:int]},
       {"Time", :time, []},
       {"Date32", :date32, []},
       {"Date", :date, []},
@@ -445,6 +445,7 @@ defmodule Ch.Types do
   defp build_type(:decimal128 = d, [s]), do: {d, s}
   defp build_type(:decimal256 = d, [s]), do: {d, s}
   defp build_type(:decimal = d, [s, p]), do: {d, p, s}
+  defp build_type(:time64 = t, [precision]), do: {t, precision}
 
   defp build_enum_mapping(mapping) do
     mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)

@@ -596,6 +596,8 @@ defmodule Ch.RowBinary do
   defp decoding_type({:datetime64 = t, p}), do: {t, time_unit(p), _tz = nil}
   defp decoding_type({:datetime64 = t, p, tz}), do: {t, time_unit(p), tz}
 
+  defp decoding_type({:time64 = t, p}), do: {t, time_unit(p)}
+
   defp decoding_type({e, mappings}) when e in [:enum8, :enum16] do
     {e, Map.new(mappings, fn {k, v} -> {v, k} end)}
   end
@@ -883,6 +885,11 @@ defmodule Ch.RowBinary do
       :time ->
         <<s::32-little, bin::bytes>> = bin
         t = Time.from_seconds_after_midnight(s)
+        decode_rows(types_rest, bin, [t | row], rows, types)
+
+      {:time64, time_unit} ->
+        <<ticks::64-little-signed, bin::bytes>> = bin
+        t = ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
         decode_rows(types_rest, bin, [t | row], rows, types)
 
       {:datetime, timezone} ->
