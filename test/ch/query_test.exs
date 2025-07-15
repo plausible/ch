@@ -98,61 +98,53 @@ defmodule Ch.QueryTest do
       assert Ch.query!(conn, "SELECT '12:34:56'::time", [], settings: settings).rows == [
                [~T[12:34:56]]
              ]
+
+      assert Ch.query!(conn, "SELECT {time:Time}", %{"time" => ~T[12:34:56]}, settings: settings).rows ==
+               [[~T[12:34:56]]]
+
+      # ** (Ch.Error) Code: 457. DB::Exception: Value 12:34:56.123456 cannot be parsed as Time for query parameter 'time'
+      #               because it isn't parsed completely: only 8 of 15 bytes was parsed: 12:34:56. (BAD_QUERY_PARAMETER)
+      #               (version 25.6.3.116 (official build))
+      assert_raise Ch.Error, ~r/only 8 of 15 bytes was parsed/, fn ->
+        Ch.query!(conn, "SELECT {time:Time}", %{"time" => ~T[12:34:56.123456]},
+          settings: settings
+        )
+      end
     end
 
     @tag :time
     test "decode time64", %{conn: conn} do
       settings = [enable_time_time64_type: 1]
 
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(0)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56]]
-               ]
+      times = [
+        %{precision: 0, expected: ~T[12:34:56]},
+        %{precision: 1, expected: ~T[12:34:56.1]},
+        %{precision: 2, expected: ~T[12:34:56.12]},
+        %{precision: 3, expected: ~T[12:34:56.123]},
+        %{precision: 4, expected: ~T[12:34:56.1234]},
+        %{precision: 5, expected: ~T[12:34:56.12345]},
+        %{precision: 6, expected: ~T[12:34:56.123456]},
+        %{precision: 7, expected: ~T[12:34:56.123456]},
+        %{precision: 8, expected: ~T[12:34:56.123456]},
+        %{precision: 9, expected: ~T[12:34:56.123456]}
+      ]
 
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(1)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56.1]]
-               ]
+      for time <- times do
+        %{precision: precision, expected: expected} = time
 
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(2)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56.12]]
-               ]
+        assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(#{precision})", [],
+                 settings: settings
+               ).rows ==
+                 [[expected]]
 
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(3)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56.123]]
-               ]
-
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(4)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56.1234]]
-               ]
-
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(5)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56.12345]]
-               ]
-
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(6)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56.123456]]
-               ]
-
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(7)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56.123456]]
-               ]
-
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(8)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56.123456]]
-               ]
-
-      assert Ch.query!(conn, "SELECT '12:34:56.123456789'::time64(9)", [], settings: settings).rows ==
-               [
-                 [~T[12:34:56.123456]]
-               ]
+        assert Ch.query!(
+                 conn,
+                 "SELECT {time:time64(#{precision})}",
+                 %{"time" => ~T[12:34:56.123456]},
+                 settings: settings
+               ).rows ==
+                 [[expected]]
+      end
     end
 
     test "decode arrays", %{conn: conn} do
