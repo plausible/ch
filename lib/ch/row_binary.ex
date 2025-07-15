@@ -899,6 +899,7 @@ defmodule Ch.RowBinary do
           else
             # since ClickHouse supports time values of [-999:59:59, 999:59:59]
             # and Elixir's Time supports values of [00:00:00, 23:59:59]
+            # we raise an error when ClickHouse's time value is out of Elixir's Time range
             raise ArgumentError,
                   "ClickHouse Time value #{s} (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)"
 
