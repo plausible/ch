@@ -91,6 +91,12 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::UUID").rows
     end
 
+    test "decode time", %{conn: conn} do
+      assert Ch.query!(conn, "SELECT '12:34:56'::time", [],
+               settings: [enable_time_time64_type: 1]
+             ).rows == [[~T[12:34:56]]]
+    end
+
     test "decode arrays", %{conn: conn} do
       assert [[[]]] = Ch.query!(conn, "SELECT []").rows
       assert [[[1]]] = Ch.query!(conn, "SELECT [1]").rows
