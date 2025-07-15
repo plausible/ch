@@ -910,7 +910,20 @@ defmodule Ch.RowBinary do
 
       {:time64, time_unit} ->
         <<ticks::64-little-signed, bin::bytes>> = bin
-        t = ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
+
+        t =
+          if ticks >= 0 and ticks < 86400 * time_unit do
+            ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
+          else
+            # since ClickHouse supports time values of [-999:59:59.999999999, 999:59:59.999999999]
+            # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
+            # we raise an error when ClickHouse's time value is out of Elixir's Time range
+            raise ArgumentError,
+                  "ClickHouse Time value #{ticks / time_unit} (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)"
+
+            # TODO: we could potentially decode ClickHouse's time values as Elixir's Duration when it's out of Elixir's Time range
+          end
+
         decode_rows(types_rest, bin, [t | row], rows, types)
 
       {:datetime, timezone} ->

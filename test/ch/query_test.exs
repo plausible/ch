@@ -186,6 +186,32 @@ defmodule Ch.QueryTest do
                ).rows ==
                  [[expected]]
       end
+
+      # ClickHouse supports time values of [-999:59:59.999999999, 999:59:59.999999999]
+      # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
+      # so we raise an error when ClickHouse's time value is out of Elixir's Time range
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value -1.0 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
+                   fn ->
+                     Ch.query!(conn, "SELECT '-00:00:01.000'::time64(6)", [], settings: settings)
+                   end
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value 3599999.999999 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
+                   fn ->
+                     Ch.query!(conn, "SELECT '999:59:59.999999999'::time64(6)", [],
+                       settings: settings
+                     )
+                   end
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value -3599999.999999 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
+                   fn ->
+                     Ch.query!(conn, "SELECT '-999:59:59.999999999'::time64(6)", [],
+                       settings: settings
+                     )
+                   end
     end
 
     test "decode arrays", %{conn: conn} do
