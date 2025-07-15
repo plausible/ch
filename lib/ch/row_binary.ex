@@ -551,6 +551,8 @@ defmodule Ch.RowBinary do
               :uuid,
               :date,
               :date32,
+              :time,
+              :time64,
               :ipv4,
               :ipv6,
               :point,
@@ -877,6 +879,11 @@ defmodule Ch.RowBinary do
       :date32 ->
         <<d::32-little-signed, bin::bytes>> = bin
         decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
+
+      :time ->
+        <<s::32-little, bin::bytes>> = bin
+        t = Time.from_seconds_after_midnight(s)
+        decode_rows(types_rest, bin, [t | row], rows, types)
 
       {:datetime, timezone} ->
         <<s::32-little, bin::bytes>> = bin

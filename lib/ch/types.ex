@@ -24,6 +24,8 @@ defmodule Ch.Types do
       {"DateTime64", :datetime64, [:int, :string]},
       {"DateTime", :datetime, [:string]},
       # {"DateTime", :datetime, []},
+      {"Time64", :time64, []},
+      {"Time", :time, []},
       {"Date32", :date32, []},
       {"Date", :date, []},
       {"LowCardinality", :low_cardinality, [:type]},
