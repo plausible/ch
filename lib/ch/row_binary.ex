@@ -582,6 +582,7 @@ defmodule Ch.RowBinary do
               :ipv4,
               :ipv6,
               :point,
+              :json,
               :nothing
             ],
        do: t
@@ -754,6 +755,52 @@ defmodule Ch.RowBinary do
     end
   end
 
+  for {pattern, count} <- varints do
+    defp decode_json_decode_rows(
+           <<unquote(pattern), bin::bytes>>,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_json_continue(bin, unquote(count), [], types_rest, row, rows, types)
+    end
+  end
+
+  for {pattern, size} <- varints do
+    defp decode_json_continue(
+           <<unquote(pattern), name::size(unquote(size))-bytes, bin::bytes>>,
+           count,
+           acc,
+           types_rest,
+           row,
+           rows,
+           types
+         )
+         when count > 0 do
+      decode_json_continue_value(bin, name, count, acc, types_rest, row, rows, types)
+    end
+  end
+
+  defp decode_json_continue(bin, _count = 0, acc, types_rest, row, rows, types) do
+    decode_rows(types_rest, bin, [Map.new(acc) | row], rows, types)
+  end
+
+  for {pattern, size} <- varints do
+    defp decode_json_continue_value(
+           <<0x15, unquote(pattern), string::size(unquote(size))-bytes, bin::bytes>>,
+           name,
+           count,
+           acc,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_json_continue(bin, count - 1, [{name, string} | acc], types_rest, row, rows, types)
+    end
+  end
+
   @compile inline: [decode_array_decode_rows: 6]
   defp decode_array_decode_rows(<<0, bin::bytes>>, _type, types_rest, row, rows, types) do
     decode_rows(types_rest, bin, [[] | row], rows, types)
@@ -883,6 +930,9 @@ defmodule Ch.RowBinary do
 
       :binary ->
         decode_binary_decode_rows(bin, types_rest, row, rows, types)
+
+      :json ->
+        decode_json_decode_rows(bin, types_rest, row, rows, types)
 
       # TODO utf8?
       {:fixed_string, size} ->

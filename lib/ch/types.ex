@@ -28,6 +28,7 @@ defmodule Ch.Types do
       {"Time", :time, []},
       {"Date32", :date32, []},
       {"Date", :date, []},
+      {"JSON", :json, []},
       {"LowCardinality", :low_cardinality, [:type]},
       for size <- [32, 64, 128, 256] do
         {"Decimal#{size}", :"decimal#{size}", [:int]}
@@ -324,6 +325,7 @@ defmodule Ch.Types do
   end
 
   def decode("DateTime"), do: :datetime
+  def decode("JSON" <> _), do: :json
 
   def decode(type) do
     try do
