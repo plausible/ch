@@ -918,6 +918,23 @@ defmodule Ch.ConnectionTest do
                  # (12453, 3)
                  [~T[03:27:33], 3]
                ]
+
+      Ch.query!(
+        conn,
+        "INSERT INTO time_t(time, event_id) FORMAT RowBinary",
+        _rows = [
+          [~T[12:34:56], 2]
+        ],
+        settings: settings,
+        types: ["Time", "UInt8"]
+      )
+
+      assert Ch.query!(conn, "select * from time_t order by event_id asc", [], settings: settings).rows ==
+               [
+                 [Duration.new!(second: 360_000), 1],
+                 [~T[12:34:56], 2],
+                 [~T[03:27:33], 3]
+               ]
     end
 
     test "datetime64", %{conn: conn} do

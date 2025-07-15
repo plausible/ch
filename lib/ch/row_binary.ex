@@ -98,6 +98,7 @@ defmodule Ch.RowBinary do
               :date,
               :datetime,
               :date32,
+              :time,
               :ipv4,
               :ipv6,
               :point,
@@ -338,6 +339,14 @@ defmodule Ch.RowBinary do
   end
 
   def encode(:date32, nil), do: <<0::32>>
+
+  # TODO support encoding durations?
+  def encode(:time, %Time{} = time) do
+    {s, _micros} = Time.to_seconds_after_midnight(time)
+    <<s::32-little-signed>>
+  end
+
+  def encode(:time, nil), do: <<0::32>>
 
   def encode(:uuid, <<u1::64, u2::64>>), do: <<u1::64-little, u2::64-little>>
 
