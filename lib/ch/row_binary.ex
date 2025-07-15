@@ -340,7 +340,6 @@ defmodule Ch.RowBinary do
 
   def encode(:date32, nil), do: <<0::32>>
 
-  # TODO support encoding durations?
   def encode(:time, %Time{} = time) do
     {s, _micros} = Time.to_seconds_after_midnight(time)
     <<s::32-little-signed>>
@@ -894,15 +893,16 @@ defmodule Ch.RowBinary do
       :time ->
         <<s::32-little-signed, bin::bytes>> = bin
 
-        # since ClickHouse supports time values of [-999:59:59, 999:59:59]
-        # and Elixir's Time supports values of [00:00:00, 23:59:59]
-        # we decode ClickHouse's time values as Elixir's Duration when it's out of Elixir's Time range
-
         t =
-          if s > 0 and s < 86400 do
+          if s >= 0 and s < 86400 do
             Time.from_seconds_after_midnight(s)
           else
-            Duration.new!(second: s)
+            # since ClickHouse supports time values of [-999:59:59, 999:59:59]
+            # and Elixir's Time supports values of [00:00:00, 23:59:59]
+            raise ArgumentError,
+                  "ClickHouse Time value #{s} (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)"
+
+            # TODO: we could potentially decode ClickHouse's time values as Elixir's Duration when it's out of Elixir's Time range
           end
 
         decode_rows(types_rest, bin, [t | row], rows, types)

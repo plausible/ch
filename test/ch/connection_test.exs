@@ -904,37 +904,34 @@ defmodule Ch.ConnectionTest do
         settings: settings
       )
 
-      Ch.query!(conn, "INSERT INTO time_t VALUES ('100:00:00', 1), (12453, 3)", [],
+      Ch.query!(conn, "INSERT INTO time_t VALUES ('100:00:00', 1), (12453, 2)", [],
         settings: settings
       )
 
-      # since ClickHouse supports time values of [-999:59:59, 999:59:59]
+      # ClickHouse supports time values of [-999:59:59, 999:59:59]
       # and Elixir's Time supports values of [00:00:00, 23:59:59]
-      # we decode ClickHouse's time values as Elixir's Duration when it's out of Elixir's Time range
-      assert Ch.query!(conn, "select * from time_t order by event_id asc", [], settings: settings).rows ==
-               [
-                 # ('100:00:00', 1)
-                 [Duration.new!(second: 360_000), 1],
-                 # (12453, 3)
-                 [~T[03:27:33], 3]
-               ]
+      # so we raise an error when ClickHouse's time value is out of Elixir's Time range
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value 360000 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
+                   fn -> Ch.query!(conn, "select * from time_t", [], settings: settings) end
 
       Ch.query!(
         conn,
         "INSERT INTO time_t(time, event_id) FORMAT RowBinary",
         _rows = [
-          [~T[12:34:56], 2]
+          [~T[00:00:00], 3],
+          [~T[12:34:56], 4],
+          [~T[23:59:59], 5]
         ],
         settings: settings,
         types: ["Time", "UInt8"]
       )
 
-      assert Ch.query!(conn, "select * from time_t order by event_id asc", [], settings: settings).rows ==
-               [
-                 [Duration.new!(second: 360_000), 1],
-                 [~T[12:34:56], 2],
-                 [~T[03:27:33], 3]
-               ]
+      assert Ch.query!(conn, "select * from time_t where event_id > 1 order by event_id", [],
+               settings: settings
+             ).rows ==
+               [[~T[03:27:33], 2], [~T[00:00:00], 3], [~T[12:34:56], 4], [~T[23:59:59], 5]]
     end
 
     test "datetime64", %{conn: conn} do
