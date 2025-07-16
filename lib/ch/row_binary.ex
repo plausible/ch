@@ -189,6 +189,9 @@ defmodule Ch.RowBinary do
   end
 
   def encode(:json, json) do
+    # assuming it can be sent as text and not "native" binary JSON
+    # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
+    # TODO
     encode(:string, Jason.encode_to_iodata!(json))
   end
 
@@ -905,6 +908,9 @@ defmodule Ch.RowBinary do
         decode_binary_decode_rows(bin, types_rest, row, rows, types)
 
       :json ->
+        # assuming it arrives as text and not "native" binary JSON
+        # i.e. assumes `settings: [output_format_binary_write_json_as_string: 1]`
+        # TODO
         decode_string_json_decode_rows(bin, types_rest, row, rows, types)
 
       # TODO utf8?
