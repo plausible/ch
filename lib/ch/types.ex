@@ -18,6 +18,7 @@ defmodule Ch.Types do
       end,
       {"Array", :array, [:type]},
       {"Tuple", :tuple, [:maybe_named_column]},
+      {"Variant", :variant, [:type]},
       {"Map", :map, [:type]},
       {"FixedString", :fixed_string, [:int]},
       {"Nullable", :nullable, [:type]},
@@ -461,6 +462,7 @@ defmodule Ch.Types do
   defp build_type(:decimal256 = d, [s]), do: {d, s}
   defp build_type(:decimal = d, [s, p]), do: {d, p, s}
   defp build_type(:time64 = t, [precision]), do: {t, precision}
+  defp build_type(:variant = v, ts), do: {v, build_variant(ts)}
 
   defp build_enum_mapping(mapping) do
     mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)
@@ -477,6 +479,10 @@ defmodule Ch.Types do
   end
 
   defp named_columns_to_types([], acc), do: acc
+
+  defp build_variant(types) do
+    Enum.sort_by(types, &__MODULE__.encode/1)
+  end
 
   # TODO '', \'
 

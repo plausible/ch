@@ -606,6 +606,10 @@ defmodule Ch.RowBinary do
     {t, Enum.map(ts, &decoding_type/1)}
   end
 
+  defp decoding_type({:variant = t, ts}) do
+    {t, Enum.map(ts, &decoding_type/1)}
+  end
+
   defp decoding_type({:map = m, kt, vt}) do
     {m, decoding_type(kt), decoding_type(vt)}
   end
@@ -987,6 +991,11 @@ defmodule Ch.RowBinary do
       {:tuple_over, original_row} ->
         tuple = row |> :lists.reverse() |> List.to_tuple()
         decode_rows(types_rest, bin, [tuple | original_row], rows, types)
+
+      {:variant, variant_types} ->
+        <<variant_type_index::8, bin::bytes>> = bin
+        variant_type = Enum.at(variant_types, variant_type_index)
+        decode_rows([variant_type | types_rest], bin, row, rows, types)
 
       {:datetime64, time_unit, timezone} ->
         <<s::64-little-signed, bin::bytes>> = bin
