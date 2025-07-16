@@ -463,6 +463,7 @@ defmodule Ch.RowBinary do
 
   defp encode_many_kv([] = done, _key_type, _value_type), do: done
 
+  # TODO find a better way than try/rescue
   defp try_encode_variant([type | types], idx, value) do
     try do
       encode(type, value)
