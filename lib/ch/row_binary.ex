@@ -93,6 +93,7 @@ defmodule Ch.RowBinary do
        when t in [
               :string,
               :binary,
+              :json,
               :boolean,
               :uuid,
               :date,
@@ -185,6 +186,10 @@ defmodule Ch.RowBinary do
       _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
       nil -> 0
     end
+  end
+
+  def encode(:json, json) do
+    encode(:string, Jason.encode_to_iodata!(json))
   end
 
   def encode({:fixed_string, size}, str) when byte_size(str) == size do

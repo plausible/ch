@@ -3,6 +3,8 @@ defmodule Ch.JSONTest do
 
   @moduletag :json
 
+  @table "json_test"
+
   setup do
     conn =
       start_supervised!(
@@ -14,6 +16,10 @@ defmodule Ch.JSONTest do
            input_format_binary_read_json_as_string: 1
          ]}
       )
+
+    on_exit(fn ->
+      Ch.Test.query("DROP TABLE IF EXISTS #{@table}", [], database: Ch.Test.database())
+    end)
 
     {:ok, conn: conn}
   end
@@ -45,6 +51,40 @@ defmodule Ch.JSONTest do
 
     assert Ch.query!(conn, ~s|select '{"a":[1,2.13,"s",{"a":"b"}]}'::json|).rows == [
              [%{"a" => ["1", 2.13, "s", %{"a" => "b"}]}]
+           ]
+  end
+
+  test "creating, inserting, and reading json", %{conn: conn} do
+    Ch.query!(conn, "CREATE TABLE #{@table} (json JSON) ENGINE = Memory")
+
+    Ch.query!(conn, """
+    INSERT INTO #{@table} VALUES
+    ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'),
+    ('{"f" : "Hello, World!"}'),
+    ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}')
+    """)
+
+    assert Ch.query!(
+             conn,
+             "SELECT json FROM #{@table}"
+           ).rows == [
+             [%{"a" => %{"b" => "42"}, "c" => ["1", "2", "3"]}],
+             [%{"f" => "Hello, World!"}],
+             [%{"a" => %{"b" => "43", "e" => "10"}, "c" => ["4", "5", "6"]}]
+           ]
+
+    Ch.query!(
+      conn,
+      "INSERT INTO #{@table} FORMAT RowBinary",
+      [[%{"some other" => "json value", "from" => "rowbinary"}]],
+      types: ["JSON"]
+    )
+
+    assert Ch.query!(
+             conn,
+             "SELECT json FROM #{@table} where json.from = 'rowbinary'"
+           ).rows == [
+             [%{"from" => "rowbinary", "some other" => "json value"}]
            ]
   end
 end
