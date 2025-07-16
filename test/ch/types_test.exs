@@ -89,6 +89,14 @@ defmodule Ch.TypesTest do
                 ]}
     end
 
+    test "variant" do
+      assert decode("Variant(UInt64, String, Array(UInt64))") ==
+               {:variant, [{:array, :u64}, :string, :u64]}
+
+      assert decode("Variant ( UInt64 , String , Array ( UInt64 ) )") ==
+               {:variant, [{:array, :u64}, :string, :u64]}
+    end
+
     test "datetime" do
       assert decode("DateTime") == :datetime
       assert decode("DateTime('UTC')") == {:datetime, "UTC"}

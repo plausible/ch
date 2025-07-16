@@ -18,6 +18,7 @@ defmodule Ch.Types do
       end,
       {"Array", :array, [:type]},
       {"Tuple", :tuple, [:maybe_named_column]},
+      {"Variant", :variant, [:type]},
       {"Map", :map, [:type]},
       {"FixedString", :fixed_string, [:int]},
       {"Nullable", :nullable, [:type]},
@@ -232,6 +233,21 @@ defmodule Ch.Types do
 
   """
   def tuple(types) when is_list(types), do: {:tuple, types}
+
+  @doc """
+  Helper for `Variant(T1, T2, ...)` ClickHouse type:
+
+      iex> variant([u64(), string(), array(u64())])
+      {:variant, [{:array, :u64}, :string, :u64]}
+
+      iex> to_string(encode(variant([u64(), string(), array(u64())])))
+      "Variant(Array(UInt64), String, UInt64)"
+
+      iex> decode("Variant(UInt64, String, Array(UInt64))")
+      variant([array(u64()), u64(), string()])
+
+  """
+  def variant(types) when is_list(types), do: {:variant, build_variant(types)}
 
   @doc """
   Helper for `Map(K, V)` ClickHouse type:
@@ -461,6 +477,7 @@ defmodule Ch.Types do
   defp build_type(:decimal256 = d, [s]), do: {d, s}
   defp build_type(:decimal = d, [s, p]), do: {d, p, s}
   defp build_type(:time64 = t, [precision]), do: {t, precision}
+  defp build_type(:variant = v, ts), do: {v, build_variant(ts)}
 
   defp build_enum_mapping(mapping) do
     mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)
@@ -477,6 +494,10 @@ defmodule Ch.Types do
   end
 
   defp named_columns_to_types([], acc), do: acc
+
+  defp build_variant(types) do
+    Enum.sort_by(types, &__MODULE__.encode/1)
+  end
 
   # TODO '', \'
 
@@ -547,6 +568,7 @@ defmodule Ch.Types do
   def encode({:fixed_string, n}), do: ["FixedString(", String.Chars.Integer.to_string(n), ?)]
   def encode({:array, type}), do: ["Array(", encode(type), ?)]
   def encode({:tuple, types}), do: ["Tuple(", encode_intersperse(types, ", "), ?)]
+  def encode({:variant, types}), do: ["Variant(", encode_intersperse(types, ", "), ?)]
 
   def encode({:map, key_type, value_type}) do
     ["Map(", encode(key_type), ", ", encode(value_type), ?)]

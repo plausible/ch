@@ -129,6 +129,10 @@ defmodule Ch.RowBinary do
     {t, Enum.map(ts, &encoding_type/1)}
   end
 
+  defp encoding_type({:variant = v, ts}) do
+    {v, Enum.map(ts, &encoding_type/1)}
+  end
+
   defp encoding_type({:map = m, kt, vt}) do
     {m, encoding_type(kt), encoding_type(vt)}
   end
@@ -302,6 +306,12 @@ defmodule Ch.RowBinary do
     Enum.map(types, fn type -> encode(type, nil) end)
   end
 
+  def encode({:variant, _types}, nil), do: 255
+
+  def encode({:variant, types}, value) do
+    try_encode_variant(types, 0, value)
+  end
+
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
   end
@@ -452,6 +462,21 @@ defmodule Ch.RowBinary do
   end
 
   defp encode_many_kv([] = done, _key_type, _value_type), do: done
+
+  # TODO find a better way than try/rescue
+  defp try_encode_variant([type | types], idx, value) do
+    try do
+      encode(type, value)
+    else
+      encoded -> [idx | encoded]
+    rescue
+      _e -> try_encode_variant(types, idx + 1, value)
+    end
+  end
+
+  defp try_encode_variant([], _idx, value) do
+    raise ArgumentError, "no matching type found for encoding #{inspect(value)} as Variant"
+  end
 
   @compile {:inline, d: 1}
 
@@ -604,6 +629,10 @@ defmodule Ch.RowBinary do
 
   defp decoding_type({:tuple = t, ts}) do
     {t, Enum.map(ts, &decoding_type/1)}
+  end
+
+  defp decoding_type({:variant = v, ts}) do
+    {v, Enum.map(ts, &decoding_type/1)}
   end
 
   defp decoding_type({:map = m, kt, vt}) do
@@ -987,6 +1016,18 @@ defmodule Ch.RowBinary do
       {:tuple_over, original_row} ->
         tuple = row |> :lists.reverse() |> List.to_tuple()
         decode_rows(types_rest, bin, [tuple | original_row], rows, types)
+
+      {:variant, variant_types} ->
+        case bin do
+          <<255, bin::bytes>> ->
+            # 255 is the variant type index for "nothing"
+            decode_rows(types_rest, bin, [nil | row], rows, types)
+
+          # TODO varint?
+          <<variant_type_index::8, bin::bytes>> ->
+            variant_type = Enum.at(variant_types, variant_type_index)
+            decode_rows([variant_type | types_rest], bin, row, rows, types)
+        end
 
       {:datetime64, time_unit, timezone} ->
         <<s::64-little-signed, bin::bytes>> = bin
