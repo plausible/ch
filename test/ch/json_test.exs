@@ -1,9 +1,7 @@
 defmodule Ch.JSONTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case
 
   @moduletag :json
-
-  @table "json_test"
 
   setup do
     conn =
@@ -18,7 +16,7 @@ defmodule Ch.JSONTest do
       )
 
     on_exit(fn ->
-      Ch.Test.query("DROP TABLE IF EXISTS #{@table}", [], database: Ch.Test.database())
+      Ch.Test.query("DROP TABLE IF EXISTS test", [], database: Ch.Test.database())
     end)
 
     {:ok, conn: conn}
@@ -54,11 +52,12 @@ defmodule Ch.JSONTest do
            ]
   end
 
-  test "creating, inserting, and reading json", %{conn: conn} do
-    Ch.query!(conn, "CREATE TABLE #{@table} (json JSON) ENGINE = Memory")
+  # https://clickhouse.com/docs/sql-reference/data-types/newjson#using-json-in-a-table-column-definition
+  test "basic", %{conn: conn} do
+    Ch.query!(conn, "CREATE TABLE test (json JSON) ENGINE = Memory")
 
     Ch.query!(conn, """
-    INSERT INTO #{@table} VALUES
+    INSERT INTO test VALUES
     ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'),
     ('{"f" : "Hello, World!"}'),
     ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}')
@@ -66,7 +65,7 @@ defmodule Ch.JSONTest do
 
     assert Ch.query!(
              conn,
-             "SELECT json FROM #{@table}"
+             "SELECT json FROM test"
            ).rows == [
              [%{"a" => %{"b" => "42"}, "c" => ["1", "2", "3"]}],
              [%{"f" => "Hello, World!"}],
@@ -75,16 +74,37 @@ defmodule Ch.JSONTest do
 
     Ch.query!(
       conn,
-      "INSERT INTO #{@table} FORMAT RowBinary",
+      "INSERT INTO test FORMAT RowBinary",
       [[%{"some other" => "json value", "from" => "rowbinary"}]],
       types: ["JSON"]
     )
 
     assert Ch.query!(
              conn,
-             "SELECT json FROM #{@table} where json.from = 'rowbinary'"
+             "SELECT json FROM test where json.from = 'rowbinary'"
            ).rows == [
              [%{"from" => "rowbinary", "some other" => "json value"}]
+           ]
+  end
+
+  # https://clickhouse.com/docs/sql-reference/data-types/newjson#using-json-in-a-table-column-definition
+  test "with skip (i.e. extra type options)", %{conn: conn} do
+    Ch.query!(conn, "CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;")
+
+    Ch.query!(conn, """
+    INSERT INTO test VALUES
+    ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'),
+    ('{"f" : "Hello, World!"}'),
+    ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
+    """)
+
+    assert Ch.query!(
+             conn,
+             "SELECT json FROM test"
+           ).rows == [
+             [%{"a" => %{"b" => 42}, "c" => ["1", "2", "3"]}],
+             [%{"a" => %{"b" => 0}, "f" => "Hello, World!"}],
+             [%{"a" => %{"b" => 43}, "c" => ["4", "5", "6"]}]
            ]
   end
 end

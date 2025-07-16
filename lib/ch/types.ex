@@ -325,6 +325,7 @@ defmodule Ch.Types do
   end
 
   def decode("DateTime"), do: :datetime
+  def decode("JSON" <> _options), do: :json
 
   def decode(type) do
     try do
