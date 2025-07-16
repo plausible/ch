@@ -127,6 +127,21 @@ defmodule Ch.Types do
   end
 
   @doc """
+  Helper for `Time64(precision)` ClickHouse type:
+
+      iex> time64(3)
+      {:time64, 3}
+
+      iex> to_string(encode(time64(3)))
+      "Time64(3)"
+
+      iex> decode("Time64(3)")
+      time64(3)
+
+  """
+  def time64(precision) when is_integer(precision), do: {:time64, precision}
+
+  @doc """
   Helper for `FixedString(n)` ClickHouse type:
 
       iex> fixed_string(3)
@@ -527,6 +542,7 @@ defmodule Ch.Types do
   end
 
   def encode(:datetime), do: "DateTime"
+  def encode({:time64, p}), do: ["Time64(", String.Chars.Integer.to_string(p), ?)]
   def encode({:nullable, type}), do: ["Nullable(", encode(type), ?)]
   def encode({:fixed_string, n}), do: ["FixedString(", String.Chars.Integer.to_string(n), ?)]
   def encode({:array, type}), do: ["Array(", encode(type), ?)]

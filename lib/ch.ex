@@ -142,6 +142,8 @@ defmodule Ch do
     def cast(value, :uuid), do: Ecto.Type.cast(Ecto.UUID, value)
     def cast(value, :date = type), do: Ecto.Type.cast(type, value)
     def cast(value, :date32), do: Ecto.Type.cast(:date, value)
+    def cast(value, :time = type), do: Ecto.Type.cast(type, value)
+    def cast(value, {:time64, _p}), do: Ecto.Type.cast(:time, value)
     def cast(value, :datetime), do: Ecto.Type.cast(:naive_datetime, value)
     def cast(value, {:datetime, "UTC"}), do: Ecto.Type.cast(:utc_datetime, value)
     def cast(value, {:datetime64, _p}), do: Ecto.Type.cast(:naive_datetime_usec, value)

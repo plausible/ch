@@ -215,6 +215,39 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, ~D[2001-01-01]} = Ecto.Type.load(type, ~D[2001-01-01])
   end
 
+  test "Time" do
+    assert {:parameterized, {Ch, :time}} = type = Ecto.ParameterizedType.init(Ch, type: "Time")
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<Time>"
+
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, ~T[12:34:56])
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, "12:34:56")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, "asdf")
+
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.dump(type, ~T[12:34:56])
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.load(type, ~T[12:34:56])
+  end
+
+  test "Time64(3)" do
+    assert {:parameterized, {Ch, {:time64, 6}}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "Time64(6)")
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<Time64(6)>"
+
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, ~T[12:34:56])
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, "12:34:56")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, "asdf")
+
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.dump(type, ~T[12:34:56])
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.load(type, ~T[12:34:56])
+  end
+
   test "Bool" do
     assert {:parameterized, {Ch, :boolean}} = type = Ecto.ParameterizedType.init(Ch, type: "Bool")
 
