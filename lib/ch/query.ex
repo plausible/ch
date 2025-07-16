@@ -27,6 +27,7 @@ defmodule Ch.Query do
     {"GRANT", :grant},
     {"EXPLAIN", :explain},
     {"REVOKE", :revoke},
+    {"UPDATE", :update},
     {"ATTACH", :attach},
     {"CHECK", :check},
     {"DESCRIBE", :describe},
