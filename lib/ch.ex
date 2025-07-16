@@ -235,6 +235,7 @@ defmodule Ch do
 
     def cast(value, {:tuple, types}), do: cast_tuple(types, value)
     def cast(value, {:map, key_type, value_type}), do: cast_map(value, key_type, value_type)
+    def cast(value, {:variant, types}), do: cast_variant(types, value)
 
     defp cast_tuple(types, values) when is_tuple(values) do
       cast_tuple(types, Tuple.to_list(values), [])
@@ -275,6 +276,15 @@ defmodule Ch do
 
     defp cast_map([], _key_type, _value_type, acc), do: {:ok, Map.new(acc)}
     defp cast_map(_kvs, _key_type, _value_type, _acc), do: :error
+
+    defp cast_variant([type | types], value) do
+      case cast(value, type) do
+        {:ok, _value} = ok -> ok
+        :error -> cast_variant(types, value)
+      end
+    end
+
+    defp cast_variant([], _value), do: :error
 
     @impl true
     def embed_as(_, _), do: :self

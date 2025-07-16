@@ -9,6 +9,7 @@ defmodule Ch.VariantTest do
   end
 
   test "it works", %{conn: conn} do
+    assert Ch.query!(conn, "select null::Variant(UInt64, String, Array(UInt64))").rows == [[nil]]
     assert Ch.query!(conn, "select [1]::Variant(UInt64, String, Array(UInt64))").rows == [[[1]]]
     assert Ch.query!(conn, "select 0::Variant(UInt64, String, Array(UInt64))").rows == [[0]]
 

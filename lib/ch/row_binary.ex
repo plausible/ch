@@ -993,9 +993,16 @@ defmodule Ch.RowBinary do
         decode_rows(types_rest, bin, [tuple | original_row], rows, types)
 
       {:variant, variant_types} ->
-        <<variant_type_index::8, bin::bytes>> = bin
-        variant_type = Enum.at(variant_types, variant_type_index)
-        decode_rows([variant_type | types_rest], bin, row, rows, types)
+        case bin do
+          <<255, bin::bytes>> ->
+            # 255 is the variant type index for "nothing"
+            decode_rows(types_rest, bin, [nil | row], rows, types)
+
+          # TODO varint?
+          <<variant_type_index::8, bin::bytes>> ->
+            variant_type = Enum.at(variant_types, variant_type_index)
+            decode_rows([variant_type | types_rest], bin, row, rows, types)
+        end
 
       {:datetime64, time_unit, timezone} ->
         <<s::64-little-signed, bin::bytes>> = bin

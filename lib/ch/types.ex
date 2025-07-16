@@ -235,6 +235,21 @@ defmodule Ch.Types do
   def tuple(types) when is_list(types), do: {:tuple, types}
 
   @doc """
+  Helper for `Variant(T1, T2, ...)` ClickHouse type:
+
+      iex> variant([u64(), string(), array(u64())])
+      {:variant, [{:array, :u64}, :string, :u64]}
+
+      iex> to_string(encode(variant([u64(), string(), array(u64())])))
+      "Variant(Array(UInt64), String, UInt64)"
+
+      iex> decode("Variant(UInt64, String, Array(UInt64))")
+      variant([array(u64()), u64(), string()])
+
+  """
+  def variant(types) when is_list(types), do: {:variant, build_variant(types)}
+
+  @doc """
   Helper for `Map(K, V)` ClickHouse type:
 
       iex> map(string(), array(string()))
@@ -553,6 +568,7 @@ defmodule Ch.Types do
   def encode({:fixed_string, n}), do: ["FixedString(", String.Chars.Integer.to_string(n), ?)]
   def encode({:array, type}), do: ["Array(", encode(type), ?)]
   def encode({:tuple, types}), do: ["Tuple(", encode_intersperse(types, ", "), ?)]
+  def encode({:variant, types}), do: ["Variant(", encode_intersperse(types, ", "), ?)]
 
   def encode({:map, key_type, value_type}) do
     ["Map(", encode(key_type), ", ", encode(value_type), ?)]

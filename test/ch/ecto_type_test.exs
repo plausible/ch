@@ -126,6 +126,26 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, {"something", 42}} = Ecto.Type.load(type, {"something", 42})
   end
 
+  test "Variant(UInt64, String, Array(UInt64))" do
+    assert {:parameterized, {Ch, {:variant, [{:array, :u64}, :string, :u64]}}} =
+             type =
+             Ecto.ParameterizedType.init(Ch, type: "Variant(UInt64, String, Array(UInt64))")
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<Variant(Array(UInt64), String, UInt64)>"
+
+    assert {:ok, [1]} = Ecto.Type.cast(type, [1])
+    assert {:ok, 0} = Ecto.Type.cast(type, 0)
+    assert {:ok, "Hello, World!"} = Ecto.Type.cast(type, "Hello, World!")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, {42, "something"})
+
+    assert {:ok, [1]} = Ecto.Type.dump(type, [1])
+    assert {:ok, 0} = Ecto.Type.dump(type, 0)
+    assert {:ok, "Hello, World!"} = Ecto.Type.dump(type, "Hello, World!")
+  end
+
   # TODO check size?
   # TODO casting from binary wouldn't work for large values of 128 and 256 sized ints
   for size <- [8, 16, 32, 64, 128, 256] do
