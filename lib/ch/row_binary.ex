@@ -582,6 +582,7 @@ defmodule Ch.RowBinary do
               :ipv4,
               :ipv6,
               :point,
+              :json,
               :nothing
             ],
        do: t
@@ -754,6 +755,193 @@ defmodule Ch.RowBinary do
     end
   end
 
+  for {pattern, count} <- varints do
+    defp decode_json_decode_rows(
+           <<unquote(pattern), bin::bytes>>,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_json_continue(bin, unquote(count), [], types_rest, row, rows, types)
+    end
+  end
+
+  for {pattern, size} <- varints do
+    defp decode_json_continue(
+           <<unquote(pattern), name::size(unquote(size))-bytes, bin::bytes>>,
+           count,
+           acc,
+           types_rest,
+           row,
+           rows,
+           types
+         )
+         when count > 0 do
+      case bin do
+        # Int64
+        <<0x0A, i64::64-little-signed, rest::bytes>> ->
+          decode_json_continue(rest, count - 1, [{name, i64} | acc], types_rest, row, rows, types)
+
+        # Float64
+        <<0x0E, f64::64-little-float, rest::bytes>> ->
+          decode_json_continue(rest, count - 1, [{name, f64} | acc], types_rest, row, rows, types)
+
+        # Boolean
+        <<0x2D, b, rest::bytes>> ->
+          b =
+            case b do
+              0 -> false
+              1 -> true
+            end
+
+          decode_json_continue(rest, count - 1, [{name, b} | acc], types_rest, row, rows, types)
+
+        # String
+        <<0x15, rest::bytes>> ->
+          decode_json_string(rest, name, count, acc, types_rest, row, rows, types)
+
+        # Array of nullable strings
+        <<0x1E, 0x23, 0x15, rest::bytes>> ->
+          decode_json_nullable_array(
+            rest,
+            :string,
+            name,
+            count,
+            acc,
+            types_rest,
+            row,
+            rows,
+            types
+          )
+
+        _ ->
+          raise "oops, what is " <>
+                  Enum.join(for(<<b <- bin>>, do: "0x" <> Integer.to_string(b, 16)), " ")
+      end
+    end
+  end
+
+  defp decode_json_continue(bin, _count = 0, acc, types_rest, row, rows, types) do
+    decode_rows(types_rest, bin, [Map.new(acc) | row], rows, types)
+  end
+
+  for {pattern, size} <- varints do
+    defp decode_json_string(
+           <<unquote(pattern), s::size(unquote(size))-bytes, rest::bytes>>,
+           name,
+           count,
+           acc,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_json_continue(rest, count - 1, [{name, s} | acc], types_rest, row, rows, types)
+    end
+  end
+
+  for {pattern, array_count} <- varints do
+    defp decode_json_nullable_array(
+           <<unquote(pattern), rest::bytes>>,
+           type,
+           name,
+           json_count,
+           json_acc,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      case type do
+        :string ->
+          decode_json_nullable_string_array(
+            rest,
+            unquote(array_count),
+            [],
+            name,
+            json_count,
+            json_acc,
+            types_rest,
+            row,
+            rows,
+            types
+          )
+      end
+    end
+  end
+
+  defp decode_json_nullable_string_array(
+         <<1, rest::bytes>>,
+         array_count,
+         array_acc,
+         name,
+         json_count,
+         json_acc,
+         types_rest,
+         row,
+         rows,
+         types
+       ) do
+    decode_json_nullable_string_array(
+      rest,
+      array_count - 1,
+      [nil | array_acc],
+      name,
+      json_count,
+      json_acc,
+      types_rest,
+      row,
+      rows,
+      types
+    )
+  end
+
+  for {pattern, size} <- varints do
+    defp decode_json_nullable_string_array(
+           <<0, unquote(pattern), s::size(unquote(size))-bytes, rest::bytes>>,
+           array_count,
+           array_acc,
+           name,
+           json_count,
+           json_acc,
+           types_rest,
+           row,
+           rows,
+           types
+         )
+         when array_count > 0 do
+      decode_json_nullable_string_array(
+        rest,
+        array_count - 1,
+        [s | array_acc],
+        name,
+        json_count,
+        json_acc,
+        types_rest,
+        row,
+        rows,
+        types
+      )
+    end
+  end
+
+  defp decode_json_nullable_string_array(
+         <<rest::bytes>>,
+         0,
+         array_acc,
+         name,
+         json_count,
+         json_acc,
+         types_rest,
+         row,
+         rows,
+         types
+       ) do
+    acc = [{name, :lists.reverse(array_acc)} | json_acc]
+    decode_json_continue(rest, json_count - 1, acc, types_rest, row, rows, types)
+  end
+
   @compile inline: [decode_array_decode_rows: 6]
   defp decode_array_decode_rows(<<0, bin::bytes>>, _type, types_rest, row, rows, types) do
     decode_rows(types_rest, bin, [[] | row], rows, types)
@@ -883,6 +1071,9 @@ defmodule Ch.RowBinary do
 
       :binary ->
         decode_binary_decode_rows(bin, types_rest, row, rows, types)
+
+      :json ->
+        decode_json_decode_rows(bin, types_rest, row, rows, types)
 
       # TODO utf8?
       {:fixed_string, size} ->
