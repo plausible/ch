@@ -29,6 +29,7 @@ defmodule Ch.TypesTest do
       assert decode("Date") == :date
       assert decode("DateTime") == :datetime
       assert decode("Date32") == :date32
+      assert decode("Time") == :time
 
       assert decode("UUID") == :uuid
 
@@ -88,6 +89,14 @@ defmodule Ch.TypesTest do
                 ]}
     end
 
+    test "variant" do
+      assert decode("Variant(UInt64, String, Array(UInt64))") ==
+               {:variant, [{:array, :u64}, :string, :u64]}
+
+      assert decode("Variant ( UInt64 , String , Array ( UInt64 ) )") ==
+               {:variant, [{:array, :u64}, :string, :u64]}
+    end
+
     test "datetime" do
       assert decode("DateTime") == :datetime
       assert decode("DateTime('UTC')") == {:datetime, "UTC"}
@@ -100,6 +109,11 @@ defmodule Ch.TypesTest do
       assert decode("DateTime64(3, 'UTC')") == {:datetime64, 3, "UTC"}
       assert decode("DateTime64(3, 'Asia/Tokyo')") == {:datetime64, 3, "Asia/Tokyo"}
       assert decode(" DateTime64 ( 3 , 'Asia/Taipei' ) ") == {:datetime64, 3, "Asia/Taipei"}
+    end
+
+    test "time64" do
+      assert decode("Time64(3)") == {:time64, 3}
+      assert decode(" Time64(    5)") == {:time64, 5}
     end
 
     test "fixed_string" do
