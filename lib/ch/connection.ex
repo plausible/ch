@@ -13,13 +13,25 @@ defmodule Ch.Connection do
   @spec connect([Ch.start_option()]) :: {:ok, conn} | {:error, Error.t() | Mint.Types.error()}
   def connect(opts) do
     with {:ok, conn} <- do_connect(opts) do
-      handshake = Query.build("select 1")
+      handshake = Query.build("select 1, version()")
       params = DBConnection.Query.encode(handshake, _params = [], _opts = [])
 
       case handle_execute(handshake, params, _opts = [], conn) do
         {:ok, handshake, responses, conn} ->
           case DBConnection.Query.decode(handshake, responses, _opts = []) do
-            %Result{rows: [[1]]} ->
+            %Result{rows: [[1, version]]} ->
+              conn =
+                if version >= "24.10" do
+                  settings =
+                    HTTP.get_private(conn, :settings, [])
+                    |> Keyword.put_new(:input_format_binary_read_json_as_string, 1)
+                    |> Keyword.put_new(:output_format_binary_write_json_as_string, 1)
+
+                  HTTP.put_private(conn, :settings, settings)
+                else
+                  conn
+                end
+
               {:ok, conn}
 
             result ->
@@ -405,7 +417,8 @@ defmodule Ch.Connection do
           "The connection was closed by the server; a new connection has been successfully reestablished."
         )
 
-        new_conn
+        # copy settings that are set dynamically (e.g. json as text) over to the new connection
+        maybe_put_private(new_conn, :settings, HTTP.get_private(conn, :settings))
       else
         _ -> conn
       end
