@@ -5,48 +5,57 @@ defmodule Ch.JSONTest do
 
   setup do
     on_exit(fn ->
-      Ch.Test.query("DROP TABLE IF EXISTS test", [], database: Ch.Test.database())
+      Ch.Test.query("DROP TABLE IF EXISTS json_test", [], database: Ch.Test.database())
     end)
 
     {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   test "simple json", %{conn: conn} do
-    assert Ch.query!(conn, ~s|select '{"a":"b","c":"d"}'::json|).rows == [
-             [%{"a" => "b", "c" => "d"}]
-           ]
+    select = fn literal ->
+      [[value]] = Ch.query!(conn, "select '#{literal}'::json").rows
+      value
+    end
 
-    assert Ch.query!(conn, ~s|select '{"a":42}'::json|).rows == [[%{"a" => "42"}]]
-    assert Ch.query!(conn, ~s|select '{}'::json|).rows == [[%{}]]
-    assert Ch.query!(conn, ~s|select '{"a":null}'::json|).rows == [[%{}]]
-    assert Ch.query!(conn, ~s|select '{"a":3.14}'::json|).rows == [[%{"a" => 3.14}]]
-    assert Ch.query!(conn, ~s|select '{"a":true}'::json|).rows == [[%{"a" => true}]]
-    assert Ch.query!(conn, ~s|select '{"a":false}'::json|).rows == [[%{"a" => false}]]
-    assert Ch.query!(conn, ~s|select '{"a":{"b":"c"}}'::json|).rows == [[%{"a" => %{"b" => "c"}}]]
+    assert select.(~s|{"a":"b","c":"d"}|) == %{"a" => "b", "c" => "d"}
 
-    assert Ch.query!(conn, ~s|select '{"a":[]}'::json|).rows == [
-             [%{"a" => []}]
-           ]
+    # note that 42 is a string here, not an integer
+    assert select.(~s|{"a":42}|) == %{"a" => "42"}
 
-    assert Ch.query!(conn, ~s|select '{"a":[null]}'::json|).rows == [
-             [%{"a" => [nil]}]
-           ]
+    assert select.(~s|{}|) == %{}
 
-    assert Ch.query!(conn, ~s|select '{"a":[1,3.14,"hello",null]}'::json|).rows == [
-             [%{"a" => ["1", "3.14", "hello", nil]}]
-           ]
+    # null fields are removed?
+    assert select.(~s|{"a":null}|) == %{}
 
-    assert Ch.query!(conn, ~s|select '{"a":[1,2.13,"s",{"a":"b"}]}'::json|).rows == [
-             [%{"a" => ["1", 2.13, "s", %{"a" => "b"}]}]
-           ]
+    assert select.(~s|{"a":3.14}|) == %{"a" => 3.14}
+
+    assert select.(~s|{"a":true}|) == %{"a" => true}
+
+    assert select.(~s|{"a":false}|) == %{"a" => false}
+
+    assert select.(~s|{"a":{"b":"c"}}|) == %{"a" => %{"b" => "c"}}
+
+    # numbers in arrays become strings
+    assert select.(~s|{"a":[1,2,3]}|) == %{"a" => ["1", "2", "3"]}
+
+    # this is weird, fields with dots are treated as nested objects
+    assert select.(~s|{"a.b":"c"}|) == %{"a" => %{"b" => "c"}}
+
+    assert select.(~s|{"a":[]}|) == %{"a" => []}
+
+    assert select.(~s|{"a":[null]}|) == %{"a" => [nil]}
+
+    assert select.(~s|{"a":[1,3.14,"hello",null]}|) == %{"a" => ["1", "3.14", "hello", nil]}
+
+    assert select.(~s|{"a":[1,2.13,"s",{"a":"b"}]}|) == %{"a" => ["1", 2.13, "s", %{"a" => "b"}]}
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/newjson#using-json-in-a-table-column-definition
   test "basic", %{conn: conn} do
-    Ch.query!(conn, "CREATE TABLE test (json JSON) ENGINE = Memory")
+    Ch.query!(conn, "CREATE TABLE json_test (json JSON) ENGINE = Memory")
 
     Ch.query!(conn, """
-    INSERT INTO test VALUES
+    INSERT INTO json_test VALUES
     ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'),
     ('{"f" : "Hello, World!"}'),
     ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}')
@@ -54,7 +63,7 @@ defmodule Ch.JSONTest do
 
     assert Ch.query!(
              conn,
-             "SELECT json FROM test"
+             "SELECT json FROM json_test"
            ).rows == [
              [%{"a" => %{"b" => "42"}, "c" => ["1", "2", "3"]}],
              [%{"f" => "Hello, World!"}],
@@ -63,14 +72,14 @@ defmodule Ch.JSONTest do
 
     Ch.query!(
       conn,
-      "INSERT INTO test FORMAT RowBinary",
+      "INSERT INTO json_test FORMAT RowBinary",
       [[%{"some other" => "json value", "from" => "rowbinary"}]],
       types: ["JSON"]
     )
 
     assert Ch.query!(
              conn,
-             "SELECT json FROM test where json.from = 'rowbinary'"
+             "SELECT json FROM json_test where json.from = 'rowbinary'"
            ).rows == [
              [%{"from" => "rowbinary", "some other" => "json value"}]
            ]
@@ -78,10 +87,10 @@ defmodule Ch.JSONTest do
 
   # https://clickhouse.com/docs/sql-reference/data-types/newjson#using-json-in-a-table-column-definition
   test "with skip (i.e. extra type options)", %{conn: conn} do
-    Ch.query!(conn, "CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;")
+    Ch.query!(conn, "CREATE TABLE json_test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;")
 
     Ch.query!(conn, """
-    INSERT INTO test VALUES
+    INSERT INTO json_test VALUES
     ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'),
     ('{"f" : "Hello, World!"}'),
     ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
@@ -89,7 +98,7 @@ defmodule Ch.JSONTest do
 
     assert Ch.query!(
              conn,
-             "SELECT json FROM test"
+             "SELECT json FROM json_test"
            ).rows == [
              [%{"a" => %{"b" => 42}, "c" => ["1", "2", "3"]}],
              [%{"a" => %{"b" => 0}, "f" => "Hello, World!"}],
