@@ -429,13 +429,6 @@ defmodule Ch.Connection do
     scheme = String.to_existing_atom(opts[:scheme] || "http")
     address = opts[:hostname] || "localhost"
     port = opts[:port] || 8123
-    settings = opts[:settings] || []
-
-    settings =
-      settings
-      |> Keyword.put_new(:output_format_binary_write_json_as_string, 1)
-      |> Keyword.put_new(:input_format_binary_read_json_as_string, 1)
-
     mint_opts = [mode: :passive] ++ Keyword.take(opts, [:hostname, :transport_opts])
 
     with {:ok, conn} <- HTTP.connect(scheme, address, port, mint_opts) do
@@ -445,7 +438,7 @@ defmodule Ch.Connection do
         |> maybe_put_private(:database, opts[:database])
         |> maybe_put_private(:username, opts[:username])
         |> maybe_put_private(:password, opts[:password])
-        |> maybe_put_private(:settings, settings)
+        |> maybe_put_private(:settings, opts[:settings])
         |> maybe_put_private(:connect_options, opts)
 
       {:ok, conn}
