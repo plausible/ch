@@ -69,7 +69,7 @@ defmodule Ch.FaultsTest do
 
           # failed handshake
           handshake = intercept_packets(mint)
-          assert handshake =~ "select 1"
+          assert handshake =~ "select 1, version()"
           :ok = :gen_tcp.send(clickhouse, handshake)
           :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
 
@@ -78,7 +78,7 @@ defmodule Ch.FaultsTest do
 
           # handshake
           handshake = intercept_packets(mint)
-          assert handshake =~ "select 1"
+          assert handshake =~ "select 1, version()"
           :ok = :gen_tcp.send(clickhouse, handshake)
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
         end)
@@ -96,7 +96,7 @@ defmodule Ch.FaultsTest do
 
           # failed handshake
           handshake = intercept_packets(mint)
-          assert handshake =~ "select 1"
+          assert handshake =~ "select 1, version()"
           :ok = :gen_tcp.send(clickhouse, handshake)
           :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
           :gen_tcp.close(mint)
@@ -106,7 +106,7 @@ defmodule Ch.FaultsTest do
 
           # handshake
           handshake = intercept_packets(mint)
-          assert handshake =~ "select 1"
+          assert handshake =~ "select 1, version()"
           :ok = :gen_tcp.send(clickhouse, handshake)
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
         end)
@@ -126,8 +126,8 @@ defmodule Ch.FaultsTest do
 
           # failed handshake
           handshake = intercept_packets(mint1)
-          assert handshake =~ "select 1"
-          altered_handshake = String.replace(handshake, "select 1", "select ;")
+          assert handshake =~ "select 1, version()"
+          altered_handshake = String.replace(handshake, "select 1", "select x")
           :ok = :gen_tcp.send(clickhouse, altered_handshake)
           :ok = :gen_tcp.send(mint1, intercept_packets(clickhouse))
 
@@ -136,7 +136,7 @@ defmodule Ch.FaultsTest do
 
           # handshake
           handshake = intercept_packets(mint2)
-          assert handshake =~ "select 1"
+          assert handshake =~ "select 1, version()"
           :ok = :gen_tcp.send(clickhouse, handshake)
           :ok = :gen_tcp.send(mint2, intercept_packets(clickhouse))
 
@@ -145,7 +145,7 @@ defmodule Ch.FaultsTest do
           assert Port.info(mint2)
         end)
 
-      assert log =~ "failed to connect: ** (Ch.Error) Code: 62. DB::Exception: Syntax error"
+      assert log =~ "UNKNOWN_IDENTIFIER"
     end
 
     test "reconnects after incorrect query result", ctx do
@@ -160,8 +160,11 @@ defmodule Ch.FaultsTest do
 
           # failed handshake
           handshake = intercept_packets(mint1)
-          assert handshake =~ "select 1"
-          altered_handshake = String.replace(handshake, "select 1", "select 2")
+          assert handshake =~ "select 1, version()"
+
+          altered_handshake =
+            String.replace(handshake, "select 1, version()", "select 2, version()")
+
           :ok = :gen_tcp.send(clickhouse, altered_handshake)
           :ok = :gen_tcp.send(mint1, intercept_packets(clickhouse))
 
@@ -170,7 +173,7 @@ defmodule Ch.FaultsTest do
 
           # handshake
           handshake = intercept_packets(mint2)
-          assert handshake =~ "select 1"
+          assert handshake =~ "select 1, version()"
           :ok = :gen_tcp.send(clickhouse, handshake)
           :ok = :gen_tcp.send(mint2, intercept_packets(clickhouse))
 
@@ -179,7 +182,7 @@ defmodule Ch.FaultsTest do
           assert Port.info(mint2)
         end)
 
-      assert log =~ "failed to connect: ** (Ch.Error) unexpected result for 'select 1'"
+      assert log =~ "failed to connect: ** (Ch.Error) unexpected result for 'select 1, version()'"
     end
   end
 

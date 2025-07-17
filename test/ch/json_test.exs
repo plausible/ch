@@ -1,0 +1,99 @@
+defmodule Ch.JSONTest do
+  use ExUnit.Case
+
+  @moduletag :json
+
+  setup do
+    on_exit(fn ->
+      Ch.Test.query("DROP TABLE IF EXISTS test", [], database: Ch.Test.database())
+    end)
+
+    {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
+  end
+
+  test "simple json", %{conn: conn} do
+    assert Ch.query!(conn, ~s|select '{"a":"b","c":"d"}'::json|).rows == [
+             [%{"a" => "b", "c" => "d"}]
+           ]
+
+    assert Ch.query!(conn, ~s|select '{"a":42}'::json|).rows == [[%{"a" => "42"}]]
+    assert Ch.query!(conn, ~s|select '{}'::json|).rows == [[%{}]]
+    assert Ch.query!(conn, ~s|select '{"a":null}'::json|).rows == [[%{}]]
+    assert Ch.query!(conn, ~s|select '{"a":3.14}'::json|).rows == [[%{"a" => 3.14}]]
+    assert Ch.query!(conn, ~s|select '{"a":true}'::json|).rows == [[%{"a" => true}]]
+    assert Ch.query!(conn, ~s|select '{"a":false}'::json|).rows == [[%{"a" => false}]]
+    assert Ch.query!(conn, ~s|select '{"a":{"b":"c"}}'::json|).rows == [[%{"a" => %{"b" => "c"}}]]
+
+    assert Ch.query!(conn, ~s|select '{"a":[]}'::json|).rows == [
+             [%{"a" => []}]
+           ]
+
+    assert Ch.query!(conn, ~s|select '{"a":[null]}'::json|).rows == [
+             [%{"a" => [nil]}]
+           ]
+
+    assert Ch.query!(conn, ~s|select '{"a":[1,3.14,"hello",null]}'::json|).rows == [
+             [%{"a" => ["1", "3.14", "hello", nil]}]
+           ]
+
+    assert Ch.query!(conn, ~s|select '{"a":[1,2.13,"s",{"a":"b"}]}'::json|).rows == [
+             [%{"a" => ["1", 2.13, "s", %{"a" => "b"}]}]
+           ]
+  end
+
+  # https://clickhouse.com/docs/sql-reference/data-types/newjson#using-json-in-a-table-column-definition
+  test "basic", %{conn: conn} do
+    Ch.query!(conn, "CREATE TABLE test (json JSON) ENGINE = Memory")
+
+    Ch.query!(conn, """
+    INSERT INTO test VALUES
+    ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'),
+    ('{"f" : "Hello, World!"}'),
+    ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}')
+    """)
+
+    assert Ch.query!(
+             conn,
+             "SELECT json FROM test"
+           ).rows == [
+             [%{"a" => %{"b" => "42"}, "c" => ["1", "2", "3"]}],
+             [%{"f" => "Hello, World!"}],
+             [%{"a" => %{"b" => "43", "e" => "10"}, "c" => ["4", "5", "6"]}]
+           ]
+
+    Ch.query!(
+      conn,
+      "INSERT INTO test FORMAT RowBinary",
+      [[%{"some other" => "json value", "from" => "rowbinary"}]],
+      types: ["JSON"]
+    )
+
+    assert Ch.query!(
+             conn,
+             "SELECT json FROM test where json.from = 'rowbinary'"
+           ).rows == [
+             [%{"from" => "rowbinary", "some other" => "json value"}]
+           ]
+  end
+
+  # https://clickhouse.com/docs/sql-reference/data-types/newjson#using-json-in-a-table-column-definition
+  test "with skip (i.e. extra type options)", %{conn: conn} do
+    Ch.query!(conn, "CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;")
+
+    Ch.query!(conn, """
+    INSERT INTO test VALUES
+    ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'),
+    ('{"f" : "Hello, World!"}'),
+    ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
+    """)
+
+    assert Ch.query!(
+             conn,
+             "SELECT json FROM test"
+           ).rows == [
+             [%{"a" => %{"b" => 42}, "c" => ["1", "2", "3"]}],
+             [%{"a" => %{"b" => 0}, "f" => "Hello, World!"}],
+             [%{"a" => %{"b" => 43}, "c" => ["4", "5", "6"]}]
+           ]
+  end
+end

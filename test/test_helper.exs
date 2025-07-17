@@ -30,8 +30,8 @@ extra_exclude =
   if ch_version >= "25" do
     []
   else
-    # Time and Variant types are not supported in older ClickHouse versions
-    [:time, :variant]
+    # Time, Variant, and JSON types are not supported in older ClickHouse versions we have in the CI
+    [:time, :variant, :json]
   end
 
 ExUnit.start(exclude: [:slow | extra_exclude])

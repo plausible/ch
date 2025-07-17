@@ -93,6 +93,7 @@ defmodule Ch.RowBinary do
        when t in [
               :string,
               :binary,
+              :json,
               :boolean,
               :uuid,
               :date,
@@ -189,6 +190,13 @@ defmodule Ch.RowBinary do
       _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
       nil -> 0
     end
+  end
+
+  def encode(:json, json) do
+    # assuming it can be sent as text and not "native" binary JSON
+    # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
+    # TODO
+    encode(:string, Jason.encode_to_iodata!(json))
   end
 
   def encode({:fixed_string, size}, str) when byte_size(str) == size do
@@ -598,6 +606,7 @@ defmodule Ch.RowBinary do
        when t in [
               :string,
               :binary,
+              :json,
               :boolean,
               :uuid,
               :date,
@@ -769,6 +778,20 @@ defmodule Ch.RowBinary do
   defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
   defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
+  @compile inline: [decode_string_json_decode_rows: 5]
+
+  for {pattern, size} <- varints do
+    defp decode_string_json_decode_rows(
+           <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_rows(types_rest, bin, [Jason.decode!(s) | row], rows, types)
+    end
+  end
+
   @compile inline: [decode_binary_decode_rows: 5]
 
   for {pattern, size} <- varints do
@@ -912,6 +935,12 @@ defmodule Ch.RowBinary do
 
       :binary ->
         decode_binary_decode_rows(bin, types_rest, row, rows, types)
+
+      :json ->
+        # assuming it arrives as text and not "native" binary JSON
+        # i.e. assumes `settings: [output_format_binary_write_json_as_string: 1]`
+        # TODO
+        decode_string_json_decode_rows(bin, types_rest, row, rows, types)
 
       # TODO utf8?
       {:fixed_string, size} ->
