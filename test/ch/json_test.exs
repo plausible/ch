@@ -45,8 +45,10 @@ defmodule Ch.JSONTest do
 
     assert select.(~s|{"a":[null]}|) == %{"a" => [nil]}
 
+    # everything in an array gets converted to "lcd" type, aka string
     assert select.(~s|{"a":[1,3.14,"hello",null]}|) == %{"a" => ["1", "3.14", "hello", nil]}
 
+    # but not if the array has nested objects, then the array becomes a tuple and can support mixed types
     assert select.(~s|{"a":[1,2.13,"s",{"a":"b"}]}|) == %{"a" => ["1", 2.13, "s", %{"a" => "b"}]}
   end
 
