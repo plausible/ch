@@ -4,22 +4,11 @@ defmodule Ch.JSONTest do
   @moduletag :json
 
   setup do
-    conn =
-      start_supervised!(
-        {Ch,
-         database: Ch.Test.database(),
-         settings: [
-           enable_json_type: 1,
-           output_format_binary_write_json_as_string: 1,
-           input_format_binary_read_json_as_string: 1
-         ]}
-      )
-
     on_exit(fn ->
       Ch.Test.query("DROP TABLE IF EXISTS test", [], database: Ch.Test.database())
     end)
 
-    {:ok, conn: conn}
+    {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   test "simple json", %{conn: conn} do
