@@ -11,5 +11,17 @@ defmodule Ch.DynamicTest do
     assert Ch.query!(conn, "select 'Hello, World!'::Dynamic AS d, dynamicType(d)").rows == [
              ["Hello, World!", "String"]
            ]
+
+    assert Ch.query!(conn, "select 0::Dynamic AS d, dynamicType(d)").rows == [
+             ["0", "String"]
+           ]
+
+    assert Ch.query!(conn, "select true::Dynamic AS d, dynamicType(d)").rows == [
+             [true, "Bool"]
+           ]
+
+    assert Ch.query!(conn, "select (1+1)::Dynamic AS d, dynamicType(d)").rows == [
+             [2, "UInt16"]
+           ]
   end
 end

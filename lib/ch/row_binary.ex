@@ -863,15 +863,71 @@ defmodule Ch.RowBinary do
 
   defp map_types(0, _key_type, _value_types), do: []
 
+  # https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding
+  dynamic_types = [
+    nothing: 0x00,
+    u8: 0x01,
+    u16: 0x02,
+    u32: 0x03,
+    u64: 0x04,
+    u128: 0x05,
+    u256: 0x06,
+    i8: 0x07,
+    i16: 0x08,
+    i32: 0x09,
+    i64: 0x0A,
+    i128: 0x0B,
+    i256: 0x0C,
+    f32: 0x0D,
+    f64: 0x0E,
+    date: 0x0F,
+    date32: 0x10,
+    datetime: 0x11,
+    # DateTime(time_zone)	0x12 <var_uint_time_zone_name_size><time_zone_name_data>
+    # DateTime64(P)	0x13 <uint8_precision>
+    # DateTime64(P, time_zone)	0x14 <uint8_precision><var_uint_time_zone_name_size><time_zone_name_data>
+    string: 0x15,
+    # FixedString(N)	0x16 <var_uint_size>
+    # Enum8	0x17 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int8_value_1>...<var_uint_name_size_N><name_data_N><int8_value_N>
+    # Enum16	0x18 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int16_little_endian_value_1>...><var_uint_name_size_N><name_data_N><int16_little_endian_value_N>
+    # Decimal32(P, S)	0x19 <uint8_precision><uint8_scale>
+    # Decimal64(P, S)	0x1A <uint8_precision><uint8_scale>
+    # Decimal128(P, S)	0x1B <uint8_precision><uint8_scale>
+    # Decimal256(P, S)	0x1C <uint8_precision><uint8_scale>
+    uuid: 0x1D,
+    # Array(T)	0x1E <nested_type_encoding>
+    # Tuple(T1, ..., TN)	0x1F <var_uint_number_of_elements><nested_type_encoding_1>...<nested_type_encoding_N>
+    # Tuple(name1 T1, ..., nameN TN)	0x20 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+    # Set	0x21
+    # Interval	0x22 <interval_kind> (see interval kind binary encoding)
+    # Nullable(T)	0x23 <nested_type_encoding>
+    # Function	0x24<var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N><return_type_encoding>
+    # AggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x25<var_uint_version><var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+    # LowCardinality(T)	0x26<nested_type_encoding>
+    # Map(K, V)	0x27<key_type_encoding><value_type_encoding>
+    ipv4: 0x28,
+    ipv6: 0x29,
+    # Variant(T1, ..., TN)	0x2A<var_uint_number_of_variants><variant_type_encoding_1>...<variant_type_encoding_N>
+    # Dynamic(max_types=N)	0x2B<uint8_max_types>
+    # Custom type (Ring, Polygon, etc)	0x2C<var_uint_type_name_size><type_name_data>
+    boolean: 0x2D
+    # SimpleAggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x2E<var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+    # Nested(name1 T1, ..., nameN TN)	0x2F<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+    # JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)	0x30<uint8_serialization_version><var_int_max_dynamic_paths><uint8_max_dynamic_types><var_uint_number_of_typed_paths><var_uint_path_name_size_1><path_name_data_1><encoded_type_1>...<var_uint_number_of_skip_paths><var_uint_skip_path_size_1><skip_path_data_1>...<var_uint_number_of_skip_path_regexps><var_uint_skip_path_regexp_size_1><skip_path_data_regexp_1>...
+  ]
+
   @compile inline: [decode_dynamic_decode_rows: 5]
-  defp decode_dynamic_decode_rows(
-         <<0x15, rest::bytes>>,
-         types_rest,
-         row,
-         rows,
-         types
-       ) do
-    decode_string_decode_rows(rest, types_rest, row, rows, types)
+
+  for {type, code} <- dynamic_types do
+    defp decode_dynamic_decode_rows(
+           <<unquote(code), rest::bytes>>,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_rows([unquote(type) | types_rest], rest, row, rows, types)
+    end
   end
 
   defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
