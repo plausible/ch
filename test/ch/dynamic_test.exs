@@ -8,6 +8,8 @@ defmodule Ch.DynamicTest do
   end
 
   test "it works", %{conn: conn} do
-    assert Ch.query!(conn, "select 'Hello, World!'::Dynamic AS d, dynamicType(d)").rows == []
+    assert Ch.query!(conn, "select 'Hello, World!'::Dynamic AS d, dynamicType(d)").rows == [
+             ["Hello, World!", "String"]
+           ]
   end
 end

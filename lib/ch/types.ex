@@ -30,6 +30,7 @@ defmodule Ch.Types do
       {"Date32", :date32, []},
       {"Date", :date, []},
       {"JSON", :json, []},
+      {"Dynamic", :dynamic, []},
       {"LowCardinality", :low_cardinality, [:type]},
       for size <- [32, 64, 128, 256] do
         {"Decimal#{size}", :"decimal#{size}", [:int]}

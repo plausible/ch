@@ -607,6 +607,7 @@ defmodule Ch.RowBinary do
               :string,
               :binary,
               :json,
+              :dynamic,
               :boolean,
               :uuid,
               :date,
@@ -862,6 +863,17 @@ defmodule Ch.RowBinary do
 
   defp map_types(0, _key_type, _value_types), do: []
 
+  @compile inline: [decode_dynamic_decode_rows: 5]
+  defp decode_dynamic_decode_rows(
+         <<0x15, rest::bytes>>,
+         types_rest,
+         row,
+         rows,
+         types
+       ) do
+    decode_string_decode_rows(rest, types_rest, row, rows, types)
+  end
+
   defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
     case type do
       :u8 ->
@@ -941,6 +953,9 @@ defmodule Ch.RowBinary do
         # i.e. assumes `settings: [output_format_binary_write_json_as_string: 1]`
         # TODO
         decode_string_json_decode_rows(bin, types_rest, row, rows, types)
+
+      :dynamic ->
+        decode_dynamic_decode_rows(bin, types_rest, row, rows, types)
 
       # TODO utf8?
       {:fixed_string, size} ->
