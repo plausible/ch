@@ -82,7 +82,7 @@ defmodule Ch.DynamicTest do
 
     # DateTime64(P) 0x13<uint8_precision>
     assert select.("'2020-01-01 12:34:56.123456'::DateTime64(6)") ==
-             [~N[2020-01-01 12:34:56.123456], "DateTime64(6)"]
+             [Ch.Test.to_clickhouse_naive(conn, ~N[2020-01-01 12:34:56.123456]), "DateTime64(6)"]
 
     # DateTime64(P, time_zone) 0x14<uint8_precision><var_uint_time_zone_name_size><time_zone_name_data>
     assert [dt64, "DateTime64(6, 'Europe/Prague')"] =
