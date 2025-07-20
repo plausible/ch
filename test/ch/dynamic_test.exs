@@ -100,8 +100,7 @@ defmodule Ch.DynamicTest do
              "DateTime"
            ]
 
-    assert insert.(~N[2020-01-01 12:34:56]) ==
-             Ch.Test.to_clickhouse_naive(conn, ~N[2020-01-01 12:34:56])
+    assert insert.(~N[2020-01-01 12:34:56]) == ~N[2020-01-01 12:34:56]
 
     # DateTime(time_zone) 0x12<var_uint_time_zone_name_size><time_zone_name_data>
     assert [dt, "DateTime('Europe/Prague')"] =
