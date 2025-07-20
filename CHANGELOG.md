@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- add [Dynamic](https://clickhouse.com/docs/sql-reference/data-types/dynamic) type support https://github.com/plausible/ch/pull/266
+- add partial [Dynamic](https://clickhouse.com/docs/sql-reference/data-types/dynamic) type support https://github.com/plausible/ch/pull/266
 
 ## 0.5.0 (2025-07-17)
 

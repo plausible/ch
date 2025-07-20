@@ -141,5 +141,87 @@ defmodule Ch.JSONTest do
              [0, nil, nil, ~D[2020-01-02]],
              [43, 43.43, [4, 5, 6], nil]
            ]
+
+    assert Ch.query!(conn, "SELECT json.non.existing.path FROM json_test").rows == [
+             [nil],
+             [nil],
+             [nil]
+           ]
+
+    assert Ch.query!(
+             conn,
+             "SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeName(json.d) FROM json_test;"
+           ).rows == [
+             ["UInt32", "Dynamic", "Dynamic", "Dynamic"],
+             ["UInt32", "Dynamic", "Dynamic", "Dynamic"],
+             ["UInt32", "Dynamic", "Dynamic", "Dynamic"]
+           ]
+
+    assert Ch.query!(
+             conn,
+             """
+             SELECT
+               json.a.g.:Float64,
+               dynamicType(json.a.g),
+               json.d.:Date,
+               dynamicType(json.d)
+             FROM json_test
+             """
+           ).rows == [
+             [42.42, "Float64", ~D[2020-01-01], "Date"],
+             [nil, "None", ~D[2020-01-02], "Date"],
+             [43.43, "Float64", nil, "None"]
+           ]
+
+    assert Ch.query!(
+             conn,
+             """
+             SELECT json.a.g::UInt64 AS uint
+             FROM json_test;
+             """
+           ).rows == [
+             [42],
+             [0],
+             [43]
+           ]
+
+    assert_raise Ch.Error, ~r/Conversion between numeric types and UUID is not supported/, fn ->
+      Ch.query!(conn, "SELECT json.a.g::UUID AS float FROM json_test;")
+    end
+  end
+
+  # https://clickhouse.com/docs/sql-reference/data-types/newjson#reading-json-sub-objects-as-sub-columns
+  test "reading json subobjects as subcolumns", %{conn: conn} do
+    Ch.query!(conn, "CREATE TABLE json_test (json JSON) ENGINE = Memory;")
+
+    Ch.query!(conn, """
+    INSERT INTO json_test VALUES
+    ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'),
+    ('{"f" : "Hello, World!", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'),
+    ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
+    """)
+
+    assert Ch.query!(conn, "SELECT json FROM json_test;").rows == [
+             [
+               %{
+                 "a" => %{"b" => %{"c" => "42", "g" => 42.42}},
+                 "c" => ["1", "2", "3"],
+                 "d" => %{"e" => %{"f" => %{"g" => "Hello, World", "h" => ["1", "2", "3"]}}}
+               }
+             ],
+             [%{"d" => %{"e" => %{"f" => %{"h" => ["4", "5", "6"]}}}, "f" => "Hello, World!"}],
+             [
+               %{
+                 "a" => %{"b" => %{"c" => "43", "e" => "10", "g" => 43.43}},
+                 "c" => ["4", "5", "6"]
+               }
+             ]
+           ]
+
+    assert Ch.query!(conn, "SELECT json.^a.b, json.^d.e.f FROM json_test;").rows == [
+             [%{"c" => "42", "g" => 42.42}, %{"g" => "Hello, World", "h" => ["1", "2", "3"]}],
+             [%{}, %{"h" => ["4", "5", "6"]}],
+             [%{"c" => "43", "e" => "10", "g" => 43.43}, %{}]
+           ]
   end
 end
