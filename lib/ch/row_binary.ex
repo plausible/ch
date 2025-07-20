@@ -1083,7 +1083,7 @@ defmodule Ch.RowBinary do
     end
   end
 
-  # TODO compile inline?
+  @compile inline: [decode_dynamic_continue: 6]
 
   defp decode_dynamic_continue(<<rest::bytes>>, dynamic, types_rest, row, rows, types) do
     continue? =
