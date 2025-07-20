@@ -30,8 +30,8 @@ defmodule Ch.Types do
       {"Date32", :date32, []},
       {"Date", :date, []},
       {"JSON", :json, []},
-      {"Dynamic", :dynamic, []},
       {"Dynamic", :dynamic, [:identifier, :eq, :int]},
+      # {"Dynamic", :dynamic, []},
       {"LowCardinality", :low_cardinality, [:type]},
       for size <- [32, 64, 128, 256] do
         {"Decimal#{size}", :"decimal#{size}", [:int]}
@@ -358,6 +358,7 @@ defmodule Ch.Types do
   end
 
   def decode("DateTime"), do: :datetime
+  def decode("Dynamic"), do: :dynamic
   def decode("JSON" <> _options), do: :json
 
   def decode(type) do
