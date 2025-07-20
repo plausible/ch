@@ -54,18 +54,18 @@ defmodule Ch.JSONTest do
 
   # https://clickhouse.com/docs/sql-reference/data-types/newjson#using-json-in-a-table-column-definition
   test "basic", %{conn: conn} do
-    Ch.query!(conn, "CREATE TABLE json_test (json JSON) ENGINE = Memory")
+    Ch.query!(conn, "CREATE TABLE json_test (json JSON, id UInt8) ENGINE = Memory")
 
     Ch.query!(conn, """
     INSERT INTO json_test VALUES
-    ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'),
-    ('{"f" : "Hello, World!"}'),
-    ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}')
+    ('{"a" : {"b" : 42}, "c" : [1, 2, 3]}', 0),
+    ('{"f" : "Hello, World!"}', 1),
+    ('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}', 2)
     """)
 
     assert Ch.query!(
              conn,
-             "SELECT json FROM json_test"
+             "SELECT json FROM json_test ORDER BY id"
            ).rows == [
              [%{"a" => %{"b" => "42"}, "c" => ["1", "2", "3"]}],
              [%{"f" => "Hello, World!"}],
@@ -74,24 +74,25 @@ defmodule Ch.JSONTest do
 
     Ch.query!(
       conn,
-      "INSERT INTO json_test FORMAT RowBinary",
-      [[%{"some other" => "json value", "from" => "rowbinary"}]],
-      types: ["JSON"]
+      "INSERT INTO json_test(json, id) FORMAT RowBinary",
+      [[%{"a" => %{"b" => 999}, "some other" => "json value", "from" => "rowbinary"}, 3]],
+      types: ["JSON", "UInt8"]
     )
 
     assert Ch.query!(
              conn,
              "SELECT json FROM json_test where json.from = 'rowbinary'"
            ).rows == [
-             [%{"from" => "rowbinary", "some other" => "json value"}]
+             [%{"from" => "rowbinary", "some other" => "json value", "a" => %{"b" => "999"}}]
            ]
 
-    assert Ch.query!(conn, "select json.a.b, json.a.g, json.c, json.d from json_test").rows == [
-             [42, nil, [1, 2, 3], nil],
-             [nil, nil, nil, nil],
-             [43, nil, [4, 5, 6], nil],
-             [nil, nil, nil, nil]
-           ]
+    assert Ch.query!(conn, "select json.a.b, json.a.g, json.c, json.d from json_test order by id").rows ==
+             [
+               [42, nil, [1, 2, 3], nil],
+               [nil, nil, nil, nil],
+               [43, nil, [4, 5, 6], nil],
+               [999, nil, nil, nil]
+             ]
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/newjson#using-json-in-a-table-column-definition

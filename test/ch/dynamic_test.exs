@@ -338,4 +338,49 @@ defmodule Ch.DynamicTest do
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#converting-a-variant-column-to-dynamic-column
+  test "converting a variant column to dynamic column", %{conn: conn} do
+    Ch.query!(
+      conn,
+      "CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;"
+    )
+
+    on_exit(fn -> Ch.Test.query("DROP TABLE test", [], database: Ch.Test.database()) end)
+    Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), ('String'), ([1, 2, 3]);")
+
+    assert Ch.query!(conn, "SELECT v::Dynamic AS d, dynamicType(d) FROM test;").rows == [
+             [nil, "None"],
+             [42, "UInt64"],
+             ["String", "String"],
+             [[1, 2, 3], "Array(UInt64)"]
+           ]
+  end
+
+  # https://clickhouse.com/docs/sql-reference/data-types/dynamic#converting-a-dynamicmax_typesn-column-to-another-dynamicmax_typesk
+  test "converting a Dynamic(max_types=N) column to another Dynamic(max_types=K)", %{conn: conn} do
+    Ch.query!(conn, "CREATE TABLE test (d Dynamic(max_types=4)) ENGINE = Memory;")
+    on_exit(fn -> Ch.Test.query("DROP TABLE test", [], database: Ch.Test.database()) end)
+    Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true), ([1, 2, 3]);")
+
+    assert Ch.query!(conn, "SELECT d::Dynamic(max_types=5) as d2, dynamicType(d2) FROM test;").rows ==
+             [
+               [nil, "None"],
+               [42, "Int64"],
+               [43, "Int64"],
+               ["42.42", "String"],
+               [true, "Bool"],
+               [[1, 2, 3], "Array(Int64)"]
+             ]
+
+    assert Ch.query!(
+             conn,
+             "SELECT d, dynamicType(d), d::Dynamic(max_types=2) as d2, dynamicType(d2), isDynamicElementInSharedData(d2) FROM test;"
+           ).rows == [
+             [nil, "None", nil, "None", false],
+             [42, "Int64", 42, "Int64", false],
+             [43, "Int64", 43, "Int64", false],
+             ["42.42", "String", "42.42", "String", false],
+             [true, "Bool", true, "Bool", true],
+             [[1, 2, 3], "Array(Int64)", [1, 2, 3], "Array(Int64)", true]
+           ]
+  end
 end

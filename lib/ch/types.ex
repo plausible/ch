@@ -358,6 +358,7 @@ defmodule Ch.Types do
 
   def decode("DateTime"), do: :datetime
   def decode("JSON" <> _options), do: :json
+  def decode("Dynamic" <> _options), do: :dynamic
 
   def decode(type) do
     try do
