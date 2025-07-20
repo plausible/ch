@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 (2025-07-20)
 
 - add partial [Dynamic](https://clickhouse.com/docs/sql-reference/data-types/dynamic) type support https://github.com/plausible/ch/pull/266
 
