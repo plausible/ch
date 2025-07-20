@@ -224,4 +224,69 @@ defmodule Ch.JSONTest do
              [%{"c" => "43", "e" => "10", "g" => 43.43}, %{}]
            ]
   end
+
+  # TODO
+  # https://clickhouse.com/docs/sql-reference/data-types/newjson#handling-arrays-of-json-objects
+  test "handling arrays of json objects", %{conn: conn} do
+    Ch.query!(conn, "CREATE TABLE json_test (json JSON) ENGINE = Memory;")
+
+    Ch.query!(conn, """
+    INSERT INTO json_test VALUES
+    ('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]],  "k" : {"j" : 2000}}]}}'),
+    ('{"a" : {"b" : [1, 2, 3]}}'),
+    ('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]],  "k" : {"j" : 3000}}]}}');
+    """)
+
+    assert Ch.query!(conn, "SELECT json FROM json_test;").rows == [
+             [
+               %{
+                 "a" => %{
+                   "b" => [
+                     %{
+                       "c" => "42",
+                       "d" => "Hello",
+                       "f" => [[%{"g" => 42.42}]],
+                       "k" => %{"j" => "1000"}
+                     },
+                     %{"c" => "43"},
+                     %{
+                       "d" => "My",
+                       "e" => ["1", "2", "3"],
+                       "f" => [[%{"g" => 43.43, "h" => "2020-01-01"}]],
+                       "k" => %{"j" => "2000"}
+                     }
+                   ]
+                 }
+               }
+             ],
+             [%{"a" => %{"b" => ["1", "2", "3"]}}],
+             [
+               %{
+                 "a" => %{
+                   "b" => [
+                     %{"c" => "44", "f" => [[%{"h" => "2020-01-02"}]]},
+                     %{
+                       "d" => "World",
+                       "e" => ["4", "5", "6"],
+                       "f" => [[%{"g" => 44.44}]],
+                       "k" => %{"j" => "3000"}
+                     }
+                   ]
+                 }
+               }
+             ]
+           ]
+
+    # TODO
+    assert_raise ArgumentError, "unsupported dynamic type JSON", fn ->
+      Ch.query!(conn, "SELECT json.a.b, dynamicType(json.a.b) FROM json_test;")
+    end
+
+    assert_raise ArgumentError, "unsupported dynamic type JSON", fn ->
+      Ch.query!(
+        conn,
+        "SELECT json.a.b.:`Array(JSON)`.c, json.a.b.:`Array(JSON)`.f, json.a.b.:`Array(JSON)`.d FROM json_test;"
+      )
+    end
+  end
 end
