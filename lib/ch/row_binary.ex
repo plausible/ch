@@ -1108,6 +1108,7 @@ defmodule Ch.RowBinary do
     case type do
       [:array | rest] -> {:array, build_dynamic_type(rest)}
       [:nullable | rest] -> {:nullable, build_dynamic_type(rest)}
+      [:low_cardinality | rest] -> build_dynamic_type(rest)
     end
   end
 

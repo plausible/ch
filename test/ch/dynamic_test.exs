@@ -125,36 +125,111 @@ defmodule Ch.DynamicTest do
     assert select.("'550e8400-e29b-41d4-a716-446655440000'::UUID") ==
              [Ecto.UUID.dump!("550e8400-e29b-41d4-a716-446655440000"), "UUID"]
 
-    # Array(T)	0x1E<nested_type_encoding>
-    # Tuple(T1, ..., TN)	0x1F<var_uint_number_of_elements><nested_type_encoding_1>...<nested_type_encoding_N>
-    # Tuple(name1 T1, ..., nameN TN)	0x20<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
-    # Set	0x21
-    # Interval	0x22<interval_kind> (see interval kind binary encoding)
-    # Nullable(T)	0x23<nested_type_encoding>
-    # Function	0x24<var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N><return_type_encoding>
-    # AggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x25<var_uint_version><var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
-    # LowCardinality(T)	0x26<nested_type_encoding>
-    # Map(K, V)	0x27<key_type_encoding><value_type_encoding>
-    # IPv4	0x28
-    # IPv6	0x29
-    # Variant(T1, ..., TN)	0x2A<var_uint_number_of_variants><variant_type_encoding_1>...<variant_type_encoding_N>
-    # Dynamic(max_types=N)	0x2B<uint8_max_types>
-    # Custom type (Ring, Polygon, etc)	0x2C<var_uint_type_name_size><type_name_data>
-    # Bool	0x2D
-    # SimpleAggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x2E<var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
-    # Nested(name1 T1, ..., nameN TN)	0x2F<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
-    # JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)	0x30<uint8_serialization_version><var_int_max_dynamic_paths><uint8_max_dynamic_types><var_uint_number_of_typed_paths><var_uint_path_name_size_1><path_name_data_1><encoded_type_1>...<var_uint_number_of_skip_paths><var_uint_skip_path_size_1><skip_path_data_1>...<var_uint_number_of_skip_path_regexps><var_uint_skip_path_regexp_size_1><skip_path_data_regexp_1>...
+    # Array(T) 0x1E<nested_type_encoding>
+    assert select.("[1, 2, 3]::Array(UInt8)") == [[1, 2, 3], "Array(UInt8)"]
+    assert select.("[1, 2, 3]::Array(Int64)") == [[1, 2, 3], "Array(Int64)"]
 
-    assert select.("true") == [true, "Bool"]
-    assert select.("false") == [false, "Bool"]
-    assert select.("(1+1)") == [2, "UInt16"]
-    assert select.("['a', 'b', 'c']::Array(String)") == [["a", "b", "c"], "Array(String)"]
+    assert select.("['hello', 'world', '!']::Array(String)") == [
+             ["hello", "world", "!"],
+             "Array(String)"
+           ]
+
+    assert select.("['hello', 'world', '!']::Array(LowCardinality(String))") == [
+             ["hello", "world", "!"],
+             "Array(LowCardinality(String))"
+           ]
+
+    assert select.("['hello', 'world', null, '!']::Array(Nullable(String))") == [
+             ["hello", "world", nil, "!"],
+             "Array(Nullable(String))"
+           ]
+
     assert select.("[]::Array(Nothing)") == [[], "Array(Nothing)"]
 
     assert select.("[[1,2,3], [1,2], [3]]::Array(Array(UInt8))") == [
              [[1, 2, 3], [1, 2], [3]],
              "Array(Array(UInt8))"
            ]
+
+    assert select.("[[[1],[],[2],[3,4,5]], [[1,2],[]], [[3]]]::Array(Array(Array(UInt8)))") == [
+             [[[1], [], [2], [3, 4, 5]], [[1, 2], []], [[3]]],
+             "Array(Array(Array(UInt8)))"
+           ]
+
+    assert select.("['2020-01-01', '2023-01-01']::Array(Date)") == [
+             [~D[2020-01-01], ~D[2023-01-01]],
+             "Array(Date)"
+           ]
+
+    # TODO
+    # Tuple(T1, ..., TN) 0x1F<var_uint_number_of_elements><nested_type_encoding_1>...<nested_type_encoding_N>
+    assert_raise ArgumentError, "unsupported dynamic type Tuple", fn ->
+      select.("('a', 'b', 'c')::Tuple(String, String, String)")
+    end
+
+    # TODO
+    # Tuple(name1 T1, ..., nameN TN) 0x20<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+    assert_raise ArgumentError, "unsupported dynamic type TupleWithNames", fn ->
+      select.("('a' = 'b', 'c' = 'd')::Tuple(a String, c String)")
+    end
+
+    # TODO
+    # Set 0x21
+
+    # TODO
+    # Interval 0x22<interval_kind> (see interval kind binary encoding)
+
+    # Nullable(T) 0x23<nested_type_encoding>
+    assert select.("'Hello, World!'::Nullable(String)") == ["Hello, World!", "String"]
+    assert select.("null::Nullable(String)") == [nil, "None"]
+
+    # TODO
+    # Function 0x24<var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N><return_type_encoding>
+
+    # TODO
+    # AggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN) 0x25<var_uint_version><var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+
+    # LowCardinality(T)	0x26<nested_type_encoding>
+    assert select.("'Hello, World!'::LowCardinality(String)") == [
+             "Hello, World!",
+             "LowCardinality(String)"
+           ]
+
+    # TODO
+    # Map(K, V) 0x27<key_type_encoding><value_type_encoding>
+    assert_raise ArgumentError, "unsupported dynamic type Map", fn ->
+      select.("map('key1', 'value1', 'key2', 'value2')::Map(String, String)")
+    end
+
+    # IPv4 0x28
+    assert select.("'1.1.1.1'::IPv4") == [{1, 1, 1, 1}, "IPv4"]
+
+    # IPv6 0x29
+    assert select.("'::1'::IPv6") == [{0, 0, 0, 0, 0, 0, 0, 1}, "IPv6"]
+
+    # TODO
+    # Variant(T1, ..., TN) 0x2A<var_uint_number_of_variants><variant_type_encoding_1>...<variant_type_encoding_N>
+    assert_raise ArgumentError, "unsupported dynamic type Variant", fn ->
+      select.("['a', 1]::Array(Variant(String, UInt8))")
+    end
+
+    # TODO
+    # Dynamic(max_types=N) 0x2B<uint8_max_types>
+
+    # TODO
+    # Custom type (Ring, Polygon, etc) 0x2C<var_uint_type_name_size><type_name_data>
+    assert_raise ArgumentError, "unsupported dynamic type CustomType", fn ->
+      select.("(0, 1)::Point")
+    end
+
+    # Bool 0x2D
+    assert select.("true") == [true, "Bool"]
+    assert select.("false") == [false, "Bool"]
+
+    # TODO
+    # SimpleAggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x2E<var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+    # Nested(name1 T1, ..., nameN TN)	0x2F<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+    # JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)	0x30<uint8_serialization_version><var_int_max_dynamic_paths><uint8_max_dynamic_types><var_uint_number_of_typed_paths><var_uint_path_name_size_1><path_name_data_1><encoded_type_1>...<var_uint_number_of_skip_paths><var_uint_skip_path_size_1><skip_path_data_1>...<var_uint_number_of_skip_path_regexps><var_uint_skip_path_regexp_size_1><skip_path_data_regexp_1>...
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#creating-dynamic
