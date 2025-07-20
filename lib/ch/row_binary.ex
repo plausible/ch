@@ -884,30 +884,10 @@ defmodule Ch.RowBinary do
     date32: 0x10,
     datetime: 0x11,
     string: 0x15,
-    # TODO
-    # Enum8	0x17 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int8_value_1>...<var_uint_name_size_N><name_data_N><int8_value_N>
-    # Enum16	0x18 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int16_little_endian_value_1>...><var_uint_name_size_N><name_data_N><int16_little_endian_value_N>
     uuid: 0x1D,
-    # TODO
-    # Tuple(T1, ..., TN)	0x1F <var_uint_number_of_elements><nested_type_encoding_1>...<nested_type_encoding_N>
-    # Tuple(name1 T1, ..., nameN TN)	0x20 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
-    # Set	0x21
-    # Interval	0x22 <interval_kind> (see interval kind binary encoding)
-    # Function	0x24<var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N><return_type_encoding>
-    # AggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x25<var_uint_version><var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
-    # LowCardinality(T)	0x26<nested_type_encoding>
-    # Map(K, V)	0x27<key_type_encoding><value_type_encoding>
     ipv4: 0x28,
     ipv6: 0x29,
-    # TODO
-    # Variant(T1, ..., TN)	0x2A<var_uint_number_of_variants><variant_type_encoding_1>...<variant_type_encoding_N>
-    # Dynamic(max_types=N)	0x2B<uint8_max_types>
-    # Custom type (Ring, Polygon, etc)	0x2C<var_uint_type_name_size><type_name_data>
     boolean: 0x2D
-    # TODO
-    # SimpleAggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x2E<var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
-    # Nested(name1 T1, ..., nameN TN)	0x2F<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
-    # JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)	0x30<uint8_serialization_version><var_int_max_dynamic_paths><uint8_max_dynamic_types><var_uint_number_of_typed_paths><var_uint_path_name_size_1><path_name_data_1><encoded_type_1>...<var_uint_number_of_skip_paths><var_uint_skip_path_size_1><skip_path_data_1>...<var_uint_number_of_skip_path_regexps><var_uint_skip_path_regexp_size_1><skip_path_data_regexp_1>...
   ]
 
   # TODO compile inline?
@@ -1046,6 +1026,52 @@ defmodule Ch.RowBinary do
     decode_dynamic_continue(rest, [:nullable | dynamic], types_rest, row, rows, types)
   end
 
+  # LowCardinality(T) 0x26 <nested_type_encoding>
+  defp decode_dynamic(<<0x26, rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    decode_dynamic_continue(rest, [:low_cardinality | dynamic], types_rest, row, rows, types)
+  end
+
+  # TODO
+  # Enum8	0x17 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int8_value_1>...<var_uint_name_size_N><name_data_N><int8_value_N>
+  # Enum16	0x18 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int16_little_endian_value_1>...><var_uint_name_size_N><name_data_N><int16_little_endian_value_N>
+  # Tuple(T1, ..., TN)	0x1F <var_uint_number_of_elements><nested_type_encoding_1>...<nested_type_encoding_N>
+  # Tuple(name1 T1, ..., nameN TN)	0x20 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+  # Set	0x21
+  # Interval	0x22 <interval_kind> (see interval kind binary encoding)
+  # Function	0x24<var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N><return_type_encoding>
+  # AggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x25<var_uint_version><var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+  # Map(K, V)	0x27<key_type_encoding><value_type_encoding>
+  # Variant(T1, ..., TN)	0x2A<var_uint_number_of_variants><variant_type_encoding_1>...<variant_type_encoding_N>
+  # Dynamic(max_types=N)	0x2B<uint8_max_types>
+  # Custom type (Ring, Polygon, etc)	0x2C<var_uint_type_name_size><type_name_data>
+  # SimpleAggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x2E<var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+  # Nested(name1 T1, ..., nameN TN)	0x2F<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+  # JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)	0x30<uint8_serialization_version><var_int_max_dynamic_paths><uint8_max_dynamic_types><var_uint_number_of_typed_paths><var_uint_path_name_size_1><path_name_data_1><encoded_type_1>...<var_uint_number_of_skip_paths><var_uint_skip_path_size_1><skip_path_data_1>...<var_uint_number_of_skip_path_regexps><var_uint_skip_path_regexp_size_1><skip_path_data_regexp_1>...
+
+  unsupported_dynamic_types = %{
+    "Enum8" => 0x17,
+    "Enum16" => 0x18,
+    "Tuple" => 0x1F,
+    "TupleWithNames" => 0x20,
+    "Set" => 0x21,
+    "Interval" => 0x22,
+    "Function" => 0x24,
+    "AggregateFunction" => 0x25,
+    "Map" => 0x27,
+    "Variant" => 0x2A,
+    "Dynamic" => 0x2B,
+    "CustomType" => 0x2C,
+    "SimpleAggregateFunction" => 0x2E,
+    "Nested" => 0x2F,
+    "JSON" => 0x30
+  }
+
+  for {type, code} <- unsupported_dynamic_types do
+    defp decode_dynamic(<<unquote(code), _::bytes>>, _dynamic, _types_rest, _row, _rows, _types) do
+      raise ArgumentError, "unsupported dynamic type #{unquote(type)}"
+    end
+  end
+
   # TODO compile inline?
 
   defp decode_dynamic_continue(<<rest::bytes>>, dynamic, types_rest, row, rows, types) do
@@ -1053,6 +1079,7 @@ defmodule Ch.RowBinary do
       case dynamic do
         [:array | _] -> true
         [:nullable | _] -> true
+        [:low_cardinality | _] -> true
         _ -> false
       end
 

@@ -8,20 +8,20 @@ defmodule Ch.DynamicTest do
   end
 
   test "it works", %{conn: conn} do
-    assert Ch.query!(conn, "select 'Hello, World!'::Dynamic AS d, dynamicType(d)").rows == [
-             ["Hello, World!", "String"]
-           ]
+    dynamic = fn literal ->
+      [row] = Ch.query!(conn, "select #{literal}::Dynamic as d, dynamicType(d)").rows
+      row
+    end
 
-    assert Ch.query!(conn, "select 0::Dynamic AS d, dynamicType(d)").rows == [
-             ["0", "String"]
-           ]
+    assert dynamic.("'Hello, World!'") == ["Hello, World!", "String"]
+    assert dynamic.("0") == ["0", "String"]
+    assert dynamic.("true") == [true, "Bool"]
+    assert dynamic.("(1+1)") == [2, "UInt16"]
+    assert dynamic.("['a', 'b', 'c']::Array(String)") == [["a", "b", "c"], "Array(String)"]
 
-    assert Ch.query!(conn, "select true::Dynamic AS d, dynamicType(d)").rows == [
-             [true, "Bool"]
-           ]
-
-    assert Ch.query!(conn, "select (1+1)::Dynamic AS d, dynamicType(d)").rows == [
-             [2, "UInt16"]
+    assert dynamic.("[[1,2,3], [1,2], [3]]::Array(Array(UInt8))") == [
+             [[1, 2, 3], [1, 2], [3]],
+             "Array(Array(UInt8))"
            ]
   end
 
