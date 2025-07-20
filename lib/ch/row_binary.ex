@@ -889,12 +889,10 @@ defmodule Ch.RowBinary do
     # Enum16	0x18 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int16_little_endian_value_1>...><var_uint_name_size_N><name_data_N><int16_little_endian_value_N>
     uuid: 0x1D,
     # TODO
-    # Array(T)	0x1E <nested_type_encoding>
     # Tuple(T1, ..., TN)	0x1F <var_uint_number_of_elements><nested_type_encoding_1>...<nested_type_encoding_N>
     # Tuple(name1 T1, ..., nameN TN)	0x20 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
     # Set	0x21
     # Interval	0x22 <interval_kind> (see interval kind binary encoding)
-    # Nullable(T)	0x23 <nested_type_encoding>
     # Function	0x24<var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N><return_type_encoding>
     # AggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x25<var_uint_version><var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
     # LowCardinality(T)	0x26<nested_type_encoding>
@@ -912,56 +910,75 @@ defmodule Ch.RowBinary do
     # JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)	0x30<uint8_serialization_version><var_int_max_dynamic_paths><uint8_max_dynamic_types><var_uint_number_of_typed_paths><var_uint_path_name_size_1><path_name_data_1><encoded_type_1>...<var_uint_number_of_skip_paths><var_uint_skip_path_size_1><skip_path_data_1>...<var_uint_number_of_skip_path_regexps><var_uint_skip_path_regexp_size_1><skip_path_data_regexp_1>...
   ]
 
-  @compile inline: [decode_dynamic_decode_rows: 5]
+  # TODO compile inline?
 
   for {type, code} <- dynamic_types do
-    defp decode_dynamic_decode_rows(
+    defp decode_dynamic(
            <<unquote(code), rest::bytes>>,
+           dynamic,
            types_rest,
            row,
            rows,
            types
          ) do
-      decode_rows([unquote(type) | types_rest], rest, row, rows, types)
+      decode_dynamic_continue(rest, [unquote(type) | dynamic], types_rest, row, rows, types)
     end
   end
 
   # DateTime(time_zone) 0x12 <var_uint_time_zone_name_size><time_zone_name_data>
   for {pattern, size} <- varints do
-    defp decode_dynamic_decode_rows(
+    defp decode_dynamic(
            <<0x12, unquote(pattern), tz::size(unquote(size))-bytes, rest::bytes>>,
+           dynamic,
            types_rest,
            row,
            rows,
            types
          ) do
-      decode_rows([{:datetime, tz} | types_rest], rest, row, rows, types)
+      decode_dynamic_continue(
+        rest,
+        [{:datetime, tz} | dynamic],
+        types_rest,
+        row,
+        rows,
+        types
+      )
     end
   end
 
   # DateTime64(P) 0x13 <uint8_precision>
-  defp decode_dynamic_decode_rows(
+  defp decode_dynamic(
          <<0x13, precision, rest::bytes>>,
+         dynamic,
          types_rest,
          row,
          rows,
          types
        ) do
-    decode_rows([decoding_type({:datetime64, precision}) | types_rest], rest, row, rows, types)
+    decode_dynamic_continue(
+      rest,
+      [decoding_type({:datetime64, precision}) | dynamic],
+      types_rest,
+      row,
+      rows,
+      types
+    )
   end
 
   # DateTime64(P, time_zone) 0x14 <uint8_precision><var_uint_time_zone_name_size><time_zone_name_data>
   for {pattern, size} <- varints do
-    defp decode_dynamic_decode_rows(
+    defp decode_dynamic(
            <<0x14, precision, unquote(pattern), tz::size(unquote(size))-bytes, rest::bytes>>,
+           dynamic,
            types_rest,
            row,
            rows,
            types
          ) do
-      decode_rows(
-        [decoding_type({:datetime64, precision, tz}) | types_rest],
+      decode_dynamic_continue(
         rest,
+        [decoding_type({:datetime64, precision, tz}) | dynamic],
+        types_rest,
         row,
         rows,
         types
@@ -971,16 +988,18 @@ defmodule Ch.RowBinary do
 
   # FixedString(N) 0x16 <var_uint_size>
   for {pattern, size} <- varints do
-    defp decode_dynamic_decode_rows(
+    defp decode_dynamic(
            <<0x16, unquote(pattern), rest::bytes>>,
+           dynamic,
            types_rest,
            row,
            rows,
            types
          ) do
-      decode_rows(
-        [{:fixed_string, unquote(size)} | types_rest],
+      decode_dynamic_continue(
         rest,
+        [{:fixed_string, unquote(size)} | dynamic],
+        types_rest,
         row,
         rows,
         types
@@ -998,20 +1017,59 @@ defmodule Ch.RowBinary do
         {0x1B, 128},
         {0x1C, 256}
       ] do
-    defp decode_dynamic_decode_rows(
+    defp decode_dynamic(
            <<unquote(code), _precision, scale, rest::bytes>>,
+           dynamic,
            types_rest,
            row,
            rows,
            types
          ) do
-      decode_rows(
-        [{:decimal, unquote(size), scale} | types_rest],
+      decode_dynamic_continue(
         rest,
+        [{:decimal, unquote(size), scale} | dynamic],
+        types_rest,
         row,
         rows,
         types
       )
+    end
+  end
+
+  # Array(T) 0x1E <nested_type_encoding>
+  defp decode_dynamic(<<0x1E, rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    decode_dynamic_continue(rest, [:array | dynamic], types_rest, row, rows, types)
+  end
+
+  # Nullable(T)	0x23 <nested_type_encoding>
+  defp decode_dynamic(<<0x23, rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    decode_dynamic_continue(rest, [:nullable | dynamic], types_rest, row, rows, types)
+  end
+
+  # TODO compile inline?
+
+  defp decode_dynamic_continue(<<rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    continue? =
+      case dynamic do
+        [:array | _] -> true
+        [:nullable | _] -> true
+        _ -> false
+      end
+
+    if continue? do
+      decode_dynamic(rest, dynamic, types_rest, row, rows, types)
+    else
+      type = build_dynamic_type(:lists.reverse(dynamic))
+      decode_rows([type | types_rest], rest, row, rows, types)
+    end
+  end
+
+  defp build_dynamic_type([type]), do: type
+
+  defp build_dynamic_type(type) do
+    case type do
+      [:array | rest] -> {:array, build_dynamic_type(rest)}
+      [:nullable | rest] -> {:nullable, build_dynamic_type(rest)}
     end
   end
 
@@ -1096,7 +1154,7 @@ defmodule Ch.RowBinary do
         decode_string_json_decode_rows(bin, types_rest, row, rows, types)
 
       :dynamic ->
-        decode_dynamic_decode_rows(bin, types_rest, row, rows, types)
+        decode_dynamic(bin, _dynamic = [], types_rest, row, rows, types)
 
       # TODO utf8?
       {:fixed_string, size} ->
@@ -1181,6 +1239,9 @@ defmodule Ch.RowBinary do
           <<1, bin::bytes>> -> decode_rows(types_rest, bin, [nil | row], rows, types)
           <<0, bin::bytes>> -> decode_rows([type | types_rest], bin, row, rows, types)
         end
+
+      :nothing ->
+        decode_rows(types_rest, bin, [nil | row], rows, types)
 
       {:array, type} ->
         decode_array_decode_rows(bin, type, types_rest, row, rows, types)
