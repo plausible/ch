@@ -69,7 +69,10 @@ defmodule Ch.DynamicTest do
     assert select.("'2020-01-01'::Date32") == [~D[2020-01-01], "Date32"]
 
     # DateTime 0x11
-    assert select.("'2020-01-01 12:34:56'::DateTime") == [~N[2020-01-01 12:34:56], "DateTime"]
+    assert select.("'2020-01-01 12:34:56'::DateTime") == [
+             Ch.Test.to_clickhouse_naive(conn, ~N[2020-01-01 12:34:56]),
+             "DateTime"
+           ]
 
     # DateTime(time_zone) 0x12<var_uint_time_zone_name_size><time_zone_name_data>
     assert [dt, "DateTime('Europe/Prague')"] =
