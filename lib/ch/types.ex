@@ -30,6 +30,8 @@ defmodule Ch.Types do
       {"Date32", :date32, []},
       {"Date", :date, []},
       {"JSON", :json, []},
+      {"Dynamic", :dynamic, [:identifier, :eq, :int]},
+      # {"Dynamic", :dynamic, []},
       {"LowCardinality", :low_cardinality, [:type]},
       for size <- [32, 64, 128, 256] do
         {"Decimal#{size}", :"decimal#{size}", [:int]}
@@ -356,6 +358,7 @@ defmodule Ch.Types do
   end
 
   def decode("DateTime"), do: :datetime
+  def decode("Dynamic"), do: :dynamic
   def decode("JSON" <> _options), do: :json
 
   def decode(type) do
@@ -480,6 +483,7 @@ defmodule Ch.Types do
   defp build_type(:decimal = d, [s, p]), do: {d, p, s}
   defp build_type(:time64 = t, [precision]), do: {t, precision}
   defp build_type(:variant = v, ts), do: {v, build_variant(ts)}
+  defp build_type(:dynamic, _max_types), do: :dynamic
 
   defp build_enum_mapping(mapping) do
     mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)
