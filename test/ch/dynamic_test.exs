@@ -13,10 +13,27 @@ defmodule Ch.DynamicTest do
       row
     end
 
+    Ch.query!(conn, "CREATE TABLE test (d Dynamic, id String) ENGINE = Memory;")
+    on_exit(fn -> Ch.Test.query("DROP TABLE test", [], database: Ch.Test.database()) end)
+
+    insert = fn value ->
+      id = inspect(value)
+
+      Ch.query!(conn, "insert into test(d, id) format RowBinary", [[value, id]],
+        types: ["Dynamic", "String"]
+      ).rows
+
+      [[inserted]] =
+        Ch.query!(conn, "select d from test where id = {id:String}", %{"id" => id}).rows
+
+      inserted
+    end
+
     # https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding
 
     # Nothing 0x00
     assert select.("[]::Array(Nothing)") == [[], "Array(Nothing)"]
+    # assert insert.([]) == []
 
     # UInt8 0x01
     assert select.("0::UInt8") == [0, "UInt8"]
@@ -30,6 +47,9 @@ defmodule Ch.DynamicTest do
 
     # UInt64 0x04
     assert select.("1234::UInt64") == [1234, "UInt64"]
+
+    assert insert.(0) == 0
+    assert insert.(255) == 255
 
     # UInt128 0x05
     assert select.("12345::UInt128") == [12345, "UInt128"]
@@ -50,6 +70,8 @@ defmodule Ch.DynamicTest do
     # Int64 0x0A
     assert select.("-1234::Int64") == [-1234, "Int64"]
 
+    assert insert.(-1234) == -1234
+
     # Int128 0x0B
     assert select.("12345::Int128") == [12345, "Int128"]
 
@@ -62,8 +84,12 @@ defmodule Ch.DynamicTest do
     # Float64 0x0E
     assert select.("-3.14159::Float64") == [-3.14159, "Float64"]
 
+    assert insert.(-3.14159) == -3.14159
+
     # Date 0x0F
     assert select.("'2020-01-01'::Date") == [~D[2020-01-01], "Date"]
+
+    assert insert.(~D[2020-01-01]) == ~D[2020-01-01]
 
     # Date32 0x10
     assert select.("'2020-01-01'::Date32") == [~D[2020-01-01], "Date32"]
@@ -73,6 +99,9 @@ defmodule Ch.DynamicTest do
              Ch.Test.to_clickhouse_naive(conn, ~N[2020-01-01 12:34:56]),
              "DateTime"
            ]
+
+    assert insert.(~N[2020-01-01 12:34:56]) ==
+             Ch.Test.to_clickhouse_naive(conn, ~N[2020-01-01 12:34:56])
 
     # DateTime(time_zone) 0x12<var_uint_time_zone_name_size><time_zone_name_data>
     assert [dt, "DateTime('Europe/Prague')"] =
@@ -93,6 +122,8 @@ defmodule Ch.DynamicTest do
     # String 0x15
     assert select.("'Hello, World!'") == ["Hello, World!", "String"]
     assert select.("0") == ["0", "String"]
+
+    assert insert.("Hello, World!") == "Hello, World!"
 
     # FixedString(N) 0x16<var_uint_size>
     assert select.("'Hello'::FixedString(5)") == ["Hello", "FixedString(5)"]

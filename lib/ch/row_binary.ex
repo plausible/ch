@@ -94,6 +94,7 @@ defmodule Ch.RowBinary do
               :string,
               :binary,
               :json,
+              :dynamic,
               :boolean,
               :uuid,
               :date,
@@ -416,6 +417,19 @@ defmodule Ch.RowBinary do
   def encode(:ring, points), do: encode({:array, :point}, points)
   def encode(:polygon, rings), do: encode({:array, :ring}, rings)
   def encode(:multipolygon, polygons), do: encode({:array, :polygon}, polygons)
+
+  # TODO
+  def encode(:dynamic, value) do
+    case value do
+      _ when is_binary(value) -> [0x15 | encode(:string, value)]
+      _ when is_integer(value) and value >= 0 -> [0x04 | encode(:u64, value)]
+      _ when is_integer(value) -> [0x0A | encode(:i64, value)]
+      _ when is_float(value) -> [0x0E | encode(:f64, value)]
+      %Date{} -> [0x0F | encode(:date, value)]
+      %NaiveDateTime{} -> [0x11 | encode(:datetime, value)]
+      [] -> [0x1E, 0x00]
+    end
+  end
 
   # TODO enum8 and enum16 nil
   for size <- [8, 16] do
