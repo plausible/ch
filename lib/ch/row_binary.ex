@@ -882,7 +882,6 @@ defmodule Ch.RowBinary do
     f64: 0x0E,
     date: 0x0F,
     date32: 0x10,
-    datetime: 0x11,
     string: 0x15,
     uuid: 0x1D,
     ipv4: 0x28,
@@ -903,6 +902,18 @@ defmodule Ch.RowBinary do
          ) do
       decode_dynamic_continue(rest, [unquote(type) | dynamic], types_rest, row, rows, types)
     end
+  end
+
+  # DateTime 0x11
+  defp decode_dynamic(<<0x11, rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    decode_dynamic_continue(
+      rest,
+      [{:datetime, nil} | dynamic],
+      types_rest,
+      row,
+      rows,
+      types
+    )
   end
 
   # DateTime(time_zone) 0x12 <var_uint_time_zone_name_size><time_zone_name_data>

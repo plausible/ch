@@ -8,18 +8,150 @@ defmodule Ch.DynamicTest do
   end
 
   test "it works", %{conn: conn} do
-    dynamic = fn literal ->
+    select = fn literal ->
       [row] = Ch.query!(conn, "select #{literal}::Dynamic as d, dynamicType(d)").rows
       row
     end
 
-    assert dynamic.("'Hello, World!'") == ["Hello, World!", "String"]
-    assert dynamic.("0") == ["0", "String"]
-    assert dynamic.("true") == [true, "Bool"]
-    assert dynamic.("(1+1)") == [2, "UInt16"]
-    assert dynamic.("['a', 'b', 'c']::Array(String)") == [["a", "b", "c"], "Array(String)"]
+    # https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding
 
-    assert dynamic.("[[1,2,3], [1,2], [3]]::Array(Array(UInt8))") == [
+    # Nothing 0x00
+    assert select.("[]::Array(Nothing)") == [[], "Array(Nothing)"]
+
+    # UInt8 0x01
+    assert select.("0::UInt8") == [0, "UInt8"]
+    assert select.("255::UInt8") == [255, "UInt8"]
+
+    # UInt16 0x02
+    assert select.("12::UInt16") == [12, "UInt16"]
+
+    # UInt32 0x03
+    assert select.("123::UInt32") == [123, "UInt32"]
+
+    # UInt64 0x04
+    assert select.("1234::UInt64") == [1234, "UInt64"]
+
+    # UInt128 0x05
+    assert select.("12345::UInt128") == [12345, "UInt128"]
+
+    # UInt256 0x06
+    assert select.("123456::UInt256") == [123_456, "UInt256"]
+
+    # Int8 0x07
+    assert select.("0::Int8") == [0, "Int8"]
+    assert select.("-23::Int8") == [-23, "Int8"]
+
+    # Int16 0x08
+    assert select.("-12::Int16") == [-12, "Int16"]
+
+    # Int32 0x09
+    assert select.("123::Int32") == [123, "Int32"]
+
+    # Int64 0x0A
+    assert select.("-1234::Int64") == [-1234, "Int64"]
+
+    # Int128 0x0B
+    assert select.("12345::Int128") == [12345, "Int128"]
+
+    # Int256 0x0C
+    assert select.("-123456::Int256") == [-123_456, "Int256"]
+
+    # Float32 0x0D
+    assert select.("3.14::Float32") == [3.140000104904175, "Float32"]
+
+    # Float64 0x0E
+    assert select.("-3.14159::Float64") == [-3.14159, "Float64"]
+
+    # Date 0x0F
+    assert select.("'2020-01-01'::Date") == [~D[2020-01-01], "Date"]
+
+    # Date32 0x10
+    assert select.("'2020-01-01'::Date32") == [~D[2020-01-01], "Date32"]
+
+    # DateTime 0x11
+    assert select.("'2020-01-01 12:34:56'::DateTime") == [~N[2020-01-01 12:34:56], "DateTime"]
+
+    # DateTime(time_zone) 0x12<var_uint_time_zone_name_size><time_zone_name_data>
+    assert [dt, "DateTime('Europe/Prague')"] =
+             select.("'2020-01-01 12:34:56'::DateTime('Europe/Prague')")
+
+    assert inspect(dt) == "#DateTime<2020-01-01 12:34:56+01:00 CET Europe/Prague>"
+
+    # DateTime64(P) 0x13<uint8_precision>
+    assert select.("'2020-01-01 12:34:56.123456'::DateTime64(6)") ==
+             [~N[2020-01-01 12:34:56.123456], "DateTime64(6)"]
+
+    # DateTime64(P, time_zone) 0x14<uint8_precision><var_uint_time_zone_name_size><time_zone_name_data>
+    assert [dt64, "DateTime64(6, 'Europe/Prague')"] =
+             select.("'2020-01-01 12:34:56.123456'::DateTime64(6, 'Europe/Prague')")
+
+    assert inspect(dt64) == "#DateTime<2020-01-01 12:34:56.123456+01:00 CET Europe/Prague>"
+
+    # String 0x15
+    assert select.("'Hello, World!'") == ["Hello, World!", "String"]
+    assert select.("0") == ["0", "String"]
+
+    # FixedString(N) 0x16<var_uint_size>
+    assert select.("'Hello'::FixedString(5)") == ["Hello", "FixedString(5)"]
+    assert select.("'Hell'::FixedString(5)") == ["Hell\0", "FixedString(5)"]
+
+    # TODO
+    # Enum8	0x17<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int8_value_1>...<var_uint_name_size_N><name_data_N><int8_value_N>
+    assert_raise ArgumentError, "unsupported dynamic type Enum8", fn ->
+      select.("'a'::Enum8('a' = 1, 'b' = 2, 'c' = 3)")
+    end
+
+    # TODO
+    # Enum16 0x18<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int16_little_endian_value_1>...><var_uint_name_size_N><name_data_N><int16_little_endian_value_N>
+    assert_raise ArgumentError, "unsupported dynamic type Enum16", fn ->
+      select.("'a'::Enum16('a' = 1, 'b' = 2, 'c' = 3)")
+    end
+
+    # Decimal32(P, S) 0x19<uint8_precision><uint8_scale>
+    assert select.("42.42::Decimal32(2)") == [Decimal.new("42.42"), "Decimal(9, 2)"]
+
+    # Decimal64(P, S) 0x1A<uint8_precision><uint8_scale>
+    assert select.("-42.42::Decimal64(2)") == [Decimal.new("-42.42"), "Decimal(18, 2)"]
+
+    # Decimal128(P, S) 0x1B<uint8_precision><uint8_scale>
+    assert select.("1234567890.123456789::Decimal128(9)") ==
+             [Decimal.new("1234567890.123456789"), "Decimal(38, 9)"]
+
+    # Decimal256(P, S) 0x1C<uint8_precision><uint8_scale>
+    assert select.("-1234567890.123456789::Decimal256(9)") ==
+             [Decimal.new("-1234567890.123456789"), "Decimal(76, 9)"]
+
+    # UUID 0x1D
+    assert select.("'550e8400-e29b-41d4-a716-446655440000'::UUID") ==
+             [Ecto.UUID.dump!("550e8400-e29b-41d4-a716-446655440000"), "UUID"]
+
+    # Array(T)	0x1E<nested_type_encoding>
+    # Tuple(T1, ..., TN)	0x1F<var_uint_number_of_elements><nested_type_encoding_1>...<nested_type_encoding_N>
+    # Tuple(name1 T1, ..., nameN TN)	0x20<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+    # Set	0x21
+    # Interval	0x22<interval_kind> (see interval kind binary encoding)
+    # Nullable(T)	0x23<nested_type_encoding>
+    # Function	0x24<var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N><return_type_encoding>
+    # AggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x25<var_uint_version><var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+    # LowCardinality(T)	0x26<nested_type_encoding>
+    # Map(K, V)	0x27<key_type_encoding><value_type_encoding>
+    # IPv4	0x28
+    # IPv6	0x29
+    # Variant(T1, ..., TN)	0x2A<var_uint_number_of_variants><variant_type_encoding_1>...<variant_type_encoding_N>
+    # Dynamic(max_types=N)	0x2B<uint8_max_types>
+    # Custom type (Ring, Polygon, etc)	0x2C<var_uint_type_name_size><type_name_data>
+    # Bool	0x2D
+    # SimpleAggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x2E<var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+    # Nested(name1 T1, ..., nameN TN)	0x2F<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+    # JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)	0x30<uint8_serialization_version><var_int_max_dynamic_paths><uint8_max_dynamic_types><var_uint_number_of_typed_paths><var_uint_path_name_size_1><path_name_data_1><encoded_type_1>...<var_uint_number_of_skip_paths><var_uint_skip_path_size_1><skip_path_data_1>...<var_uint_number_of_skip_path_regexps><var_uint_skip_path_regexp_size_1><skip_path_data_regexp_1>...
+
+    assert select.("true") == [true, "Bool"]
+    assert select.("false") == [false, "Bool"]
+    assert select.("(1+1)") == [2, "UInt16"]
+    assert select.("['a', 'b', 'c']::Array(String)") == [["a", "b", "c"], "Array(String)"]
+    assert select.("[]::Array(Nothing)") == [[], "Array(Nothing)"]
+
+    assert select.("[[1,2,3], [1,2], [3]]::Array(Array(UInt8))") == [
              [[1, 2, 3], [1, 2], [3]],
              "Array(Array(UInt8))"
            ]
