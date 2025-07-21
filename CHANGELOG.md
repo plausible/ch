@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.3 (2025-07-21)
+## Unreleased
 
 - allow `nil` in params https://github.com/plausible/ch/pull/268
 
