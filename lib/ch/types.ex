@@ -575,6 +575,7 @@ defmodule Ch.Types do
   def encode({:array, type}), do: ["Array(", encode(type), ?)]
   def encode({:tuple, types}), do: ["Tuple(", encode_intersperse(types, ", "), ?)]
   def encode({:variant, types}), do: ["Variant(", encode_intersperse(types, ", "), ?)]
+  def encode(:dynamic), do: "Dynamic"
 
   def encode({:map, key_type, value_type}) do
     ["Map(", encode(key_type), ", ", encode(value_type), ?)]

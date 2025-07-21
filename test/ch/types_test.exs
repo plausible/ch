@@ -97,6 +97,20 @@ defmodule Ch.TypesTest do
                {:variant, [{:array, :u64}, :string, :u64]}
     end
 
+    test "dynamic" do
+      assert decode("Dynamic") == :dynamic
+      assert decode(" Dynamic ") == :dynamic
+      assert decode(" Dynamic(max_types=10) ") == :dynamic
+      assert decode(" Dynamic (       max_types  =10) ") == :dynamic
+    end
+
+    test "json" do
+      assert decode("JSON") == :json
+      assert decode(" JSON ") == :json
+
+      # TODO JSON(...)
+    end
+
     test "datetime" do
       assert decode("DateTime") == :datetime
       assert decode("DateTime('UTC')") == {:datetime, "UTC"}
