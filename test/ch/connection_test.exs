@@ -23,6 +23,9 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[false]]}} =
              Ch.query(conn, "select {b:Bool}", %{"b" => false})
 
+    assert {:ok, %{num_rows: 1, rows: [[nil]]}} =
+             Ch.query(conn, "select {n:Nullable(Nothing)}", %{"n" => nil})
+
     assert {:ok, %{num_rows: 1, rows: [[1.0]]}} =
              Ch.query(conn, "select {a:Float32}", %{"a" => 1.0})
 
@@ -37,6 +40,13 @@ defmodule Ch.ConnectionTest do
 
     assert {:ok, %{num_rows: 1, rows: [[["a\tb"]]]}} =
              Ch.query(conn, "select {a:Array(String)}", %{"a" => ["a\tb"]})
+
+    assert {:ok, %{num_rows: 1, rows: [[[true, false]]]}} =
+             Ch.query(conn, "select {a:Array(Bool)}", %{"a" => [true, false]})
+
+    # TODO why "" and not nil?
+    assert {:ok, %{num_rows: 1, rows: [[["a", "", "b"]]]}} =
+             Ch.query(conn, "select {a:Array(Nullable(String))}", %{"a" => ["a", nil, "b"]})
 
     assert {:ok, %{num_rows: 1, rows: [row]}} =
              Ch.query(conn, "select {a:Decimal(9,4)}", %{"a" => Decimal.new("2000.333")})
