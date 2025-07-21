@@ -150,6 +150,7 @@ defmodule Ch do
     def cast(value, {:datetime64, _p, "UTC"}), do: Ecto.Type.cast(:utc_datetime_usec, value)
     def cast(value, {:fixed_string, _s}), do: Ecto.Type.cast(:string, value)
     def cast(value, :json), do: Ecto.Type.cast(:map, value)
+    def cast(value, :dynamic), do: {:ok, value}
 
     for size <- [8, 16, 32, 64, 128, 256] do
       def cast(value, unquote(:"i#{size}")), do: Ecto.Type.cast(:integer, value)
