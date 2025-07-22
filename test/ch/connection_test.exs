@@ -44,8 +44,7 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[[true, false]]]}} =
              Ch.query(conn, "select {a:Array(Bool)}", %{"a" => [true, false]})
 
-    # TODO why "" and not nil?
-    assert {:ok, %{num_rows: 1, rows: [[["a", "", "b"]]]}} =
+    assert {:ok, %{num_rows: 1, rows: [[["a", nil, "b"]]]}} =
              Ch.query(conn, "select {a:Array(Nullable(String))}", %{"a" => ["a", nil, "b"]})
 
     assert {:ok, %{num_rows: 1, rows: [row]}} =

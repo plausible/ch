@@ -289,7 +289,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     [?', escape_param([{"'", "''"}, {"\\", "\\\\"}], s), ?']
   end
 
-  defp encode_array_param(nil), do: "'\\N'"
+  defp encode_array_param(nil), do: "null"
 
   defp encode_array_param(%s{} = param) when s in [Date, NaiveDateTime] do
     [?', encode_param(param), ?']
