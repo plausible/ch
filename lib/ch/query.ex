@@ -130,10 +130,13 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   def encode(%Query{} = q, params, opts) do
     custom_multipart_encode(q, params, opts)
-    # types = Keyword.get(opts, :types)
-    # default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
-    # format = Keyword.get(opts, :format) || default_format
-    # {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+  end
+
+  def query_string_encode(%Query{statement: statement}, params, opts) do
+    types = Keyword.get(opts, :types)
+    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
+    format = Keyword.get(opts, :format) || default_format
+    {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
   end
 
   def multipart_encode(%Query{statement: statement}, params, opts) do
