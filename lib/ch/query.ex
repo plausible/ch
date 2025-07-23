@@ -128,11 +128,12 @@ defimpl DBConnection.Query, for: Ch.Query do
     end
   end
 
-  def encode(%Query{statement: statement}, params, opts) do
-    types = Keyword.get(opts, :types)
-    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
-    format = Keyword.get(opts, :format) || default_format
-    {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+  def encode(%Query{} = q, params, opts) do
+    custom_multipart_encode(q, params, opts)
+    # types = Keyword.get(opts, :types)
+    # default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
+    # format = Keyword.get(opts, :format) || default_format
+    # {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
   end
 
   def multipart_encode(%Query{statement: statement}, params, opts) do
@@ -145,7 +146,7 @@ defimpl DBConnection.Query, for: Ch.Query do
       |> Enum.reduce(Multipart.new(), fn {k, v}, acc ->
         Multipart.add_part(acc, Multipart.Part.text_field(v, k))
       end)
-      |> Multipart.add_part(Multipart.Part.text_field(statement, "query"))
+      |> Multipart.add_part(Multipart.Part.text_field(IO.iodata_to_binary(statement), "query"))
 
     content_type = Multipart.content_type(form, "multipart/form-data")
 
@@ -159,14 +160,15 @@ defimpl DBConnection.Query, for: Ch.Query do
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
 
-    boundary = Base.url_encode64(:crypto.strong_rand_bytes(36))
+    boundary = "ChFormBoundary" <> Base.url_encode64(:crypto.strong_rand_bytes(24))
     content_type = "multipart/form-data; boundary=\"#{boundary}\""
-    encoded_boundary = "--#{boundary}\r\n"
-    multipart = multipart_params(params, encoded_boundary)
-    muptipart = add_multipart_part(multipart, "query", statement, encoded_boundary)
+    enc_boundary = "--#{boundary}\r\n"
+    multipart = multipart_params(params, enc_boundary)
+    multipart = add_multipart_part(multipart, "query", statement, enc_boundary)
+    multipart = [multipart | "--#{boundary}--\r\n"]
 
     {_no_query_params = [],
-     [{"x-clickhouse-format", format}, {"content-type", content_type} | headers(opts)], muptipart}
+     [{"x-clickhouse-format", format}, {"content-type", content_type} | headers(opts)], multipart}
   end
 
   defp format_row_binary?(statement) when is_binary(statement) do
@@ -251,14 +253,28 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   defp multipart_named_params([{name, value} | params], boundary, acc) do
-    acc = add_multipart_part(boundary, URI.encode_www_form(name), encode_param(value), acc)
+    acc =
+      add_multipart_part(
+        acc,
+        "param_" <> URI.encode_www_form(name),
+        encode_param(value),
+        boundary
+      )
+
     multipart_named_params(params, boundary, acc)
   end
 
   defp multipart_named_params([], _boundary, acc), do: acc
 
   defp multipart_positional_params([value | params], idx, boundary, acc) do
-    acc = add_multipart_part(boundary, Integer.to_string(idx), encode_param(value), acc)
+    acc =
+      add_multipart_part(
+        acc,
+        "param_$" <> Integer.to_string(idx),
+        encode_param(value),
+        boundary
+      )
+
     multipart_positional_params(params, idx + 1, boundary, acc)
   end
 
@@ -268,14 +284,17 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp add_multipart_part(multipart, name, value, boundary) do
     part = [
       boundary,
-      "content-disposition: form-data; name=\"param_$",
+      "content-disposition: form-data; name=\"",
       name,
       "\"\r\n\r\n",
       value,
       "\r\n"
     ]
 
-    [part | multipart]
+    case multipart do
+      [] -> part
+      _ -> [multipart | part]
+    end
   end
 
   defp query_params(params) when is_map(params) do
