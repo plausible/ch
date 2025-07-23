@@ -135,6 +135,40 @@ defimpl DBConnection.Query, for: Ch.Query do
     {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
   end
 
+  def multipart_encode(%Query{statement: statement}, params, opts) do
+    types = Keyword.get(opts, :types)
+    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
+    format = Keyword.get(opts, :format) || default_format
+
+    form =
+      query_params(params)
+      |> Enum.reduce(Multipart.new(), fn {k, v}, acc ->
+        Multipart.add_part(acc, Multipart.Part.text_field(v, k))
+      end)
+      |> Multipart.add_part(Multipart.Part.text_field(statement, "query"))
+
+    content_type = Multipart.content_type(form, "multipart/form-data")
+
+    {_no_query_params = [],
+     [{"x-clickhouse-format", format}, {"content-type", content_type} | headers(opts)],
+     Multipart.body_binary(form)}
+  end
+
+  def custom_multipart_encode(%Query{statement: statement}, params, opts) do
+    types = Keyword.get(opts, :types)
+    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
+    format = Keyword.get(opts, :format) || default_format
+
+    boundary = Base.url_encode64(:crypto.strong_rand_bytes(36))
+    content_type = "multipart/form-data; boundary=\"#{boundary}\""
+    encoded_boundary = "--#{boundary}\r\n"
+    multipart = multipart_params(params, encoded_boundary)
+    muptipart = add_multipart_part(multipart, "query", statement, encoded_boundary)
+
+    {_no_query_params = [],
+     [{"x-clickhouse-format", format}, {"content-type", content_type} | headers(opts)], muptipart}
+  end
+
   defp format_row_binary?(statement) when is_binary(statement) do
     statement |> String.trim_trailing() |> String.ends_with?("RowBinary")
   end
@@ -206,6 +240,42 @@ defimpl DBConnection.Query, for: Ch.Query do
       {_, value} -> value
       nil = not_found -> not_found
     end
+  end
+
+  defp multipart_params(params, boundary) when is_map(params) do
+    multipart_named_params(Map.to_list(params), boundary, [])
+  end
+
+  defp multipart_params(params, boundary) when is_list(params) do
+    multipart_positional_params(params, 0, boundary, [])
+  end
+
+  defp multipart_named_params([{name, value} | params], boundary, acc) do
+    acc = add_multipart_part(boundary, URI.encode_www_form(name), encode_param(value), acc)
+    multipart_named_params(params, boundary, acc)
+  end
+
+  defp multipart_named_params([], _boundary, acc), do: acc
+
+  defp multipart_positional_params([value | params], idx, boundary, acc) do
+    acc = add_multipart_part(boundary, Integer.to_string(idx), encode_param(value), acc)
+    multipart_positional_params(params, idx + 1, boundary, acc)
+  end
+
+  defp multipart_positional_params([], _idx, _boundary, acc), do: acc
+
+  @compile inline: [add_multipart_part: 4]
+  defp add_multipart_part(multipart, name, value, boundary) do
+    part = [
+      boundary,
+      "content-disposition: form-data; name=\"param_$",
+      name,
+      "\"\r\n\r\n",
+      value,
+      "\r\n"
+    ]
+
+    [part | multipart]
   end
 
   defp query_params(params) when is_map(params) do
