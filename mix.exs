@@ -41,7 +41,6 @@ defmodule Ch.MixProject do
       {:db_connection, "~> 2.0"},
       {:jason, "~> 1.0"},
       {:decimal, "~> 2.0"},
-      {:multipart, "~> 0.4.0"},
       {:ecto, "~> 3.13.0", optional: true},
       {:benchee, "~> 1.0", only: [:bench]},
       {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
