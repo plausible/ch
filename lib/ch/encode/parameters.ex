@@ -33,9 +33,11 @@ defmodule Ch.Encode.Parameters do
   end
 
   def encode(b) when is_boolean(b), do: Atom.to_string(b)
+  def encode(nil), do: "\\N"
   def encode(%Decimal{} = d), do: Decimal.to_string(d, :normal)
   def encode(%Date{} = date), do: Date.to_iso8601(date)
   def encode(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
+  def encode(%Time{} = time), do: Time.to_iso8601(time)
 
   def encode(%DateTime{microsecond: microsecond} = dt) do
     dt = DateTime.shift_zone!(dt, "Etc/UTC")
@@ -89,6 +91,8 @@ defmodule Ch.Encode.Parameters do
   defp encode_array_param(s) when is_binary(s) do
     [?', escape_param([{"'", "''"}, {"\\", "\\\\"}], s), ?']
   end
+
+  defp encode_array_param(nil), do: "null"
 
   defp encode_array_param(%s{} = param) when s in [Date, NaiveDateTime] do
     [?', encode(param), ?']
