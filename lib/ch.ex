@@ -76,7 +76,6 @@ defmodule Ch do
     * `:headers` - Custom HTTP headers for the request
     * `:format` - Custom response format for the request
     * `:decode` - Whether to automatically decode the response
-    * `:multipart` - Whether to use multipart/form-data encoding for the request. Not supported for RowBinary inserts or streaming.
     * [`DBConnection.connection_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:connection_option/0)
 
   """
