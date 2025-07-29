@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.4 (2025-07-22)
+
+- allow `nil` in params https://github.com/plausible/ch/pull/268
+
+## 0.5.2 (2025-07-21)
+
+- make Dynamic usable in Ecto schemas https://github.com/plausible/ch/pull/267
+
+## 0.5.1 (2025-07-20)
+
+- add partial [Dynamic](https://clickhouse.com/docs/sql-reference/data-types/dynamic) type support https://github.com/plausible/ch/pull/266
+
+## 0.5.0 (2025-07-17)
+
+- add [Time](https://clickhouse.com/docs/sql-reference/data-types/time) and [Time64](https://clickhouse.com/docs/sql-reference/data-types/time64) types support https://github.com/plausible/ch/pull/260
+- add [Variant](https://clickhouse.com/docs/sql-reference/data-types/variant) type support https://github.com/plausible/ch/pull/263
+- add [JSON](https://clickhouse.com/docs/sql-reference/data-types/newjson) type support https://github.com/plausible/ch/pull/262
+
 ## 0.4.1 (2025-07-07)
 
 - fix column decoding when count exceeds 127 https://github.com/plausible/ch/pull/257

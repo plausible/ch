@@ -126,6 +126,81 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, {"something", 42}} = Ecto.Type.load(type, {"something", 42})
   end
 
+  test "Variant(UInt64, String, Array(UInt64))" do
+    assert {:parameterized, {Ch, {:variant, [{:array, :u64}, :string, :u64]}}} =
+             type =
+             Ecto.ParameterizedType.init(Ch, type: "Variant(UInt64, String, Array(UInt64))")
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<Variant(Array(UInt64), String, UInt64)>"
+
+    assert {:ok, [1]} = Ecto.Type.cast(type, [1])
+    assert {:ok, 0} = Ecto.Type.cast(type, 0)
+    assert {:ok, "Hello, World!"} = Ecto.Type.cast(type, "Hello, World!")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, {42, "something"})
+
+    assert {:ok, [1]} = Ecto.Type.dump(type, [1])
+    assert {:ok, 0} = Ecto.Type.dump(type, 0)
+    assert {:ok, "Hello, World!"} = Ecto.Type.dump(type, "Hello, World!")
+  end
+
+  test "Dynamic" do
+    assert {:parameterized, {Ch, :dynamic}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "Dynamic")
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<Dynamic>"
+
+    assert {:ok, [1]} = Ecto.Type.cast(type, [1])
+    assert {:ok, 0} = Ecto.Type.cast(type, 0)
+    assert {:ok, "Hello, World!"} = Ecto.Type.cast(type, "Hello, World!")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+    assert {:ok, {42, "something"}} = Ecto.Type.cast(type, {42, "something"})
+
+    assert {:ok, [1]} = Ecto.Type.dump(type, [1])
+    assert {:ok, 0} = Ecto.Type.dump(type, 0)
+    assert {:ok, "Hello, World!"} = Ecto.Type.dump(type, "Hello, World!")
+  end
+
+  test "Dynamic(max_types=10)" do
+    assert {:parameterized, {Ch, :dynamic}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "Dynamic(max_types=10)")
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<Dynamic>"
+
+    assert {:ok, [1]} = Ecto.Type.cast(type, [1])
+    assert {:ok, 0} = Ecto.Type.cast(type, 0)
+    assert {:ok, "Hello, World!"} = Ecto.Type.cast(type, "Hello, World!")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert {:ok, [1]} = Ecto.Type.dump(type, [1])
+    assert {:ok, 0} = Ecto.Type.dump(type, 0)
+    assert {:ok, "Hello, World!"} = Ecto.Type.dump(type, "Hello, World!")
+  end
+
+  test "JSON" do
+    assert {:parameterized, {Ch, :json}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "JSON")
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<JSON>"
+
+    assert {:ok, %{}} = Ecto.Type.cast(type, %{})
+    assert {:ok, %{data: "Hello, World!"}} = Ecto.Type.cast(type, %{data: "Hello, World!"})
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, {42, "something"})
+    assert :error = Ecto.Type.cast(type, 1)
+    assert :error = Ecto.Type.cast(type, "{}")
+    assert :error = Ecto.Type.cast(type, [])
+
+    assert {:ok, %{}} = Ecto.Type.dump(type, %{})
+    assert {:ok, %{data: "Hello, World!"}} = Ecto.Type.dump(type, %{data: "Hello, World!"})
+  end
+
   # TODO check size?
   # TODO casting from binary wouldn't work for large values of 128 and 256 sized ints
   for size <- [8, 16, 32, 64, 128, 256] do
@@ -213,6 +288,39 @@ defmodule Ch.EctoTypeTest do
 
     assert {:ok, ~D[2001-01-01]} = Ecto.Type.dump(type, ~D[2001-01-01])
     assert {:ok, ~D[2001-01-01]} = Ecto.Type.load(type, ~D[2001-01-01])
+  end
+
+  test "Time" do
+    assert {:parameterized, {Ch, :time}} = type = Ecto.ParameterizedType.init(Ch, type: "Time")
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<Time>"
+
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, ~T[12:34:56])
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, "12:34:56")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, "asdf")
+
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.dump(type, ~T[12:34:56])
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.load(type, ~T[12:34:56])
+  end
+
+  test "Time64(3)" do
+    assert {:parameterized, {Ch, {:time64, 6}}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "Time64(6)")
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<Time64(6)>"
+
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, ~T[12:34:56])
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, "12:34:56")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, "asdf")
+
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.dump(type, ~T[12:34:56])
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.load(type, ~T[12:34:56])
   end
 
   test "Bool" do

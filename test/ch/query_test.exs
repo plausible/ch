@@ -91,6 +91,129 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::UUID").rows
     end
 
+    # https://clickhouse.com/docs/sql-reference/data-types/time
+    @tag :time
+    test "decode time", %{conn: conn} do
+      settings = [enable_time_time64_type: 1]
+
+      times = [
+        %{value: "00:00:00", expected: ~T[00:00:00]},
+        %{value: "12:34:56", expected: ~T[12:34:56]},
+        %{value: "23:59:59", expected: ~T[23:59:59]}
+      ]
+
+      for time <- times do
+        %{value: value, expected: expected} = time
+
+        assert Ch.query!(conn, "SELECT '#{value}'::time", [], settings: settings).rows ==
+                 [[expected]]
+
+        assert Ch.query!(conn, "SELECT {time:Time}", %{"time" => expected}, settings: settings).rows ==
+                 [[expected]]
+      end
+
+      # ClickHouse supports Time values of [-999:59:59, 999:59:59]
+      # and Elixir's Time supports values of [00:00:00, 23:59:59]
+      # so we raise an error when ClickHouse's Time value is out of Elixir's Time range
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value -1 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
+                   fn -> Ch.query!(conn, "SELECT '-00:00:01'::time", [], settings: settings) end
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value 3599999 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
+                   fn -> Ch.query!(conn, "SELECT '999:59:59'::time", [], settings: settings) end
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value -3599999 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
+                   fn -> Ch.query!(conn, "SELECT '-999:59:59'::time", [], settings: settings) end
+
+      # ** (Ch.Error) Code: 457. DB::Exception: Value 12:34:56.123456 cannot be parsed as Time for query parameter 'time'
+      #               because it isn't parsed completely: only 8 of 15 bytes was parsed: 12:34:56. (BAD_QUERY_PARAMETER)
+      #               (version 25.6.3.116 (official build))
+      assert_raise Ch.Error, ~r/only 8 of 15 bytes was parsed/, fn ->
+        Ch.query!(conn, "SELECT {time:Time}", %{"time" => ~T[12:34:56.123456]},
+          settings: settings
+        )
+      end
+    end
+
+    # https://clickhouse.com/docs/sql-reference/data-types/time64
+    @tag :time
+    test "decode time64", %{conn: conn} do
+      settings = [enable_time_time64_type: 1]
+
+      times = [
+        %{value: "00:00:00.000000000", precision: 0, expected: ~T[00:00:00]},
+        %{value: "12:34:56.123456789", precision: 0, expected: ~T[12:34:56]},
+        %{value: "23:59:59.999999999", precision: 0, expected: ~T[23:59:59]},
+        %{value: "12:34:56.123456789", precision: 1, expected: ~T[12:34:56.1]},
+        %{value: "23:59:59.999999999", precision: 1, expected: ~T[23:59:59.9]},
+        %{value: "12:34:56.123456789", precision: 2, expected: ~T[12:34:56.12]},
+        %{value: "23:59:59.999999999", precision: 2, expected: ~T[23:59:59.99]},
+        %{value: "12:34:56.123456789", precision: 3, expected: ~T[12:34:56.123]},
+        %{value: "23:59:59.999999999", precision: 3, expected: ~T[23:59:59.999]},
+        %{value: "12:34:56.123456789", precision: 4, expected: ~T[12:34:56.1234]},
+        %{value: "23:59:59.999999999", precision: 4, expected: ~T[23:59:59.9999]},
+        %{value: "12:34:56.001200000", precision: 4, expected: ~T[12:34:56.0012]},
+        %{value: "12:34:56.123456789", precision: 5, expected: ~T[12:34:56.12345]},
+        %{value: "23:59:59.999999999", precision: 5, expected: ~T[23:59:59.99999]},
+        %{value: "12:34:56.123456789", precision: 6, expected: ~T[12:34:56.123456]},
+        %{value: "12:34:56.123000", precision: 6, expected: ~T[12:34:56.123000]},
+        %{value: "12:34:56.000123000", precision: 6, expected: ~T[12:34:56.000123]},
+        %{value: "00:00:00.000000000", precision: 6, expected: ~T[00:00:00.000000]},
+        %{value: "12:34:56.123456789", precision: 6, expected: ~T[12:34:56.123456]},
+        %{value: "00:00:00.123000", precision: 6, expected: ~T[00:00:00.123000]},
+        %{value: "00:00:00.000123000", precision: 6, expected: ~T[00:00:00.000123]},
+        %{value: "23:59:59.999999999", precision: 6, expected: ~T[23:59:59.999999]},
+        %{value: "12:34:56.123456789", precision: 7, expected: ~T[12:34:56.123456]},
+        %{value: "12:34:56.123456789", precision: 8, expected: ~T[12:34:56.123456]},
+        %{value: "12:34:56.123456789", precision: 9, expected: ~T[12:34:56.123456]},
+        %{value: "23:59:59.999999999", precision: 9, expected: ~T[23:59:59.999999]}
+      ]
+
+      for time <- times do
+        %{value: value, precision: precision, expected: expected} = time
+
+        assert Ch.query!(conn, "SELECT '#{value}'::time64(#{precision})", [], settings: settings).rows ==
+                 [[expected]]
+
+        assert Ch.query!(
+                 conn,
+                 "SELECT {time:time64(#{precision})}",
+                 %{"time" => expected},
+                 settings: settings
+               ).rows ==
+                 [[expected]]
+      end
+
+      # ClickHouse supports Time64 values of [-999:59:59.999999999, 999:59:59.999999999]
+      # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
+      # so we raise an error when ClickHouse's Time64 value is out of Elixir's Time range
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value -1.0 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
+                   fn ->
+                     Ch.query!(conn, "SELECT '-00:00:01.000'::time64(6)", [], settings: settings)
+                   end
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value 3599999.999999 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
+                   fn ->
+                     Ch.query!(conn, "SELECT '999:59:59.999999999'::time64(6)", [],
+                       settings: settings
+                     )
+                   end
+
+      assert_raise ArgumentError,
+                   "ClickHouse Time value -3599999.999999 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
+                   fn ->
+                     Ch.query!(conn, "SELECT '-999:59:59.999999999'::time64(6)", [],
+                       settings: settings
+                     )
+                   end
+    end
+
     test "decode arrays", %{conn: conn} do
       assert [[[]]] = Ch.query!(conn, "SELECT []").rows
       assert [[[1]]] = Ch.query!(conn, "SELECT [1]").rows

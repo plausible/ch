@@ -93,11 +93,14 @@ defmodule Ch.RowBinary do
        when t in [
               :string,
               :binary,
+              :json,
+              :dynamic,
               :boolean,
               :uuid,
               :date,
               :datetime,
               :date32,
+              :time,
               :ipv4,
               :ipv6,
               :point,
@@ -128,6 +131,10 @@ defmodule Ch.RowBinary do
     {t, Enum.map(ts, &encoding_type/1)}
   end
 
+  defp encoding_type({:variant = v, ts}) do
+    {v, Enum.map(ts, &encoding_type/1)}
+  end
+
   defp encoding_type({:map = m, kt, vt}) do
     {m, encoding_type(kt), encoding_type(vt)}
   end
@@ -156,6 +163,8 @@ defmodule Ch.RowBinary do
     raise ArgumentError, "can't encode DateTime64 with non-UTC timezone: #{inspect(tz)}"
   end
 
+  defp encoding_type({:time64 = t, p}), do: {t, time_unit(p)}
+
   defp encoding_type({e, mappings}) when e in [:enum8, :enum16] do
     {e, Map.new(mappings)}
   end
@@ -182,6 +191,13 @@ defmodule Ch.RowBinary do
       _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
       nil -> 0
     end
+  end
+
+  def encode(:json, json) do
+    # assuming it can be sent as text and not "native" binary JSON
+    # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
+    # TODO
+    encode(:string, Jason.encode_to_iodata!(json))
   end
 
   def encode({:fixed_string, size}, str) when byte_size(str) == size do
@@ -299,6 +315,12 @@ defmodule Ch.RowBinary do
     Enum.map(types, fn type -> encode(type, nil) end)
   end
 
+  def encode({:variant, _types}, nil), do: 255
+
+  def encode({:variant, types}, value) do
+    try_encode_variant(types, 0, value)
+  end
+
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
   end
@@ -321,11 +343,11 @@ defmodule Ch.RowBinary do
     <<DateTime.diff(datetime, @epoch_utc_datetime, time_unit)::64-little-signed>>
   end
 
-  def encode({:datetime64, _precision}, %DateTime{} = datetime) do
+  def encode({:datetime64, _time_unit}, %DateTime{} = datetime) do
     raise ArgumentError, "non-UTC timezones are not supported for encoding: #{datetime}"
   end
 
-  def encode({:datetime64, _precision}, nil), do: <<0::64>>
+  def encode({:datetime64, _time_unit}, nil), do: <<0::64>>
 
   def encode(:date, %Date{} = date) do
     <<Date.diff(date, @epoch_date)::16-little>>
@@ -338,6 +360,29 @@ defmodule Ch.RowBinary do
   end
 
   def encode(:date32, nil), do: <<0::32>>
+
+  def encode(:time, %Time{} = time) do
+    {s, _micros} = Time.to_seconds_after_midnight(time)
+    <<s::32-little-signed>>
+  end
+
+  def encode(:time, nil), do: <<0::32>>
+
+  def encode({:time64, time_unit}, %Time{} = time) do
+    {s, micros} = Time.to_seconds_after_midnight(time)
+
+    micros_as_ticks =
+      cond do
+        time_unit < 1_000_000 -> div(micros, time_unit)
+        time_unit == 1_000_000 -> micros
+        true -> micros * div(time_unit, 1_000_000)
+      end
+
+    ticks = s * time_unit + micros_as_ticks
+    <<ticks::64-little-signed>>
+  end
+
+  def encode({:time64, _time_unit}, nil), do: <<0::64>>
 
   def encode(:uuid, <<u1::64, u2::64>>), do: <<u1::64-little, u2::64-little>>
 
@@ -372,6 +417,19 @@ defmodule Ch.RowBinary do
   def encode(:ring, points), do: encode({:array, :point}, points)
   def encode(:polygon, rings), do: encode({:array, :ring}, rings)
   def encode(:multipolygon, polygons), do: encode({:array, :polygon}, polygons)
+
+  # TODO
+  def encode(:dynamic, value) do
+    case value do
+      _ when is_binary(value) -> [0x15 | encode(:string, value)]
+      _ when is_integer(value) and value >= 0 -> [0x04 | encode(:u64, value)]
+      _ when is_integer(value) -> [0x0A | encode(:i64, value)]
+      _ when is_float(value) -> [0x0E | encode(:f64, value)]
+      %Date{} -> [0x0F | encode(:date, value)]
+      %NaiveDateTime{} -> [0x11 | encode(:datetime, value)]
+      [] -> [0x1E, 0x00]
+    end
+  end
 
   # TODO enum8 and enum16 nil
   for size <- [8, 16] do
@@ -426,6 +484,21 @@ defmodule Ch.RowBinary do
   end
 
   defp encode_many_kv([] = done, _key_type, _value_type), do: done
+
+  # TODO find a better way than try/rescue
+  defp try_encode_variant([type | types], idx, value) do
+    try do
+      encode(type, value)
+    else
+      encoded -> [idx | encoded]
+    rescue
+      _e -> try_encode_variant(types, idx + 1, value)
+    end
+  end
+
+  defp try_encode_variant([], _idx, value) do
+    raise ArgumentError, "no matching type found for encoding #{inspect(value)} as Variant"
+  end
 
   @compile {:inline, d: 1}
 
@@ -547,10 +620,14 @@ defmodule Ch.RowBinary do
        when t in [
               :string,
               :binary,
+              :json,
+              :dynamic,
               :boolean,
               :uuid,
               :date,
               :date32,
+              :time,
+              :time64,
               :ipv4,
               :ipv6,
               :point,
@@ -578,6 +655,10 @@ defmodule Ch.RowBinary do
     {t, Enum.map(ts, &decoding_type/1)}
   end
 
+  defp decoding_type({:variant = v, ts}) do
+    {v, Enum.map(ts, &decoding_type/1)}
+  end
+
   defp decoding_type({:map = m, kt, vt}) do
     {m, decoding_type(kt), decoding_type(vt)}
   end
@@ -593,6 +674,8 @@ defmodule Ch.RowBinary do
 
   defp decoding_type({:datetime64 = t, p}), do: {t, time_unit(p), _tz = nil}
   defp decoding_type({:datetime64 = t, p, tz}), do: {t, time_unit(p), tz}
+
+  defp decoding_type({:time64 = t, p}), do: {t, time_unit(p)}
 
   defp decoding_type({e, mappings}) when e in [:enum8, :enum16] do
     {e, Map.new(mappings, fn {k, v} -> {v, k} end)}
@@ -710,6 +793,20 @@ defmodule Ch.RowBinary do
   defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
   defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
+  @compile inline: [decode_string_json_decode_rows: 5]
+
+  for {pattern, size} <- varints do
+    defp decode_string_json_decode_rows(
+           <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_rows(types_rest, bin, [Jason.decode!(s) | row], rows, types)
+    end
+  end
+
   @compile inline: [decode_binary_decode_rows: 5]
 
   for {pattern, size} <- varints do
@@ -779,6 +876,255 @@ defmodule Ch.RowBinary do
   end
 
   defp map_types(0, _key_type, _value_types), do: []
+
+  # https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding
+  dynamic_types = [
+    nothing: 0x00,
+    u8: 0x01,
+    u16: 0x02,
+    u32: 0x03,
+    u64: 0x04,
+    u128: 0x05,
+    u256: 0x06,
+    i8: 0x07,
+    i16: 0x08,
+    i32: 0x09,
+    i64: 0x0A,
+    i128: 0x0B,
+    i256: 0x0C,
+    f32: 0x0D,
+    f64: 0x0E,
+    date: 0x0F,
+    date32: 0x10,
+    string: 0x15,
+    uuid: 0x1D,
+    ipv4: 0x28,
+    ipv6: 0x29,
+    boolean: 0x2D
+  ]
+
+  # TODO compile inline?
+
+  for {type, code} <- dynamic_types do
+    defp decode_dynamic(
+           <<unquote(code), rest::bytes>>,
+           dynamic,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_dynamic_continue(rest, [unquote(type) | dynamic], types_rest, row, rows, types)
+    end
+  end
+
+  # DateTime 0x11
+  defp decode_dynamic(<<0x11, rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    decode_dynamic_continue(
+      rest,
+      [{:datetime, nil} | dynamic],
+      types_rest,
+      row,
+      rows,
+      types
+    )
+  end
+
+  # DateTime(time_zone) 0x12 <var_uint_time_zone_name_size><time_zone_name_data>
+  for {pattern, size} <- varints do
+    defp decode_dynamic(
+           <<0x12, unquote(pattern), tz::size(unquote(size))-bytes, rest::bytes>>,
+           dynamic,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_dynamic_continue(
+        rest,
+        [{:datetime, tz} | dynamic],
+        types_rest,
+        row,
+        rows,
+        types
+      )
+    end
+  end
+
+  # DateTime64(P) 0x13 <uint8_precision>
+  defp decode_dynamic(
+         <<0x13, precision, rest::bytes>>,
+         dynamic,
+         types_rest,
+         row,
+         rows,
+         types
+       ) do
+    decode_dynamic_continue(
+      rest,
+      [decoding_type({:datetime64, precision}) | dynamic],
+      types_rest,
+      row,
+      rows,
+      types
+    )
+  end
+
+  # DateTime64(P, time_zone) 0x14 <uint8_precision><var_uint_time_zone_name_size><time_zone_name_data>
+  for {pattern, size} <- varints do
+    defp decode_dynamic(
+           <<0x14, precision, unquote(pattern), tz::size(unquote(size))-bytes, rest::bytes>>,
+           dynamic,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_dynamic_continue(
+        rest,
+        [decoding_type({:datetime64, precision, tz}) | dynamic],
+        types_rest,
+        row,
+        rows,
+        types
+      )
+    end
+  end
+
+  # FixedString(N) 0x16 <var_uint_size>
+  for {pattern, size} <- varints do
+    defp decode_dynamic(
+           <<0x16, unquote(pattern), rest::bytes>>,
+           dynamic,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_dynamic_continue(
+        rest,
+        [{:fixed_string, unquote(size)} | dynamic],
+        types_rest,
+        row,
+        rows,
+        types
+      )
+    end
+  end
+
+  # Decimal32(P, S) 0x19 <uint8_precision><uint8_scale>
+  # Decimal64(P, S) 0x1A <uint8_precision><uint8_scale>
+  # Decimal128(P, S) 0x1B <uint8_precision><uint8_scale>
+  # Decimal256(P, S) 0x1C <uint8_precision><uint8_scale>
+  for {code, size} <- [
+        {0x19, 32},
+        {0x1A, 64},
+        {0x1B, 128},
+        {0x1C, 256}
+      ] do
+    defp decode_dynamic(
+           <<unquote(code), _precision, scale, rest::bytes>>,
+           dynamic,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_dynamic_continue(
+        rest,
+        [{:decimal, unquote(size), scale} | dynamic],
+        types_rest,
+        row,
+        rows,
+        types
+      )
+    end
+  end
+
+  # Array(T) 0x1E <nested_type_encoding>
+  defp decode_dynamic(<<0x1E, rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    decode_dynamic_continue(rest, [:array | dynamic], types_rest, row, rows, types)
+  end
+
+  # Nullable(T)	0x23 <nested_type_encoding>
+  defp decode_dynamic(<<0x23, rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    decode_dynamic_continue(rest, [:nullable | dynamic], types_rest, row, rows, types)
+  end
+
+  # LowCardinality(T) 0x26 <nested_type_encoding>
+  defp decode_dynamic(<<0x26, rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    decode_dynamic_continue(rest, [:low_cardinality | dynamic], types_rest, row, rows, types)
+  end
+
+  # TODO
+  # Enum8	0x17 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int8_value_1>...<var_uint_name_size_N><name_data_N><int8_value_N>
+  # Enum16	0x18 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><int16_little_endian_value_1>...><var_uint_name_size_N><name_data_N><int16_little_endian_value_N>
+  # Tuple(T1, ..., TN)	0x1F <var_uint_number_of_elements><nested_type_encoding_1>...<nested_type_encoding_N>
+  # Tuple(name1 T1, ..., nameN TN)	0x20 <var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+  # Set	0x21
+  # Interval	0x22 <interval_kind> (see interval kind binary encoding)
+  # Function	0x24<var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N><return_type_encoding>
+  # AggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x25<var_uint_version><var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+  # Map(K, V)	0x27<key_type_encoding><value_type_encoding>
+  # Variant(T1, ..., TN)	0x2A<var_uint_number_of_variants><variant_type_encoding_1>...<variant_type_encoding_N>
+  # Dynamic(max_types=N)	0x2B<uint8_max_types>
+  # Custom type (Ring, Polygon, etc)	0x2C<var_uint_type_name_size><type_name_data>
+  # SimpleAggregateFunction(function_name(param_1, ..., param_N), arg_T1, ..., arg_TN)	0x2E<var_uint_function_name_size><function_name_data><var_uint_number_of_parameters><param_1>...<param_N><var_uint_number_of_arguments><argument_type_encoding_1>...<argument_type_encoding_N> (see aggregate function parameter binary encoding)
+  # Nested(name1 T1, ..., nameN TN)	0x2F<var_uint_number_of_elements><var_uint_name_size_1><name_data_1><nested_type_encoding_1>...<var_uint_name_size_N><name_data_N><nested_type_encoding_N>
+  # JSON(max_dynamic_paths=N, max_dynamic_types=M, path Type, SKIP skip_path, SKIP REGEXP skip_path_regexp)	0x30<uint8_serialization_version><var_int_max_dynamic_paths><uint8_max_dynamic_types><var_uint_number_of_typed_paths><var_uint_path_name_size_1><path_name_data_1><encoded_type_1>...<var_uint_number_of_skip_paths><var_uint_skip_path_size_1><skip_path_data_1>...<var_uint_number_of_skip_path_regexps><var_uint_skip_path_regexp_size_1><skip_path_data_regexp_1>...
+
+  unsupported_dynamic_types = %{
+    "Enum8" => 0x17,
+    "Enum16" => 0x18,
+    "Tuple" => 0x1F,
+    "TupleWithNames" => 0x20,
+    "Set" => 0x21,
+    "Interval" => 0x22,
+    "Function" => 0x24,
+    "AggregateFunction" => 0x25,
+    "Map" => 0x27,
+    "Variant" => 0x2A,
+    "Dynamic" => 0x2B,
+    "CustomType" => 0x2C,
+    "SimpleAggregateFunction" => 0x2E,
+    "Nested" => 0x2F,
+    "JSON" => 0x30
+  }
+
+  for {type, code} <- unsupported_dynamic_types do
+    defp decode_dynamic(<<unquote(code), _::bytes>>, _dynamic, _types_rest, _row, _rows, _types) do
+      raise ArgumentError, "unsupported dynamic type #{unquote(type)}"
+    end
+  end
+
+  @compile inline: [decode_dynamic_continue: 6]
+
+  defp decode_dynamic_continue(<<rest::bytes>>, dynamic, types_rest, row, rows, types) do
+    continue? =
+      case dynamic do
+        [:array | _] -> true
+        [:nullable | _] -> true
+        [:low_cardinality | _] -> true
+        _ -> false
+      end
+
+    if continue? do
+      decode_dynamic(rest, dynamic, types_rest, row, rows, types)
+    else
+      type = build_dynamic_type(:lists.reverse(dynamic))
+      decode_rows([type | types_rest], rest, row, rows, types)
+    end
+  end
+
+  defp build_dynamic_type([type]), do: type
+
+  defp build_dynamic_type(type) do
+    case type do
+      [:array | rest] -> {:array, build_dynamic_type(rest)}
+      [:nullable | rest] -> {:nullable, build_dynamic_type(rest)}
+      [:low_cardinality | rest] -> build_dynamic_type(rest)
+    end
+  end
 
   defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
     case type do
@@ -854,6 +1200,15 @@ defmodule Ch.RowBinary do
       :binary ->
         decode_binary_decode_rows(bin, types_rest, row, rows, types)
 
+      :json ->
+        # assuming it arrives as text and not "native" binary JSON
+        # i.e. assumes `settings: [output_format_binary_write_json_as_string: 1]`
+        # TODO
+        decode_string_json_decode_rows(bin, types_rest, row, rows, types)
+
+      :dynamic ->
+        decode_dynamic(bin, _dynamic = [], types_rest, row, rows, types)
+
       # TODO utf8?
       {:fixed_string, size} ->
         <<s::size(size)-bytes, bin::bytes>> = bin
@@ -877,6 +1232,42 @@ defmodule Ch.RowBinary do
       :date32 ->
         <<d::32-little-signed, bin::bytes>> = bin
         decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
+
+      :time ->
+        <<s::32-little-signed, bin::bytes>> = bin
+
+        t =
+          if s >= 0 and s < 86400 do
+            Time.from_seconds_after_midnight(s)
+          else
+            # since ClickHouse supports Time values of [-999:59:59, 999:59:59]
+            # and Elixir's Time supports values of [00:00:00, 23:59:59]
+            # we raise an error when ClickHouse's Time value is out of Elixir's Time range
+            raise ArgumentError,
+                  "ClickHouse Time value #{s} (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)"
+
+            # TODO: we could potentially decode ClickHouse's Time values as Elixir's Duration when it's out of Elixir's Time range
+          end
+
+        decode_rows(types_rest, bin, [t | row], rows, types)
+
+      {:time64, time_unit} ->
+        <<ticks::64-little-signed, bin::bytes>> = bin
+
+        t =
+          if ticks >= 0 and ticks < 86400 * time_unit do
+            ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
+          else
+            # since ClickHouse supports Time64 values of [-999:59:59.999999999, 999:59:59.999999999]
+            # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
+            # we raise an error when ClickHouse's Time64 value is out of Elixir's Time range
+            raise ArgumentError,
+                  "ClickHouse Time value #{ticks / time_unit} (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)"
+
+            # TODO: we could potentially decode ClickHouse's Time64 values as Elixir's Duration when it's out of Elixir's Time range
+          end
+
+        decode_rows(types_rest, bin, [t | row], rows, types)
 
       {:datetime, timezone} ->
         <<s::32-little, bin::bytes>> = bin
@@ -902,6 +1293,9 @@ defmodule Ch.RowBinary do
           <<0, bin::bytes>> -> decode_rows([type | types_rest], bin, row, rows, types)
         end
 
+      :nothing ->
+        decode_rows(types_rest, bin, [nil | row], rows, types)
+
       {:array, type} ->
         decode_array_decode_rows(bin, type, types_rest, row, rows, types)
 
@@ -921,6 +1315,18 @@ defmodule Ch.RowBinary do
       {:tuple_over, original_row} ->
         tuple = row |> :lists.reverse() |> List.to_tuple()
         decode_rows(types_rest, bin, [tuple | original_row], rows, types)
+
+      {:variant, variant_types} ->
+        case bin do
+          <<255, bin::bytes>> ->
+            # 255 is the variant type index for "nothing"
+            decode_rows(types_rest, bin, [nil | row], rows, types)
+
+          # TODO varint?
+          <<variant_type_index::8, bin::bytes>> ->
+            variant_type = Enum.at(variant_types, variant_type_index)
+            decode_rows([variant_type | types_rest], bin, row, rows, types)
+        end
 
       {:datetime64, time_unit, timezone} ->
         <<s::64-little-signed, bin::bytes>> = bin
