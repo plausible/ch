@@ -420,7 +420,9 @@ defmodule Ch.Connection do
         # copy settings that are set dynamically (e.g. json as text) over to the new connection
         maybe_put_private(new_conn, :settings, HTTP.get_private(conn, :settings))
       else
-        _ -> conn
+        {:error, error} ->
+          Logger.warning("Could not reconnect due to #{inspect(error)}")
+          raise DBConnection.ConnectionError, "Reconnection failed: #{inspect(error)}"
       end
     end
   end

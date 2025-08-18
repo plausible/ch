@@ -573,6 +573,45 @@ defmodule Ch.FaultsTest do
                  " Expected \"#{expected_name}\" but got \"not-#{expected_name}\"!" <>
                  " Connection pooling might be unstable."
     end
+
+    test "raises exception when reconnection fails", ctx do
+      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+
+      {:ok, conn} = Ch.start_link(port: port)
+      {:ok, mint} = :gen_tcp.accept(listen)
+
+      :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+      :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+      spawn_link(fn ->
+        assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
+      end)
+
+      :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+
+      response =
+        String.replace(
+          intercept_packets(clickhouse),
+          "Connection: Keep-Alive",
+          "Connection: Close"
+        )
+
+      :ok = :gen_tcp.send(mint, response)
+      :ok = :gen_tcp.close(mint)
+
+      # close the listening socket so reconnection will fail
+      :ok = :gen_tcp.close(listen)
+
+      log =
+        capture_async_log(fn ->
+          assert_raise DBConnection.ConnectionError, ~r/Reconnection failed/, fn ->
+            # this should trigger maybe_reconnect
+            Ch.query(conn, "select 1 + 1")
+          end
+        end)
+
+      assert log =~ "Could not reconnect due to %Mint.TransportError{reason: :econnrefused}"
+    end
   end
 
   defp first_byte(binary) do
