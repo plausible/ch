@@ -10,6 +10,7 @@ defmodule Ch.Encode.Multipart do
           {list, Mint.Types.headers(), iodata}
   def encode(statement, params, opts) do
     types = Keyword.get(opts, :types)
+    settings = Keyword.get(opts, :settings, [])
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
 
@@ -25,7 +26,7 @@ defmodule Ch.Encode.Multipart do
 
     headers = [{"x-clickhouse-format", format}, {"content-type", content_type} | headers(opts)]
 
-    {_no_query_params = [], headers, multipart}
+    {settings, headers, multipart}
   end
 
   defp multipart_params(params, boundary) when is_map(params) do
