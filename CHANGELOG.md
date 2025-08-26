@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- fix internal type ordering in Variant 
+- fix internal type ordering in Variant https://github.com/plausible/ch/pull/275
 
 ## 0.5.5 (2025-08-26)
 
