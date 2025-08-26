@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- fix version check for adding JSON settings https://github.com/plausible/ch/pull/274
+
 ## 0.5.4 (2025-07-22)
 
 - allow `nil` in params https://github.com/plausible/ch/pull/268
