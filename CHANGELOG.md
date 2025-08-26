@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- fix internal type ordering in Variant 
+
 ## 0.5.5 (2025-08-26)
 
 - fix version check for adding JSON settings https://github.com/plausible/ch/pull/274
