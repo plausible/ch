@@ -21,7 +21,7 @@ defmodule Ch.Connection do
           case DBConnection.Query.decode(handshake, responses, _opts = []) do
             %Result{rows: [[1, version]]} ->
               conn =
-                if version >= "24.10" do
+                if parse_version(version) >= parse_version("24.10") do
                   settings =
                     HTTP.get_private(conn, :settings, [])
                     |> Keyword.put_new(:input_format_binary_read_json_as_string, 1)
@@ -49,6 +49,17 @@ defmodule Ch.Connection do
           {:error, reason}
       end
     end
+  end
+
+  defp parse_version(version) do
+    version
+    |> String.split(".")
+    |> Enum.flat_map(fn segment ->
+      case Integer.parse(segment) do
+        {int, _rest} -> [int]
+        :error -> []
+      end
+    end)
   end
 
   @impl true
