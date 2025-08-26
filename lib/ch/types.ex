@@ -502,7 +502,7 @@ defmodule Ch.Types do
   defp named_columns_to_types([], acc), do: acc
 
   defp build_variant(types) do
-    Enum.sort_by(types, &__MODULE__.encode/1)
+    Enum.sort_by(types, fn t -> IO.iodata_to_binary(encode(t)) end)
   end
 
   # TODO '', \'

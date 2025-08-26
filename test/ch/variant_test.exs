@@ -19,6 +19,24 @@ defmodule Ch.VariantTest do
              [["Hello, World!"]]
   end
 
+  # https://github.com/plausible/ch/issues/272
+  test "ordering internal types", %{conn: conn} do
+    test = %{
+      "'hello'" => "hello",
+      "-10" => -10,
+      "true" => true,
+      "map('hello', null::Nullable(String))" => %{"hello" => nil},
+      "map('hello', 'world'::Nullable(String))" => %{"hello" => "world"}
+    }
+
+    for {value, expected} <- test do
+      assert Ch.query!(
+               conn,
+               "select #{value}::Variant(String, Int32, Bool, Map(String, Nullable(String)))"
+             ).rows == [[expected]]
+    end
+  end
+
   test "with a table", %{conn: conn} do
     # https://clickhouse.com/docs/sql-reference/data-types/variant#creating-variant
     Ch.query!(conn, """
