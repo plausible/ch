@@ -45,6 +45,9 @@ jobs:
             otp: 27.3.1
             clickhouse: 24.12.2.29
             timezone: UTC
+          - elixir: 1.18
+            otp: 28
+            clickhouse: 24.5.4.49
 
     services:
       clickhouse:
