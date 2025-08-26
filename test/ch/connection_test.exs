@@ -593,6 +593,7 @@ defmodule Ch.ConnectionTest do
       assert_raise ArgumentError, fn -> Ch.query!(conn, "SELECT o FROM json") end
     end
 
+    @tag :json
     test "json as string", %{conn: conn} do
       # after v25 ClickHouse started rendering numbers in JSON as strings
       [[version]] = Ch.query!(conn, "select version()").rows
