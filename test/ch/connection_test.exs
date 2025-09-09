@@ -597,7 +597,7 @@ defmodule Ch.ConnectionTest do
     test "json as string", %{conn: conn} do
       # after v25 ClickHouse started rendering numbers in JSON as strings
       [[version]] = Ch.query!(conn, "select version()").rows
-      numbers_as_strings? = version >= "25"
+      numbers_as_strings? = version >= "25" and version <= "25.8"
 
       [expected1, expected2] =
         if numbers_as_strings? do
@@ -608,7 +608,7 @@ defmodule Ch.ConnectionTest do
         else
           [
             [[~s|{"answer":42}|]],
-            [[~s|{"a":"42"}|], [~s|{"b":"10"}|]]
+            [[~s|{"a":42}|], [~s|{"b":10}|]]
           ]
         end
 
