@@ -19,8 +19,9 @@ defmodule Ch.JSONTest do
 
     assert select.(~s|{"a":"b","c":"d"}|) == %{"a" => "b", "c" => "d"}
 
-    # note that 42 is a string here, not an integer
-    assert select.(~s|{"a":42}|) == %{"a" => "42"}
+    # note that 42 was a string in pre-25.0 and post-25.8 ClickHouse versions
+
+    assert select.(~s|{"a":42}|) == %{"a" => 42}
 
     assert select.(~s|{}|) == %{}
 
@@ -36,7 +37,7 @@ defmodule Ch.JSONTest do
     assert select.(~s|{"a":{"b":"c"}}|) == %{"a" => %{"b" => "c"}}
 
     # numbers in arrays become strings
-    assert select.(~s|{"a":[1,2,3]}|) == %{"a" => ["1", "2", "3"]}
+    assert select.(~s|{"a":[1,2,3]}|) == %{"a" => [1, 2, 3]}
 
     # this is weird, fields with dots are treated as nested objects
     assert select.(~s|{"a.b":"c"}|) == %{"a" => %{"b" => "c"}}
@@ -46,10 +47,10 @@ defmodule Ch.JSONTest do
     assert select.(~s|{"a":[null]}|) == %{"a" => [nil]}
 
     # everything in an array gets converted to "lcd" type, aka string
-    assert select.(~s|{"a":[1,3.14,"hello",null]}|) == %{"a" => ["1", "3.14", "hello", nil]}
+    assert select.(~s|{"a":[1,3.14,"hello",null]}|) == %{"a" => [1, 3.14, "hello", nil]}
 
     # but not if the array has nested objects, then the array becomes a tuple and can support mixed types
-    assert select.(~s|{"a":[1,2.13,"s",{"a":"b"}]}|) == %{"a" => ["1", 2.13, "s", %{"a" => "b"}]}
+    assert select.(~s|{"a":[1,2.13,"s",{"a":"b"}]}|) == %{"a" => [1, 2.13, "s", %{"a" => "b"}]}
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/newjson#using-json-in-a-table-column-definition
@@ -67,9 +68,9 @@ defmodule Ch.JSONTest do
              conn,
              "SELECT json FROM json_test ORDER BY id"
            ).rows == [
-             [%{"a" => %{"b" => "42"}, "c" => ["1", "2", "3"]}],
+             [%{"a" => %{"b" => 42}, "c" => [1, 2, 3]}],
              [%{"f" => "Hello, World!"}],
-             [%{"a" => %{"b" => "43", "e" => "10"}, "c" => ["4", "5", "6"]}]
+             [%{"a" => %{"b" => 43, "e" => 10}, "c" => [4, 5, 6]}]
            ]
 
     Ch.query!(
@@ -83,7 +84,7 @@ defmodule Ch.JSONTest do
              conn,
              "SELECT json FROM json_test where json.from = 'rowbinary'"
            ).rows == [
-             [%{"from" => "rowbinary", "some other" => "json value", "a" => %{"b" => "999"}}]
+             [%{"from" => "rowbinary", "some other" => "json value", "a" => %{"b" => 999}}]
            ]
 
     assert Ch.query!(conn, "select json.a.b, json.a.g, json.c, json.d from json_test order by id").rows ==
@@ -110,9 +111,9 @@ defmodule Ch.JSONTest do
              conn,
              "SELECT json FROM json_test"
            ).rows == [
-             [%{"a" => %{"b" => 42}, "c" => ["1", "2", "3"]}],
+             [%{"a" => %{"b" => 42}, "c" => [1, 2, 3]}],
              [%{"a" => %{"b" => 0}, "f" => "Hello, World!"}],
-             [%{"a" => %{"b" => 43}, "c" => ["4", "5", "6"]}]
+             [%{"a" => %{"b" => 43}, "c" => [4, 5, 6]}]
            ]
   end
 
@@ -131,9 +132,9 @@ defmodule Ch.JSONTest do
              conn,
              "SELECT json FROM json_test"
            ).rows == [
-             [%{"a" => %{"b" => 42, "g" => 42.42}, "c" => ["1", "2", "3"], "d" => "2020-01-01"}],
+             [%{"a" => %{"b" => 42, "g" => 42.42}, "c" => [1, 2, 3], "d" => "2020-01-01"}],
              [%{"a" => %{"b" => 0}, "d" => "2020-01-02", "f" => "Hello, World!"}],
-             [%{"a" => %{"b" => 43, "g" => 43.43}, "c" => ["4", "5", "6"]}]
+             [%{"a" => %{"b" => 43, "g" => 43.43}, "c" => [4, 5, 6]}]
            ]
 
     assert Ch.query!(conn, "SELECT json.a.b, json.a.g, json.c, json.d FROM json_test").rows == [
@@ -204,24 +205,24 @@ defmodule Ch.JSONTest do
     assert Ch.query!(conn, "SELECT json FROM json_test;").rows == [
              [
                %{
-                 "a" => %{"b" => %{"c" => "42", "g" => 42.42}},
-                 "c" => ["1", "2", "3"],
-                 "d" => %{"e" => %{"f" => %{"g" => "Hello, World", "h" => ["1", "2", "3"]}}}
+                 "a" => %{"b" => %{"c" => 42, "g" => 42.42}},
+                 "c" => [1, 2, 3],
+                 "d" => %{"e" => %{"f" => %{"g" => "Hello, World", "h" => [1, 2, 3]}}}
                }
              ],
-             [%{"d" => %{"e" => %{"f" => %{"h" => ["4", "5", "6"]}}}, "f" => "Hello, World!"}],
+             [%{"d" => %{"e" => %{"f" => %{"h" => [4, 5, 6]}}}, "f" => "Hello, World!"}],
              [
                %{
-                 "a" => %{"b" => %{"c" => "43", "e" => "10", "g" => 43.43}},
-                 "c" => ["4", "5", "6"]
+                 "a" => %{"b" => %{"c" => 43, "e" => 10, "g" => 43.43}},
+                 "c" => [4, 5, 6]
                }
              ]
            ]
 
     assert Ch.query!(conn, "SELECT json.^a.b, json.^d.e.f FROM json_test;").rows == [
-             [%{"c" => "42", "g" => 42.42}, %{"g" => "Hello, World", "h" => ["1", "2", "3"]}],
-             [%{}, %{"h" => ["4", "5", "6"]}],
-             [%{"c" => "43", "e" => "10", "g" => 43.43}, %{}]
+             [%{"c" => 42, "g" => 42.42}, %{"g" => "Hello, World", "h" => [1, 2, 3]}],
+             [%{}, %{"h" => [4, 5, 6]}],
+             [%{"c" => 43, "e" => 10, "g" => 43.43}, %{}]
            ]
   end
 
@@ -243,33 +244,33 @@ defmodule Ch.JSONTest do
                  "a" => %{
                    "b" => [
                      %{
-                       "c" => "42",
+                       "c" => 42,
                        "d" => "Hello",
                        "f" => [[%{"g" => 42.42}]],
-                       "k" => %{"j" => "1000"}
+                       "k" => %{"j" => 1000}
                      },
-                     %{"c" => "43"},
+                     %{"c" => 43},
                      %{
                        "d" => "My",
-                       "e" => ["1", "2", "3"],
+                       "e" => [1, 2, 3],
                        "f" => [[%{"g" => 43.43, "h" => "2020-01-01"}]],
-                       "k" => %{"j" => "2000"}
+                       "k" => %{"j" => 2000}
                      }
                    ]
                  }
                }
              ],
-             [%{"a" => %{"b" => ["1", "2", "3"]}}],
+             [%{"a" => %{"b" => [1, 2, 3]}}],
              [
                %{
                  "a" => %{
                    "b" => [
-                     %{"c" => "44", "f" => [[%{"h" => "2020-01-02"}]]},
+                     %{"c" => 44, "f" => [[%{"h" => "2020-01-02"}]]},
                      %{
                        "d" => "World",
-                       "e" => ["4", "5", "6"],
+                       "e" => [4, 5, 6],
                        "f" => [[%{"g" => 44.44}]],
-                       "k" => %{"j" => "3000"}
+                       "k" => %{"j" => 3000}
                      }
                    ]
                  }
