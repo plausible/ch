@@ -371,7 +371,7 @@ defmodule Ch.Types do
     end
   end
 
-  defguardp is_whitespace(char) when char == ?\s or char == ?\t
+  defguardp is_whitespace(char) when char == ?\s or char == ?\t or char == ?\n or char == ?\r
 
   defp decode(stack, <<whitespace, rest::bytes>>, acc) when is_whitespace(whitespace) do
     decode(stack, rest, acc)
