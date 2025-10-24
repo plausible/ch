@@ -168,4 +168,15 @@ defmodule Ch.TypesTest do
                {:simple_aggregate_function, "any", {:map, :string, :u64}}
     end
   end
+
+  test "newlines" do
+    assert decode("""
+           Tuple(
+             String,
+             Array(
+               UInt64
+             )
+           )
+           """) == {:tuple, [:string, {:array, :u64}]}
+  end
 end
