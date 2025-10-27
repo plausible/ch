@@ -2,31 +2,47 @@
 
 ## Unreleased
 
-**BREAKING CHANGE**: Added **automatic decoding** to `Ch.stream/4`. Previously, this function returned raw bytes when using the `RowBinaryWithNamesAndTypes` format. 
+**BREAKING CHANGE**: Added **automatic decoding** to `Ch.stream/4` when using `RowBinaryWithNamesAndTypes` format: https://github.com/plausible/ch/pull/277.
 
-PR: https://github.com/plausible/ch/pull/277
+Previously, this function returned raw bytes.
   
 > [!WARNING]
-> To **restore the previous behavior** (raw bytes/no automatic decoding), you must now explicitly pass `decode: false` in the options.
+> To **restore the previous behavior** (raw bytes/no automatic decoding), you must now explicitly pass `decode: false` in the options (__fourth__ argument).
 
 > [!NOTE]
 > Queries using other explicit formats like `CSVWithNames` are **unaffected** and can remain as they are.
 
-**Example of required change:**
+**Example of required change to preserve the previous behavior**
 
 ```elixir
 # before
 DBConnection.run(pool, fn conn ->
-conn
-|> Ch.stream("select number from numbers(10)")
-|> Enum.into([])
+  conn
+  |> Ch.stream("select number from numbers(10)")
+  |> Enum.into([])
 end)
 
 # after
 DBConnection.run(pool, fn conn ->
-conn
-|> Ch.stream("select number from numbers(10)", %{}, decode: false)
-|> Enum.into([])
+  conn
+  |> Ch.stream("select number from numbers(10)", %{}, decode: false)
+  |> Enum.into([])
+end)
+```
+
+**Examples of unaffected queries**
+
+```elixir
+DBConnection.run(pool, fn conn ->
+  conn
+  |> Ch.stream("select number from numbers(10) format CSVWithNames")
+  |> Enum.into([])
+end)
+
+DBConnection.run(pool, fn conn ->
+  conn
+  |> Ch.stream("select number from numbers(10)", %{}, format: "CSVWithNames")
+  |> Enum.into([])
 end)
 ```
 
