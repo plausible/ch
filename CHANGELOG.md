@@ -7,6 +7,9 @@
   > [!WARNING]
   > To **restore the previous behavior** (raw bytes/no automatic decoding), you must now explicitly pass `decode: false` in the options.
 
+  > [!NOTE]
+  > Queries using other explicit formats like `CSVWithNames` are **unaffected** and can remain as they are.
+
   **Example of required change:**
 
   ```elixir
