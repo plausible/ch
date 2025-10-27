@@ -2,31 +2,33 @@
 
 ## Unreleased
 
-- **BREAKING CHANGE**: Added **automatic decoding** to `Ch.stream/4`. Previously, this function returned raw bytes when using the `RowBinaryWithNamesAndTypes` format.
+**BREAKING CHANGE**: Added **automatic decoding** to `Ch.stream/4`. Previously, this function returned raw bytes when using the `RowBinaryWithNamesAndTypes` format. 
+
+PR: https://github.com/plausible/ch/pull/277
   
-  > [!WARNING]
-  > To **restore the previous behavior** (raw bytes/no automatic decoding), you must now explicitly pass `decode: false` in the options.
+> [!WARNING]
+> To **restore the previous behavior** (raw bytes/no automatic decoding), you must now explicitly pass `decode: false` in the options.
 
-  > [!NOTE]
-  > Queries using other explicit formats like `CSVWithNames` are **unaffected** and can remain as they are.
+> [!NOTE]
+> Queries using other explicit formats like `CSVWithNames` are **unaffected** and can remain as they are.
 
-  **Example of required change:**
+**Example of required change:**
 
-  ```elixir
-  # before
-  DBConnection.run(pool, fn conn ->
-    conn
-    |> Ch.stream("select number from numbers(10)")
-    |> Enum.into([])
-  end)
-  
-  # after
-  DBConnection.run(pool, fn conn ->
-    conn
-    |> Ch.stream("select number from numbers(10)", %{}, decode: false)
-    |> Enum.into([])
-  end)
-  ```
+```elixir
+# before
+DBConnection.run(pool, fn conn ->
+conn
+|> Ch.stream("select number from numbers(10)")
+|> Enum.into([])
+end)
+
+# after
+DBConnection.run(pool, fn conn ->
+conn
+|> Ch.stream("select number from numbers(10)", %{}, decode: false)
+|> Enum.into([])
+end)
+```
 
 - fix type decoding for strings containing newlines https://github.com/plausible/ch/pull/278
 
