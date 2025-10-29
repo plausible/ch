@@ -167,16 +167,28 @@ defmodule Ch.TypesTest do
       assert decode("SimpleAggregateFunction( any , Map ( String , UInt64 ))") ==
                {:simple_aggregate_function, "any", {:map, :string, :u64}}
     end
-  end
 
-  test "newlines" do
-    assert decode("""
-           Tuple(
-             String,
-             Array(
-               UInt64
+    test "newlines" do
+      assert decode("""
+             Tuple(
+               String,
+               Array(
+                 UInt64
+               )
              )
-           )
-           """) == {:tuple, [:string, {:array, :u64}]}
+             """) == {:tuple, [:string, {:array, :u64}]}
+    end
+
+    test "incomplete input" do
+      assert_raise ArgumentError,
+                   ~s[failed to decode "Tuple(String, Array(" as ClickHouse type (unexpected end of type while decoding)],
+                   fn -> decode("Tuple(String, Array(") end
+    end
+
+    test "unexpected character" do
+      assert_raise ArgumentError,
+                   ~s[failed to decode "Int8$" as ClickHouse type (unexpected character "$" in type while decoding)],
+                   fn -> decode("Int8$") end
+    end
   end
 end
