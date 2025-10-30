@@ -381,8 +381,9 @@ defmodule Ch.RowBinaryTest do
     end
   end
 
-  describe "decode_rows_continue/3" do
-    defp byte_by_byte(binary, types) do
+  describe "decode_rows_continue/3 (byte-by-byte)" do
+    defp byte_by_byte(data, types) do
+      binary = IO.iodata_to_binary(data)
       byte_by_byte(binary, decoding_types(types), _rows = [], _buffer = "", _state = nil)
     end
 
@@ -397,242 +398,389 @@ defmodule Ch.RowBinaryTest do
       rows
     end
 
-    test "byte-by-byte with simple types" do
-      binary =
-        IO.iodata_to_binary([
-          [encode(:u8, 1), encode(:string, "a"), encode(:u64, 100)],
-          [encode(:u8, 2), encode(:string, "b"), encode(:u64, 200)]
-        ])
+    test "simple types" do
+      types = ["UInt8", "String", "UInt64"]
 
-      assert byte_by_byte(binary, [:u8, :string, :u64]) == [
-               [1, "a", 100],
-               [2, "b", 200]
-             ]
+      rows = [
+        [1, "a", 100],
+        [2, "b", 200]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte decode with nested arrays" do
-      binary =
-        IO.iodata_to_binary([
+    test "arrays" do
+      types = ["Array(UInt8)", "Array(Array(String))"]
+
+      rows = [
+        [[1], [["abc", "def"], ["xyz"]]],
+        [[2], [["abc", "def", "xyz"]]],
+        [[], [[], []]],
+        [[], []]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "decimals" do
+      types = [
+        "Decimal32(4)",
+        "Decimal64(4)",
+        "Decimal128(4)",
+        "Decimal256(4)"
+      ]
+
+      rows =
+        [
           [
-            encode(:u8, 1),
-            encode({:array, {:array, :string}}, [["abc", "def"], ["xyz"]])
+            Decimal.new("12.3456"),
+            Decimal.new("78.9012"),
+            Decimal.new("1234567890.1234"),
+            Decimal.new("9876543210.5678")
           ],
           [
-            encode(:u8, 2),
-            encode({:array, {:array, :string}}, [["abc", "def", "xyz"]])
+            Decimal.new("0.0001"),
+            Decimal.new("0.0002"),
+            Decimal.new("0.0003"),
+            Decimal.new("0.0004")
           ]
-        ])
+        ]
 
-      assert byte_by_byte(binary, [:u8, {:array, {:array, :string}}]) == [
-               [1, [["abc", "def"], ["xyz"]]],
-               [2, [["abc", "def", "xyz"]]]
-             ]
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte with decimals" do
-      binary =
-        IO.iodata_to_binary([
-          [
-            encode({:decimal32, 4}, Decimal.new("12.3456")),
-            encode({:decimal64, 4}, Decimal.new("78.9012"))
-          ],
-          [
-            encode({:decimal32, 4}, Decimal.new("0.0001")),
-            encode({:decimal64, 4}, Decimal.new("0.0002"))
-          ]
-        ])
+    test "maps" do
+      types = ["Map(String, UInt32)", "Map(String, String)"]
 
-      assert byte_by_byte(binary, [{:decimal32, 4}, {:decimal64, 4}]) == [
-               [Decimal.new("12.3456"), Decimal.new("78.9012")],
-               [Decimal.new("0.0001"), Decimal.new("0.0002")]
-             ]
+      rows =
+        [
+          [%{}, %{}],
+          [%{"a" => 1, "b" => 2}, %{"key" => "value"}],
+          [%{"x" => 10, "y" => 20}, %{"foo" => "bar"}]
+        ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte with maps" do
-      binary =
-        IO.iodata_to_binary([
-          [
-            encode({:map, :string, :u32}, %{"a" => 1, "b" => 2}),
-            encode({:map, :string, :string}, %{"key" => "value"})
-          ],
-          [
-            encode({:map, :string, :u32}, %{"x" => 10, "y" => 20}),
-            encode({:map, :string, :string}, %{"foo" => "bar"})
-          ]
-        ])
+    test "enums" do
+      types = ["Enum8('a' = 1, 'b' = 2)", "Enum16('x' = 10, 'y' = 20)"]
 
-      assert byte_by_byte(binary, [{:map, :string, :u32}, {:map, :string, :string}]) == [
-               [%{"a" => 1, "b" => 2}, %{"key" => "value"}],
-               [%{"x" => 10, "y" => 20}, %{"foo" => "bar"}]
-             ]
+      rows = [
+        ["a", "y"],
+        ["b", "x"]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte with enums" do
-      mapping8 = %{"a" => 1, "b" => 2}
-      mapping16 = %{"x" => 10, "y" => 20}
+    test "nullable" do
+      types = ["Nullable(UInt32)", "Nullable(String)"]
 
-      binary =
-        IO.iodata_to_binary([
-          [encode({:enum8, mapping8}, "a"), encode({:enum16, mapping16}, "y")],
-          [encode({:enum8, mapping8}, "b"), encode({:enum16, mapping16}, "x")]
-        ])
+      rows =
+        [
+          [100, "hello"],
+          [nil, "world"],
+          [200, nil]
+        ]
 
-      assert byte_by_byte(binary, [{:enum8, mapping8}, {:enum16, mapping16}]) == [
-               ["a", "y"],
-               ["b", "x"]
-             ]
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte decode with nullable types" do
-      binary =
-        IO.iodata_to_binary([
-          [encode({:nullable, :u32}, 100), encode({:nullable, :string}, "hello"), encode(:u8, 1)],
-          [encode({:nullable, :u32}, nil), encode({:nullable, :string}, "world"), encode(:u8, 2)],
-          [encode({:nullable, :u32}, 200), encode({:nullable, :string}, nil), encode(:u8, 3)]
-        ])
+    test "fixed strings" do
+      types = ["FixedString(5)", "FixedString(3)"]
 
-      assert byte_by_byte(binary, [{:nullable, :u32}, {:nullable, :string}, :u8]) == [
-               [100, "hello", 1],
-               [nil, "world", 2],
-               [200, nil, 3]
-             ]
+      rows =
+        [
+          ["hello", "abc"],
+          ["world", "xyz"]
+        ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte decode with fixed strings" do
-      binary =
-        IO.iodata_to_binary([
-          [encode({:fixed_string, 5}, "hello"), encode({:fixed_string, 3}, "abc")],
-          [encode({:fixed_string, 5}, "world"), encode({:fixed_string, 3}, "xyz")]
-        ])
+    test "json" do
+      types = ["JSON", "JSON"]
 
-      assert byte_by_byte(binary, [{:fixed_string, 5}, {:fixed_string, 3}]) == [
-               ["hello", "abc"],
-               ["world", "xyz"]
-             ]
+      rows = [
+        [%{"key" => "value"}, [1, 2, 3]],
+        [nil, %{"another_key" => 42}]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte decode with json" do
-      binary =
-        IO.iodata_to_binary([
-          [encode(:json, %{"key" => "value"}), encode(:json, [1, 2, 3])],
-          [encode(:json, nil), encode(:json, %{"another_key" => 42})]
-        ])
+    test "boolean" do
+      types = ["Bool", "Bool"]
 
-      assert byte_by_byte(binary, [:json, :json]) == [
-               [%{"key" => "value"}, [1, 2, 3]],
-               [nil, %{"another_key" => 42}]
-             ]
+      rows = [
+        [true, false],
+        [false, true]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte decode with boolean" do
-      binary =
-        IO.iodata_to_binary([
-          [encode(:boolean, true), encode(:boolean, false), encode(:boolean, true)],
-          [encode(:boolean, false), encode(:boolean, false), encode(:boolean, true)]
-        ])
+    test "date" do
+      types = ["Date", "Date"]
 
-      assert byte_by_byte(binary, [:boolean, :boolean, :boolean]) == [
-               [true, false, true],
-               [false, false, true]
-             ]
+      rows = [
+        [~D[2022-01-01], ~D[2042-12-31]],
+        [~D[2042-12-31], ~D[2022-01-01]]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte decode with date and datetime" do
-      binary =
-        IO.iodata_to_binary([
-          [
-            encode(:date, ~D[2022-01-01]),
-            encode(:datetime, ~N[2022-01-01 12:00:00]),
-            encode(:datetime, ~U[2022-01-01 12:00:00Z])
-          ],
-          [
-            encode(:date, ~D[2042-12-31]),
-            encode(:datetime, ~N[2042-12-31 23:59:59]),
-            encode(:datetime, ~U[2042-12-31 23:59:59Z])
-          ]
-        ])
+    test "date32" do
+      types = ["Date32", "Date32"]
 
-      assert byte_by_byte(binary, [:date, :datetime, {:datetime, "UTC"}]) == [
-               [~D[2022-01-01], ~N[2022-01-01 12:00:00], ~U[2022-01-01 12:00:00Z]],
-               [~D[2042-12-31], ~N[2042-12-31 23:59:59], ~U[2042-12-31 23:59:59Z]]
-             ]
+      rows = [
+        [~D[1960-01-01], ~D[2100-01-01]],
+        [~D[2100-01-01], ~D[1960-01-01]]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "byte-by-byte decode with all integer types" do
-      binary =
-        IO.iodata_to_binary([
-          [
-            encode(:u8, 0),
-            encode(:u16, 0),
-            encode(:u32, 0),
-            encode(:u64, 0),
-            encode(:u128, 0),
-            encode(:u256, 0),
-            encode(:i8, 0),
-            encode(:i16, 0),
-            encode(:i32, 0),
-            encode(:i64, 0),
-            encode(:i128, 0),
-            encode(:i256, 0)
-          ],
-          [
-            encode(:u8, (1 <<< 8) - 1),
-            encode(:u16, (1 <<< 16) - 1),
-            encode(:u32, (1 <<< 32) - 1),
-            encode(:u64, (1 <<< 64) - 1),
-            encode(:u128, (1 <<< 128) - 1),
-            encode(:u256, (1 <<< 256) - 1),
-            encode(:i8, -(1 <<< 7)),
-            encode(:i16, -(1 <<< 15)),
-            encode(:i32, -(1 <<< 31)),
-            encode(:i64, -(1 <<< 63)),
-            encode(:i128, -(1 <<< 127)),
-            encode(:i256, -(1 <<< 255))
-          ]
-        ])
+    test "time" do
+      types = ["Time", "Time"]
 
-      assert byte_by_byte(binary, [
-               :u8,
-               :u16,
-               :u32,
-               :u64,
-               :u128,
-               :u256,
-               :i8,
-               :i16,
-               :i32,
-               :i64,
-               :i128,
-               :i256
-             ]) == [
-               [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      rows = [
+        [~T[12:34:56], ~T[23:45:01]],
+        [~T[00:00:00], ~T[11:11:11]]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "time64" do
+      types = ["Time64(3)", "Time64(6)"]
+
+      rows = [
+        [~T[12:34:56.789], ~T[23:45:01.123456]],
+        [~T[00:00:00.000], ~T[11:11:11.111111]]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "datetime" do
+      types = ["DateTime", "DateTime('UTC')", "DateTime('Asia/Tokyo')"]
+
+      data = [
+        [
+          encode(:datetime, ~N[2022-01-01 12:00:00]),
+          encode(:datetime, ~U[2022-01-01 12:00:00Z]),
+          encode(:datetime, DateTime.new!(~D[2022-01-01], ~T[12:00:00], "Asia/Tokyo"))
+        ],
+        [
+          encode(:datetime, ~N[2042-12-31 23:59:59]),
+          encode(:datetime, ~U[2042-12-31 23:59:59Z]),
+          encode(:datetime, DateTime.new!(~D[2042-12-31], ~T[23:59:59Z], "Asia/Tokyo"))
+        ]
+      ]
+
+      assert byte_by_byte(data, types) == [
                [
-                 255,
-                 65535,
-                 4_294_967_295,
-                 18_446_744_073_709_551_615,
-                 340_282_366_920_938_463_463_374_607_431_768_211_455,
-                 115_792_089_237_316_195_423_570_985_008_687_907_853_269_984_665_640_564_039_457_584_007_913_129_639_935,
-                 -128,
-                 -32768,
-                 -2_147_483_648,
-                 -9_223_372_036_854_775_808,
-                 -170_141_183_460_469_231_731_687_303_715_884_105_728,
-                 -57_896_044_618_658_097_711_785_492_504_343_953_926_634_992_332_820_282_019_728_792_003_956_564_819_968
+                 ~N[2022-01-01 12:00:00],
+                 ~U[2022-01-01 12:00:00Z],
+                 DateTime.new!(~D[2022-01-01], ~T[12:00:00], "Asia/Tokyo")
+               ],
+               [
+                 ~N[2042-12-31 23:59:59],
+                 ~U[2042-12-31 23:59:59Z],
+                 DateTime.new!(~D[2042-12-31], ~T[23:59:59Z], "Asia/Tokyo")
                ]
              ]
     end
 
-    test "byte-by-byte decode with floats" do
-      binary =
-        IO.iodata_to_binary([
-          [encode(:f32, 3.14159), encode(:f64, 2.718281828459045)],
-          [encode(:f32, -1.5), encode(:f64, 0.0)]
-        ])
+    test "datetime64" do
+      types = ["DateTime64(3)", "DateTime64(6, 'UTC')", "DateTime64(9, 'Asia/Tokyo')"]
 
-      assert byte_by_byte(binary, [:f32, :f64]) == [
+      data = [
+        [
+          encode({:datetime64, 1000}, ~N[2022-01-01 12:00:00.123]),
+          encode({:datetime64, 1_000_000}, ~U[2022-01-01 12:00:00.123456Z]),
+          encode(
+            {:datetime64, 1_000_000_000},
+            DateTime.new!(~D[2022-01-01], ~T[12:00:00.123456], "Asia/Tokyo")
+            |> DateTime.shift_zone!("Etc/UTC")
+          )
+        ],
+        [
+          encode({:datetime64, 1000}, ~N[2042-12-31 23:59:59.987]),
+          encode({:datetime64, 1_000_000}, ~U[2042-12-31 23:59:59.987654Z]),
+          encode(
+            {:datetime64, 1_000_000_000},
+            DateTime.new!(~D[2042-12-31], ~T[23:59:59.987654], "Asia/Tokyo")
+            |> DateTime.shift_zone!("Etc/UTC")
+          )
+        ]
+      ]
+
+      assert byte_by_byte(data, types) == [
+               [
+                 ~N[2022-01-01 12:00:00.123000],
+                 ~U[2022-01-01 12:00:00.123456Z],
+                 DateTime.new!(~D[2022-01-01], ~T[12:00:00.123456], "Asia/Tokyo")
+               ],
+               [
+                 ~N[2042-12-31 23:59:59.987000],
+                 ~U[2042-12-31 23:59:59.987654Z],
+                 DateTime.new!(~D[2042-12-31], ~T[23:59:59.987654], "Asia/Tokyo")
+               ]
+             ]
+    end
+
+    test "integers" do
+      types = [
+        "UInt8",
+        "UInt16",
+        "UInt32",
+        "UInt64",
+        "UInt128",
+        "UInt256",
+        "Int8",
+        "Int16",
+        "Int32",
+        "Int64",
+        "Int128",
+        "Int256"
+      ]
+
+      rows =
+        [
+          [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [
+            (1 <<< 8) - 1,
+            (1 <<< 16) - 1,
+            (1 <<< 32) - 1,
+            (1 <<< 64) - 1,
+            (1 <<< 128) - 1,
+            (1 <<< 256) - 1,
+            -(1 <<< 7),
+            -(1 <<< 15),
+            -(1 <<< 31),
+            -(1 <<< 63),
+            -(1 <<< 127),
+            -(1 <<< 255)
+          ]
+        ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "floats" do
+      types = ["Float32", "Float64"]
+
+      rows = [
+        [3.14159, 2.718281828459045],
+        [-1.5, 0.0]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == [
                [3.141590118408203, 2.718281828459045],
                [-1.5, 0.0]
+             ]
+    end
+
+    test "uuid" do
+      types = ["UUID", "UUID"]
+
+      rows = [
+        [Ecto.UUID.bingenerate(), Ecto.UUID.bingenerate()],
+        [Ecto.UUID.bingenerate(), Ecto.UUID.bingenerate()]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "ipv4" do
+      types = ["IPv4", "IPv4"]
+
+      rows = [
+        [{192, 168, 1, 1}, {10, 0, 0, 1}],
+        [{127, 0, 0, 1}, {8, 8, 8, 8}]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "ipv6" do
+      types = ["IPv6", "IPv6"]
+
+      rows = [
+        [
+          {0x2001, 0x0DB8, 0x85A3, 0x0000, 0x0000, 0x8A2E, 0x0370, 0x7334},
+          {0xFE80, 0x0000, 0x0000, 0x0000, 0x0202, 0xB3FF, 0xFE1E, 0x8329}
+        ],
+        [
+          {0x2001, 0x4860, 0x4860, 0x0000, 0x0000, 0x0000, 0x0000, 0x8888},
+          {0x2606, 0x4700, 0x4700, 0x0000, 0x0000, 0x0000, 0x0000, 0x1111}
+        ]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "point" do
+      types = ["Point", "Point"]
+
+      rows = [
+        [{10, 10}, {20, 20}],
+        [{-5.5, 4.4}, {0.0, 0.0}]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "variants" do
+      types = ["Variant(String, UInt32)", "Variant(Array(String), Map(String, String))"]
+
+      rows = [
+        ["hello", ["a", "b", "c"]],
+        [12345, %{"key" => "value"}],
+        [nil, nil]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "tuples" do
+      types = ["Tuple(String, UInt32)", "Tuple(Array(String), Map(String, String))"]
+
+      rows = [
+        [{"hello", 100}, {["a", "b"], %{"key" => "value"}}],
+        [{"world", 200}, {["x", "y", "z"], %{"foo" => "bar"}}]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "dynamic" do
+      types = ["Dynamic", "Dynamic"]
+
+      rows = [
+        ["hello", 1],
+        [3.14, Date.utc_today()]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
+    end
+
+    test "long strings and binaries" do
+      long_string = String.duplicate("a", 50_000)
+      long_binary = String.duplicate(<<0xA>>, 50_000)
+
+      data =
+        [
+          [encode(:string, long_string), encode(:binary, long_binary)],
+          [encode(:string, long_string <> "b"), encode(:binary, long_binary <> <<0xB>>)]
+        ]
+
+      assert byte_by_byte(data, [:string, :binary]) == [
+               [long_string, long_binary],
+               [long_string <> "b", long_binary <> <<0xB>>]
              ]
     end
   end
