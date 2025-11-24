@@ -38,6 +38,10 @@ jobs:
             otp: 28
             clickhouse: latest
             timezone: Europe/Berlin
+          - elixir: 1.19
+            otp: 28
+            clickhouse: latest
+            timezone: UTC
           # Plausible
           # - https://github.com/plausible/analytics/blob/master/.tool-versions
           # - https://github.com/plausible/analytics/blob/master/.github/workflows/elixir.yml
