@@ -371,7 +371,7 @@ defmodule Ch.Types do
     end
   end
 
-  defguardp is_whitespace(char) when char == ?\s or char == ?\t
+  defguardp is_whitespace(char) when char in [?\s, ?\t, ?\n, ?\r]
 
   defp decode(stack, <<whitespace, rest::bytes>>, acc) when is_whitespace(whitespace) do
     decode(stack, rest, acc)
@@ -460,6 +460,15 @@ defmodule Ch.Types do
   end
 
   defp decode([], <<>>, [type]), do: type
+
+  defp decode([_ | _], <<>>, _acc) do
+    raise ArgumentError, "unexpected end of type while decoding"
+  end
+
+  defp decode(_stack, <<invalid::utf8, _rest::bytes>>, _acc) do
+    raise ArgumentError,
+          "unexpected character #{inspect(<<invalid::utf8>>)} in type while decoding"
+  end
 
   defp close([:close | stack]), do: stack
   defp close([_ | stack]), do: close(stack)
