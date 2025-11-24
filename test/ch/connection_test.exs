@@ -597,7 +597,13 @@ defmodule Ch.ConnectionTest do
     test "json as string", %{conn: conn} do
       # after v25 ClickHouse started rendering numbers in JSON as strings
       [[version]] = Ch.query!(conn, "select version()").rows
-      numbers_as_strings? = version >= "25" and version <= "25.8"
+
+      parse_version = fn version ->
+        version |> String.split(".") |> Enum.map(&String.to_integer/1)
+      end
+
+      version = parse_version.(version)
+      numbers_as_strings? = version >= [25] and version <= [25, 8]
 
       [expected1, expected2] =
         if numbers_as_strings? do
