@@ -2,7 +2,29 @@
 
 ## Unreleased
 
-- add automatic decoding to `Ch.stream/4` https://github.com/plausible/ch/pull/277
+- **BREAKING CHANGE**: Added **automatic decoding** to `Ch.stream/4`. Previously, this function returned raw bytes when using the `RowBinaryWithNamesAndTypes` format.
+  
+  > [!WARNING]
+  > To **restore the previous behavior** (raw bytes/no automatic decoding), you must now explicitly pass `decode: false` in the options.
+
+  **Example of required change:**
+
+  ```elixir
+  # before
+  DBConnection.run(pool, fn conn ->
+    conn
+    |> Ch.stream("select number from numbers(10)")
+    |> Enum.into([])
+  end)
+  
+  # after
+  DBConnection.run(pool, fn conn ->
+    conn
+    |> Ch.stream("select number from numbers(10)", %{}, decode: false)
+    |> Enum.into([])
+  end)
+  ```
+
 - fix type decoding for strings containing newlines https://github.com/plausible/ch/pull/278
 
 ## 0.5.6 (2025-08-26)
