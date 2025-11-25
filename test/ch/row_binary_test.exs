@@ -2,6 +2,7 @@ defmodule Ch.RowBinaryTest do
   use ExUnit.Case, async: true
   doctest Ch.RowBinary, import: true
   import Ch.RowBinary
+  import Bitwise
 
   test "encode -> decode" do
     spec = [
@@ -191,7 +192,7 @@ defmodule Ch.RowBinaryTest do
     assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
   end
 
-  describe "decode_types/1" do
+  describe "decoding_types/1" do
     test "decodes supported types" do
       spec = [
         {"UInt8", :u8},
@@ -244,12 +245,12 @@ defmodule Ch.RowBinaryTest do
       ]
 
       Enum.each(spec, fn {encoded, decoded} ->
-        assert decode_types([encoded]) == [decoded]
+        assert decoding_types([encoded]) == [decoded]
       end)
     end
 
     test "preserves order" do
-      assert decode_types(["UInt8", "UInt16"]) == [:u8, :u16]
+      assert decoding_types(["UInt8", "UInt16"]) == [:u8, :u16]
     end
   end
 
@@ -269,6 +270,21 @@ defmodule Ch.RowBinaryTest do
       ]
 
       assert decode_rows(IO.iodata_to_binary(encoded)) == []
+    end
+
+    test "incomplete" do
+      expected_message = """
+      incomplete RowBinary data: ran out of bytes while decoding
+
+      Expected to decode: [:u8]
+      Remaining bytes: 0 bytes
+      Partial row: [1]
+      Completed rows: 0
+      """
+
+      assert_raise ArgumentError, expected_message, fn ->
+        decode_rows(<<2, 1, "a", 1, "b", 5, "UInt8", 5, "UInt8", 1>>)
+      end
     end
 
     test "nan floats" do
@@ -304,6 +320,21 @@ defmodule Ch.RowBinaryTest do
     test "non-empty" do
       assert decode_rows(<<1, 2>>, [:u8, :u8]) == [[1, 2]]
     end
+
+    test "incomplete" do
+      expected_message = """
+      incomplete RowBinary data: ran out of bytes while decoding
+
+      Expected to decode: [:u8]
+      Remaining bytes: 0 bytes
+      Partial row: [1]
+      Completed rows: 0
+      """
+
+      assert_raise ArgumentError, expected_message, fn ->
+        decode_rows(<<1>>, [:u8, :u8])
+      end
+    end
   end
 
   # TODO maybe use stream_data?
@@ -319,6 +350,290 @@ defmodule Ch.RowBinaryTest do
       assert_raise ArgumentError, "invalid Int8: 128", fn -> encode(:i8, 128) end
       assert_raise ArgumentError, "invalid Int8: -129", fn -> encode(:i8, -129) end
       assert_raise ArgumentError, "invalid Int8: \"a\"", fn -> encode(:i8, "a") end
+    end
+  end
+
+  describe "decode_header/1" do
+    test "byte-by-byte" do
+      header =
+        IO.iodata_to_binary([
+          encode(:varint, 3),
+          [encode(:string, "col1"), encode(:string, "col2"), encode(:string, "col3")],
+          [encode(:string, "UInt8"), encode(:string, "String"), encode(:string, "UInt64")]
+        ])
+
+      rows =
+        IO.iodata_to_binary([
+          [encode(:u8, 1), encode(:string, "a"), encode(:u64, 100)],
+          [encode(:u8, 2), encode(:string, "b"), encode(:u64, 101)]
+        ])
+
+      for take <- 0..(byte_size(header) - 1) do
+        chunk = String.slice(header, 0, take)
+        assert decode_header(chunk) == :more
+      end
+
+      assert {:ok, ["col1", "col2", "col3"], types = [:u8, :string, :u64], rest} =
+               decode_header(header <> rows)
+
+      assert {rows, "", nil} = decode_rows_continue(rest, types, nil)
+      assert rows == [[1, "a", 100], [2, "b", 101]]
+    end
+  end
+
+  describe "decode_rows_continue/3" do
+    defp byte_by_byte(binary, types) do
+      byte_by_byte(binary, decoding_types(types), _rows = [], _buffer = "", _state = nil)
+    end
+
+    defp byte_by_byte(<<byte, rest::bytes>>, types, rows, buffer, state) do
+      {new_rows, buffer, state} = decode_rows_continue(<<buffer::bytes, byte>>, types, state)
+      byte_by_byte(rest, types, rows ++ new_rows, buffer, state)
+    end
+
+    defp byte_by_byte(<<>>, _types, rows, buffer, state) do
+      assert buffer == ""
+      assert state == nil
+      rows
+    end
+
+    test "byte-by-byte with simple types" do
+      binary =
+        IO.iodata_to_binary([
+          [encode(:u8, 1), encode(:string, "a"), encode(:u64, 100)],
+          [encode(:u8, 2), encode(:string, "b"), encode(:u64, 200)]
+        ])
+
+      assert byte_by_byte(binary, [:u8, :string, :u64]) == [
+               [1, "a", 100],
+               [2, "b", 200]
+             ]
+    end
+
+    test "byte-by-byte decode with nested arrays" do
+      binary =
+        IO.iodata_to_binary([
+          [
+            encode(:u8, 1),
+            encode({:array, {:array, :string}}, [["abc", "def"], ["xyz"]])
+          ],
+          [
+            encode(:u8, 2),
+            encode({:array, {:array, :string}}, [["abc", "def", "xyz"]])
+          ]
+        ])
+
+      assert byte_by_byte(binary, [:u8, {:array, {:array, :string}}]) == [
+               [1, [["abc", "def"], ["xyz"]]],
+               [2, [["abc", "def", "xyz"]]]
+             ]
+    end
+
+    test "byte-by-byte with decimals" do
+      binary =
+        IO.iodata_to_binary([
+          [
+            encode({:decimal32, 4}, Decimal.new("12.3456")),
+            encode({:decimal64, 4}, Decimal.new("78.9012"))
+          ],
+          [
+            encode({:decimal32, 4}, Decimal.new("0.0001")),
+            encode({:decimal64, 4}, Decimal.new("0.0002"))
+          ]
+        ])
+
+      assert byte_by_byte(binary, [{:decimal32, 4}, {:decimal64, 4}]) == [
+               [Decimal.new("12.3456"), Decimal.new("78.9012")],
+               [Decimal.new("0.0001"), Decimal.new("0.0002")]
+             ]
+    end
+
+    test "byte-by-byte with maps" do
+      binary =
+        IO.iodata_to_binary([
+          [
+            encode({:map, :string, :u32}, %{"a" => 1, "b" => 2}),
+            encode({:map, :string, :string}, %{"key" => "value"})
+          ],
+          [
+            encode({:map, :string, :u32}, %{"x" => 10, "y" => 20}),
+            encode({:map, :string, :string}, %{"foo" => "bar"})
+          ]
+        ])
+
+      assert byte_by_byte(binary, [{:map, :string, :u32}, {:map, :string, :string}]) == [
+               [%{"a" => 1, "b" => 2}, %{"key" => "value"}],
+               [%{"x" => 10, "y" => 20}, %{"foo" => "bar"}]
+             ]
+    end
+
+    test "byte-by-byte with enums" do
+      mapping8 = %{"a" => 1, "b" => 2}
+      mapping16 = %{"x" => 10, "y" => 20}
+
+      binary =
+        IO.iodata_to_binary([
+          [encode({:enum8, mapping8}, "a"), encode({:enum16, mapping16}, "y")],
+          [encode({:enum8, mapping8}, "b"), encode({:enum16, mapping16}, "x")]
+        ])
+
+      assert byte_by_byte(binary, [{:enum8, mapping8}, {:enum16, mapping16}]) == [
+               ["a", "y"],
+               ["b", "x"]
+             ]
+    end
+
+    test "byte-by-byte decode with nullable types" do
+      binary =
+        IO.iodata_to_binary([
+          [encode({:nullable, :u32}, 100), encode({:nullable, :string}, "hello"), encode(:u8, 1)],
+          [encode({:nullable, :u32}, nil), encode({:nullable, :string}, "world"), encode(:u8, 2)],
+          [encode({:nullable, :u32}, 200), encode({:nullable, :string}, nil), encode(:u8, 3)]
+        ])
+
+      assert byte_by_byte(binary, [{:nullable, :u32}, {:nullable, :string}, :u8]) == [
+               [100, "hello", 1],
+               [nil, "world", 2],
+               [200, nil, 3]
+             ]
+    end
+
+    test "byte-by-byte decode with fixed strings" do
+      binary =
+        IO.iodata_to_binary([
+          [encode({:fixed_string, 5}, "hello"), encode({:fixed_string, 3}, "abc")],
+          [encode({:fixed_string, 5}, "world"), encode({:fixed_string, 3}, "xyz")]
+        ])
+
+      assert byte_by_byte(binary, [{:fixed_string, 5}, {:fixed_string, 3}]) == [
+               ["hello", "abc"],
+               ["world", "xyz"]
+             ]
+    end
+
+    test "byte-by-byte decode with json" do
+      binary =
+        IO.iodata_to_binary([
+          [encode(:json, %{"key" => "value"}), encode(:json, [1, 2, 3])],
+          [encode(:json, nil), encode(:json, %{"another_key" => 42})]
+        ])
+
+      assert byte_by_byte(binary, [:json, :json]) == [
+               [%{"key" => "value"}, [1, 2, 3]],
+               [nil, %{"another_key" => 42}]
+             ]
+    end
+
+    test "byte-by-byte decode with boolean" do
+      binary =
+        IO.iodata_to_binary([
+          [encode(:boolean, true), encode(:boolean, false), encode(:boolean, true)],
+          [encode(:boolean, false), encode(:boolean, false), encode(:boolean, true)]
+        ])
+
+      assert byte_by_byte(binary, [:boolean, :boolean, :boolean]) == [
+               [true, false, true],
+               [false, false, true]
+             ]
+    end
+
+    test "byte-by-byte decode with date and datetime" do
+      binary =
+        IO.iodata_to_binary([
+          [
+            encode(:date, ~D[2022-01-01]),
+            encode(:datetime, ~N[2022-01-01 12:00:00]),
+            encode(:datetime, ~U[2022-01-01 12:00:00Z])
+          ],
+          [
+            encode(:date, ~D[2042-12-31]),
+            encode(:datetime, ~N[2042-12-31 23:59:59]),
+            encode(:datetime, ~U[2042-12-31 23:59:59Z])
+          ]
+        ])
+
+      assert byte_by_byte(binary, [:date, :datetime, {:datetime, "UTC"}]) == [
+               [~D[2022-01-01], ~N[2022-01-01 12:00:00], ~U[2022-01-01 12:00:00Z]],
+               [~D[2042-12-31], ~N[2042-12-31 23:59:59], ~U[2042-12-31 23:59:59Z]]
+             ]
+    end
+
+    test "byte-by-byte decode with all integer types" do
+      binary =
+        IO.iodata_to_binary([
+          [
+            encode(:u8, 0),
+            encode(:u16, 0),
+            encode(:u32, 0),
+            encode(:u64, 0),
+            encode(:u128, 0),
+            encode(:u256, 0),
+            encode(:i8, 0),
+            encode(:i16, 0),
+            encode(:i32, 0),
+            encode(:i64, 0),
+            encode(:i128, 0),
+            encode(:i256, 0)
+          ],
+          [
+            encode(:u8, (1 <<< 8) - 1),
+            encode(:u16, (1 <<< 16) - 1),
+            encode(:u32, (1 <<< 32) - 1),
+            encode(:u64, (1 <<< 64) - 1),
+            encode(:u128, (1 <<< 128) - 1),
+            encode(:u256, (1 <<< 256) - 1),
+            encode(:i8, -(1 <<< 7)),
+            encode(:i16, -(1 <<< 15)),
+            encode(:i32, -(1 <<< 31)),
+            encode(:i64, -(1 <<< 63)),
+            encode(:i128, -(1 <<< 127)),
+            encode(:i256, -(1 <<< 255))
+          ]
+        ])
+
+      assert byte_by_byte(binary, [
+               :u8,
+               :u16,
+               :u32,
+               :u64,
+               :u128,
+               :u256,
+               :i8,
+               :i16,
+               :i32,
+               :i64,
+               :i128,
+               :i256
+             ]) == [
+               [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+               [
+                 255,
+                 65535,
+                 4_294_967_295,
+                 18_446_744_073_709_551_615,
+                 340_282_366_920_938_463_463_374_607_431_768_211_455,
+                 115_792_089_237_316_195_423_570_985_008_687_907_853_269_984_665_640_564_039_457_584_007_913_129_639_935,
+                 -128,
+                 -32768,
+                 -2_147_483_648,
+                 -9_223_372_036_854_775_808,
+                 -170_141_183_460_469_231_731_687_303_715_884_105_728,
+                 -57_896_044_618_658_097_711_785_492_504_343_953_926_634_992_332_820_282_019_728_792_003_956_564_819_968
+               ]
+             ]
+    end
+
+    test "byte-by-byte decode with floats" do
+      binary =
+        IO.iodata_to_binary([
+          [encode(:f32, 3.14159), encode(:f64, 2.718281828459045)],
+          [encode(:f32, -1.5), encode(:f64, 0.0)]
+        ])
+
+      assert byte_by_byte(binary, [:f32, :f64]) == [
+               [3.141590118408203, 2.718281828459045],
+               [-1.5, 0.0]
+             ]
     end
   end
 end

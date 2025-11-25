@@ -929,7 +929,7 @@ defmodule Ch.ConnectionTest do
       # so we raise an error when ClickHouse's Time value is out of Elixir's Time range
 
       assert_raise ArgumentError,
-                   "ClickHouse Time value 360000 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
+                   "ClickHouse Time value 3.6e5 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
                    fn -> Ch.query!(conn, "select * from time_t", [], settings: settings) end
 
       Ch.query!(
@@ -1528,16 +1528,22 @@ defmodule Ch.ConnectionTest do
   describe "stream" do
     test "emits result structs containing raw data", %{conn: conn} do
       results =
-        Ch.run(conn, fn conn ->
+        DBConnection.run(conn, fn conn ->
           conn
-          |> Ch.stream("select number from system.numbers limit 10000")
+          |> Ch.stream(
+            "select number from system.numbers limit {limit:UInt64}",
+            %{"limit" => 10_000},
+            decode: false
+          )
           |> Enum.into([])
         end)
 
       assert length(results) >= 2
 
-      assert results |> Enum.map(& &1.data) |> IO.iodata_to_binary() |> RowBinary.decode_rows() ==
-               Enum.map(0..9999, &[&1])
+      assert results
+             |> Enum.map(& &1.data)
+             |> IO.iodata_to_binary()
+             |> RowBinary.decode_rows() == Enum.map(0..9999, &[&1])
     end
 
     test "disconnects on early halt", %{conn: conn} do
@@ -1551,7 +1557,7 @@ defmodule Ch.ConnectionTest do
         end)
 
       assert logs =~
-               "disconnected: ** (Ch.Error) cannot stop stream before receiving full response"
+               "disconnected: ** (Ch.Error) stopping stream before receiving full response by closing connection"
     end
   end
 

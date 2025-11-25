@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- add automatic decoding to `Ch.stream/4` https://github.com/plausible/ch/pull/277
 - fix type decoding for strings containing newlines https://github.com/plausible/ch/pull/278
 
 ## 0.5.6 (2025-08-26)
