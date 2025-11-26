@@ -6,7 +6,7 @@
 
     Previously, this function returned raw bytes.
   
-    To **restore the previous behavior** (raw bytes/no automatic decoding), you must now explicitly pass `decode: false` in the options (**fourth** argument).
+    To **restore the previous behavior** (raw bytes/no automatic decoding), pass `decode: false` in the options (**fourth** argument).
 
     **Example of required change to preserve the previous behavior**
 
