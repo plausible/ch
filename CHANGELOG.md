@@ -21,7 +21,7 @@
     # after, to keep the same behaviour add `decode: false` option
     DBConnection.run(pool, fn conn ->
       conn
-      |> Ch.stream("select number from numbers(10)", %{}, decode: false)
+      |> Ch.stream("select number from numbers(10)", _params = %{}, decode: false)
       |> Enum.into([])
     end)
   ```
@@ -39,7 +39,7 @@
 
   DBConnection.run(pool, fn conn ->
     conn
-    |> Ch.stream("select number from numbers(10)", %{}, format: "CSVWithNames")
+    |> Ch.stream("select number from numbers(10)", _params = %{}, format: "CSVWithNames")
     |> Enum.into([])
   end)
   ```
