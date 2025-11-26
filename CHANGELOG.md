@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased
+
+- added **automatic decoding** to `Ch.stream/4` when using `RowBinaryWithNamesAndTypes` format: https://github.com/plausible/ch/pull/277.
+
+    Previously, this function returned raw bytes.
+  
+    To **restore the previous behavior** (raw bytes/no automatic decoding), pass `decode: false` in the options (**fourth** argument).
+
+    **Example of required change to preserve the previous behavior**
+
+    ```elixir
+    # before, no decoding by default
+    DBConnection.run(pool, fn conn ->
+      conn
+      |> Ch.stream("select number from numbers(10)")
+      |> Enum.into([])
+    end)
+
+    # after, to keep the same behaviour add `decode: false` option
+    DBConnection.run(pool, fn conn ->
+      conn
+      |> Ch.stream("select number from numbers(10)", _params = %{}, decode: false)
+      |> Enum.into([])
+    end)
+  ```
+
+  Queries using other explicit formats like `CSVWithNames` are **unaffected** and can remain as they are.
+
+  **Examples of unaffected queries**
+
+  ```elixir
+  DBConnection.run(pool, fn conn ->
+    conn
+    |> Ch.stream("select number from numbers(10) format CSVWithNames")
+    |> Enum.into([])
+  end)
+
+  DBConnection.run(pool, fn conn ->
+    conn
+    |> Ch.stream("select number from numbers(10)", _params = %{}, format: "CSVWithNames")
+    |> Enum.into([])
+  end)
+  ```
+
 ## 0.5.7 (2025-11-26)
 
 - fix type decoding for strings containing newlines https://github.com/plausible/ch/pull/278

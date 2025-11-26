@@ -8,23 +8,15 @@ defmodule Ch.StreamTest do
 
   describe "enumerable Ch.stream/4" do
     test "emits %Ch.Result{}", %{conn: conn} do
-      count = 1_000_000
+      results =
+        DBConnection.run(conn, fn conn ->
+          conn
+          |> Ch.stream("select * from numbers({count:UInt64})", %{"count" => 1_000_000})
+          |> Enum.into([])
+        end)
 
-      assert [%Result{command: :select, data: _header} | _rest] =
-               results =
-               DBConnection.run(conn, fn conn ->
-                 conn
-                 |> Ch.stream("select * from numbers({count:UInt64})", %{"count" => 1_000_000})
-                 |> Enum.into([])
-               end)
-
-      # not always the case
-      # assert [<<1, 6, "number", 6, "UInt64">> | _] = header
-
-      decoded = results |> Enum.map(& &1.data) |> IO.iodata_to_binary() |> RowBinary.decode_rows()
-
-      assert [[0], [1], [2] | _] = decoded
-      assert length(decoded) == count
+      assert results |> Enum.map(fn %Result{rows: rows} -> rows end) |> List.flatten() ==
+               Enum.to_list(0..999_999)
     end
 
     test "raises on error", %{conn: conn} do
@@ -35,6 +27,22 @@ defmodule Ch.StreamTest do
                        conn |> Ch.stream("select ", %{"count" => 1_000_000}) |> Enum.into([])
                      end)
                    end
+    end
+
+    test "large strings", %{conn: conn} do
+      results =
+        DBConnection.run(conn, fn conn ->
+          conn
+          |> Ch.stream("select repeat('abc', 500000) from numbers({count:UInt64})", %{
+            "count" => 10
+          })
+          |> Enum.into([])
+        end)
+
+      expected_string = String.duplicate("abc", 500_000)
+
+      assert results |> Enum.map(fn %Result{rows: rows} -> rows end) |> List.flatten() ==
+               List.duplicate(expected_string, 10)
     end
   end
 

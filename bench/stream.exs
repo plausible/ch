@@ -32,26 +32,24 @@ Benchee.run(
         fn conn ->
           conn
           |> Ch.stream(
-            "SELECT number FROM system.numbers_mt LIMIT {limit:UInt64} FORMAT RowBinary",
-            %{"limit" => limit}
+            "SELECT number FROM system.numbers_mt LIMIT {limit:UInt64}",
+            %{"limit" => limit},
+            decode: false
           )
           |> Stream.run()
         end,
         timeout: :infinity
       )
     end,
-    "Ch.stream with manual RowBinary decoding" => fn %{pool: pool, limit: limit} ->
+    "Ch.stream with decoding" => fn %{pool: pool, limit: limit} ->
       DBConnection.run(
         pool,
         fn conn ->
           conn
           |> Ch.stream(
-            "SELECT number FROM system.numbers_mt LIMIT {limit:UInt64} FORMAT RowBinary",
+            "SELECT number FROM system.numbers_mt LIMIT {limit:UInt64}",
             %{"limit" => limit}
           )
-          |> Stream.each(fn %Ch.Result{data: data} ->
-            data |> IO.iodata_to_binary() |> Ch.RowBinary.decode_rows([:u64])
-          end)
           |> Stream.run()
         end,
         timeout: :infinity

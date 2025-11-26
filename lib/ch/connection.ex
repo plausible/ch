@@ -2,7 +2,7 @@ defmodule Ch.Connection do
   @moduledoc false
   use DBConnection
   require Logger
-  alias Ch.{Error, Query, Result}
+  alias Ch.{Error, Query, Result, RowBinary}
   alias Mint.HTTP1, as: HTTP
 
   @user_agent "ch/" <> Mix.Project.config()[:version]
@@ -104,31 +104,42 @@ defmodule Ch.Connection do
   @impl true
   def handle_declare(query, params, opts, conn) do
     conn = maybe_reconnect(conn)
-    %Query{command: command} = query
+    %Query{command: command, decode: decode} = query
     {query_params, extra_headers, body} = params
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
+    timeout = timeout(conn, opts)
 
     with {:ok, conn, _ref} <- send_request(conn, "POST", path, headers, body),
-         {:ok, conn} <- eat_ok_status_and_headers(conn, timeout(conn, opts)) do
-      {:ok, query, %Result{command: command}, conn}
+         {:ok, conn, columns, headers, reader} <- recv_declare(conn, decode, timeout) do
+      result = %Result{
+        command: command,
+        columns: columns,
+        rows: [],
+        num_rows: 0,
+        headers: headers,
+        data: []
+      }
+
+      {:ok, query, result, {conn, reader}}
     end
   end
 
-  @spec eat_ok_status_and_headers(conn, timeout) ::
-          {:ok, %{conn: conn, buffer: [Mint.Types.response()]}}
-          | {:error, Ch.Error.t(), conn}
-          | {:disconnect, Mint.Types.error(), conn}
-  defp eat_ok_status_and_headers(conn, timeout) do
+  defp recv_declare(conn, decode, timeout) do
+    acc = %{decode: decode, step: :status, buffer: [], headers: []}
+    recv_declare_continue(conn, acc, timeout)
+  end
+
+  defp recv_declare_continue(conn, acc, timeout) do
     case HTTP.recv(conn, 0, timeout) do
       {:ok, conn, responses} ->
-        case eat_ok_status_and_headers(responses) do
-          {:ok, data} ->
-            {:ok, %{conn: conn, buffer: data}}
+        case handle_recv_declare(responses, acc) do
+          {:ok, columns, headers, reader} ->
+            {:ok, conn, columns, headers, reader}
 
-          :more ->
-            eat_ok_status_and_headers(conn, timeout)
+          {:more, acc} ->
+            recv_declare_continue(conn, acc, timeout)
 
           :error ->
             all_responses_result =
@@ -155,49 +166,102 @@ defmodule Ch.Connection do
     end
   end
 
-  defp eat_ok_status_and_headers([{:status, _ref, 200} | rest]) do
-    eat_ok_status_and_headers(rest)
-  end
-
-  defp eat_ok_status_and_headers([{:status, _ref, _status} | _rest]), do: :error
-  defp eat_ok_status_and_headers([{:headers, _ref, _headers} | data]), do: {:ok, data}
-  defp eat_ok_status_and_headers([]), do: :more
-
-  @impl true
-  def handle_fetch(query, %Result{} = result, opts, %{conn: conn, buffer: buffer}) do
-    case buffer do
-      [] -> handle_fetch(query, result, opts, conn)
-      _not_empty -> {halt_or_cont(buffer), %{result | data: extract_data(buffer)}, conn}
+  defp handle_recv_declare([{:status, _ref, status} | responses], %{step: :status} = acc) do
+    case status do
+      200 -> handle_recv_declare(responses, %{acc | step: :headers})
+      _other -> :error
     end
   end
 
-  def handle_fetch(_query, %Result{} = result, opts, conn) do
-    case HTTP.recv(conn, 0, timeout(conn, opts)) do
+  defp handle_recv_declare([{:headers, _ref, headers} | responses], %{step: :headers} = acc) do
+    with %{decode: true} <- acc,
+         "RowBinaryWithNamesAndTypes" <- get_header(headers, "x-clickhouse-format") do
+      handle_recv_declare(responses, %{acc | headers: headers, step: :columns})
+    else
+      _ ->
+        reader = %{decode: false, responses: responses}
+        {:ok, _columns = nil, headers, reader}
+    end
+  end
+
+  defp handle_recv_declare([{:data, _ref, data} | responses], %{step: :columns} = acc) do
+    buffer = maybe_concat_buffer(acc.buffer, data)
+
+    case RowBinary.decode_header(buffer) do
+      {:ok, names, types, buffer} ->
+        reader = %{buffer: buffer, types: types, state: nil, responses: responses}
+        {:ok, names, acc.headers, reader}
+
+      :more ->
+        handle_recv_declare(responses, %{acc | buffer: buffer})
+    end
+  end
+
+  defp handle_recv_declare([], acc), do: {:more, acc}
+
+  @compile inline: [maybe_concat_buffer: 2]
+  defp maybe_concat_buffer("", data), do: data
+  defp maybe_concat_buffer(buffer, data) when is_binary(buffer), do: buffer <> data
+  defp maybe_concat_buffer([], data), do: data
+
+  @impl true
+  def handle_fetch(query, %Result{} = result, opts, {conn, reader}) do
+    case reader do
+      %{responses: []} ->
+        handle_fetch_recv(query, result, opts, conn, reader)
+
+      %{decode: false, responses: responses} ->
+        case responses do
+          [{:data, _ref, data} | responses] ->
+            result = %Result{result | data: data}
+            reader = %{reader | responses: responses}
+            {:cont, result, {conn, reader}}
+
+          [{:done, _ref}] ->
+            reader = %{reader | responses: []}
+            {:halt, result, {conn, reader}}
+        end
+
+      %{buffer: buffer, types: types, state: state, responses: responses} ->
+        case responses do
+          [{:data, _ref, data} | responses] ->
+            buffer = maybe_concat_buffer(buffer, data)
+            {rows, buffer, state} = RowBinary.decode_rows_continue(buffer, types, state)
+            result = %Result{result | data: data, rows: rows, num_rows: length(rows)}
+            reader = %{reader | buffer: buffer, state: state, responses: responses}
+            {:cont, result, {conn, reader}}
+
+          [{:done, _ref}] ->
+            reader = %{reader | responses: []}
+            {:halt, result, {conn, reader}}
+        end
+    end
+  end
+
+  defp handle_fetch_recv(query, result, opts, conn, reader) do
+    timeout = timeout(conn, opts)
+
+    case HTTP.recv(conn, 0, timeout) do
       {:ok, conn, responses} ->
-        {halt_or_cont(responses), %{result | data: extract_data(responses)}, conn}
+        reader = %{reader | responses: responses}
+        handle_fetch(query, result, opts, {conn, reader})
 
       {:error, conn, reason, _responses} ->
         {:disconnect, reason, conn}
     end
   end
 
-  defp halt_or_cont([{:done, _ref}]), do: :halt
-  defp halt_or_cont([_ | rest]), do: halt_or_cont(rest)
-  defp halt_or_cont([]), do: :cont
-
-  defp extract_data([{:data, _ref, data} | rest]), do: [data | extract_data(rest)]
-  defp extract_data([] = empty), do: empty
-  defp extract_data([{:done, _ref}]), do: []
-
   @impl true
-  def handle_deallocate(_query, %Result{} = result, _opts, conn) do
+  def handle_deallocate(_query, %Result{} = result, _opts, {conn, _reader}) do
     case HTTP.open_request_count(conn) do
       0 ->
-        # TODO data: [], anything else?
         {:ok, %{result | data: []}, conn}
 
       1 ->
-        {:disconnect, Error.exception("cannot stop stream before receiving full response"), conn}
+        error =
+          Error.exception("stopping stream before receiving full response by closing connection")
+
+        {:disconnect, error, conn}
     end
   end
 
