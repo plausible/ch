@@ -6,8 +6,7 @@
 
     Previously, this function returned raw bytes.
   
-    > [!WARNING]
-    > To **restore the previous behavior** (raw bytes/no automatic decoding), you must now explicitly pass `decode: false` in the options (**fourth** argument).
+    To **restore the previous behavior** (raw bytes/no automatic decoding), you must now explicitly pass `decode: false` in the options (**fourth** argument).
 
     **Example of required change to preserve the previous behavior**
 
@@ -27,8 +26,7 @@
     end)
   ```
 
-  > [!NOTE]
-  > Queries using other explicit formats like `CSVWithNames` are **unaffected** and can remain as they are.
+  Queries using other explicit formats like `CSVWithNames` are **unaffected** and can remain as they are.
 
   **Examples of unaffected queries**
 
