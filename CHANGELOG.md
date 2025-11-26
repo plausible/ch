@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.7 (2025-11-25)
+## 0.5.7 (2025-11-26)
 
 - fix type decoding for strings containing newlines https://github.com/plausible/ch/pull/278
 
