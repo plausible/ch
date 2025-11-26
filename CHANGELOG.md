@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.7 (2025-11-26)
 
 **BREAKING CHANGE**: Added **automatic decoding** to `Ch.stream/4` when using `RowBinaryWithNamesAndTypes` format: https://github.com/plausible/ch/pull/277.
 
