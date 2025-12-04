@@ -331,6 +331,10 @@ defmodule Ch.Connection do
   end
 
   @impl true
+  def disconnect(error, {conn, _reader}) do
+    disconnect(error, conn)
+  end
+
   def disconnect(_error, conn) do
     {:ok = ok, _conn} = HTTP.close(conn)
     ok
