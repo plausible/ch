@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 (2025-12-04)
 
 - handle disconnect during stream https://github.com/plausible/ch/pull/283
 
