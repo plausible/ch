@@ -15,7 +15,8 @@ defmodule Ch.MixProject do
       description: "HTTP ClickHouse driver for Elixir",
       docs: docs(),
       package: package(),
-      source_url: @source_url
+      source_url: @source_url,
+      dialyzer: [plt_local_path: "plts", plt_core_path: "plts"]
     ]
   end
 
@@ -43,7 +44,7 @@ defmodule Ch.MixProject do
       {:decimal, "~> 2.0"},
       {:ecto, "~> 3.13.0", optional: true},
       {:benchee, "~> 1.0", only: [:bench]},
-      {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
+      {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
       {:tz, "~> 0.28.1", only: [:test]}
     ]
