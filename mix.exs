@@ -15,7 +15,8 @@ defmodule Ch.MixProject do
       description: "HTTP ClickHouse driver for Elixir",
       docs: docs(),
       package: package(),
-      source_url: @source_url
+      source_url: @source_url,
+      dialyzer: [plt_local_path: "plts", plt_core_path: "plts"]
     ]
   end
 
