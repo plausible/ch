@@ -10,6 +10,7 @@ on:
 
 jobs:
   test:
+    name: "Test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} / ClickHouse ${{ matrix.clickhouse }} / TZ ${{ matrix.timezone }}${{ matrix.dialyzer && ' / Dialyzer' || '' }}${{ matrix.lint && ' / Lint' || '' }})"
     runs-on: ubuntu-latest
 
     env:
@@ -43,6 +44,7 @@ jobs:
             clickhouse: latest
             timezone: UTC
             dialyzer: true
+            lint: true
           # Plausible
           # - https://github.com/plausible/analytics/blob/master/.tool-versions
           # - https://github.com/plausible/analytics/blob/master/.github/workflows/elixir.yml
@@ -93,6 +95,9 @@ jobs:
 
       - run: mix deps.get --only $MIX_ENV
       - run: mix compile --warnings-as-errors
+      - run: mix format --check-formatted
+        if: ${{ matrix.lint }}
+
       - run: mix test --include slow
 
       - name: Restore PLTs cache
@@ -106,14 +111,3 @@ jobs:
 
       - run: mix dialyzer --format github
         if: ${{ matrix.dialyzer }}
-
-  format:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: erlef/setup-beam@v1
-        with:
-          elixir-version: 1
-          otp-version: 28
-      - run: elixir -v
-      - run: mix format --check-formatted
