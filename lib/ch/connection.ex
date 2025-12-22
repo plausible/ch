@@ -65,13 +65,14 @@ defmodule Ch.Connection do
   @impl true
   @spec ping(conn) :: {:ok, conn} | {:disconnect, Mint.Types.error() | Error.t(), conn}
   def ping(conn) do
-    conn = maybe_reconnect(conn)
-    headers = [{"user-agent", @user_agent}]
+    with {:ok, conn} <- maybe_reconnect(conn) do
+      headers = [{"user-agent", @user_agent}]
 
-    case request(conn, "GET", "/ping", headers, _body = "", _opts = []) do
-      {:ok, conn, _response} -> {:ok, conn}
-      {:error, error, conn} -> {:disconnect, error, conn}
-      {:disconnect, _error, _conn} = disconnect -> disconnect
+      case request(conn, "GET", "/ping", headers, _body = "", _opts = []) do
+        {:ok, conn, _response} -> {:ok, conn}
+        {:error, error, conn} -> {:disconnect, error, conn}
+        {:disconnect, _error, _conn} = disconnect -> disconnect
+      end
     end
   end
 
@@ -103,26 +104,27 @@ defmodule Ch.Connection do
 
   @impl true
   def handle_declare(query, params, opts, conn) do
-    conn = maybe_reconnect(conn)
-    %Query{command: command, decode: decode} = query
-    {query_params, extra_headers, body} = params
+    with {:ok, conn} <- maybe_reconnect(conn) do
+      %Query{command: command, decode: decode} = query
+      {query_params, extra_headers, body} = params
 
-    path = path(conn, query_params, opts)
-    headers = headers(conn, extra_headers, opts)
-    timeout = timeout(conn, opts)
+      path = path(conn, query_params, opts)
+      headers = headers(conn, extra_headers, opts)
+      timeout = timeout(conn, opts)
 
-    with {:ok, conn, _ref} <- send_request(conn, "POST", path, headers, body),
-         {:ok, conn, columns, headers, reader} <- recv_declare(conn, decode, timeout) do
-      result = %Result{
-        command: command,
-        columns: columns,
-        rows: [],
-        num_rows: 0,
-        headers: headers,
-        data: []
-      }
+      with {:ok, conn, _ref} <- send_request(conn, "POST", path, headers, body),
+           {:ok, conn, columns, headers, reader} <- recv_declare(conn, decode, timeout) do
+        result = %Result{
+          command: command,
+          columns: columns,
+          rows: [],
+          num_rows: 0,
+          headers: headers,
+          data: []
+        }
 
-      {:ok, query, result, {conn, reader}}
+        {:ok, query, result, {conn, reader}}
+      end
     end
   end
 
@@ -267,16 +269,17 @@ defmodule Ch.Connection do
 
   @impl true
   def handle_execute(%Query{} = query, {:stream, params}, opts, conn) do
-    conn = maybe_reconnect(conn)
-    {query_params, extra_headers, body} = params
+    with {:ok, conn} <- maybe_reconnect(conn) do
+      {query_params, extra_headers, body} = params
 
-    path = path(conn, query_params, opts)
-    headers = headers(conn, extra_headers, opts)
+      path = path(conn, query_params, opts)
+      headers = headers(conn, extra_headers, opts)
 
-    with {:ok, conn, ref} <- send_request(conn, "POST", path, headers, :stream) do
-      case HTTP.stream_request_body(conn, ref, body) do
-        {:ok, conn} -> {:ok, query, ref, conn}
-        {:error, conn, reason} -> {:disconnect, reason, conn}
+      with {:ok, conn, ref} <- send_request(conn, "POST", path, headers, :stream) do
+        case HTTP.stream_request_body(conn, ref, body) do
+          {:ok, conn} -> {:ok, query, ref, conn}
+          {:error, conn, reason} -> {:disconnect, reason, conn}
+        end
       end
     end
   end
@@ -300,33 +303,35 @@ defmodule Ch.Connection do
   end
 
   def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
-    conn = maybe_reconnect(conn)
-    {query_params, extra_headers, body} = params
+    with {:ok, conn} <- maybe_reconnect(conn) do
+      {query_params, extra_headers, body} = params
 
-    path = path(conn, query_params, opts)
-    headers = headers(conn, extra_headers, opts)
+      path = path(conn, query_params, opts)
+      headers = headers(conn, extra_headers, opts)
 
-    result =
-      if is_function(body, 2) do
-        request_chunked(conn, "POST", path, headers, body, opts)
-      else
-        request(conn, "POST", path, headers, body, opts)
+      result =
+        if is_function(body, 2) do
+          request_chunked(conn, "POST", path, headers, body, opts)
+        else
+          request(conn, "POST", path, headers, body, opts)
+        end
+
+      with {:ok, conn, responses} <- result do
+        {:ok, query, responses, conn}
       end
-
-    with {:ok, conn, responses} <- result do
-      {:ok, query, responses, conn}
     end
   end
 
   def handle_execute(query, params, opts, conn) do
-    conn = maybe_reconnect(conn)
-    {query_params, extra_headers, body} = params
+    with {:ok, conn} <- maybe_reconnect(conn) do
+      {query_params, extra_headers, body} = params
 
-    path = path(conn, query_params, opts)
-    headers = headers(conn, extra_headers, opts)
+      path = path(conn, query_params, opts)
+      headers = headers(conn, extra_headers, opts)
 
-    with {:ok, conn, responses} <- request(conn, "POST", path, headers, body, opts) do
-      {:ok, query, responses, conn}
+      with {:ok, conn, responses} <- request(conn, "POST", path, headers, body, opts) do
+        {:ok, query, responses, conn}
+      end
     end
   end
 
@@ -483,23 +488,25 @@ defmodule Ch.Connection do
   end
 
   # If the http connection was closed by the server, attempt to
-  # reconnect once. If the re-connect failed, return the old
-  # connection and let the error bubble up to the caller.
+  # reconnect once. Returns {:ok, conn} or {:disconnect, reason, old_conn}
   defp maybe_reconnect(conn) do
     if HTTP.open?(conn) do
-      conn
+      {:ok, conn}
     else
       opts = HTTP.get_private(conn, :connect_options)
 
-      with {:ok, new_conn} <- do_connect(opts) do
-        Logger.warning(
-          "The connection was closed by the server; a new connection has been successfully reestablished."
-        )
+      case do_connect(opts) do
+        {:ok, new_conn} ->
+          Logger.error(
+            "The connection was closed by the server; a new connection has been successfully reestablished."
+          )
 
-        # copy settings that are set dynamically (e.g. json as text) over to the new connection
-        maybe_put_private(new_conn, :settings, HTTP.get_private(conn, :settings))
-      else
-        _ -> conn
+          # copy settings that are set dynamically (e.g. json as text) over to the new connection
+          {:ok, maybe_put_private(new_conn, :settings, HTTP.get_private(conn, :settings))}
+
+        {:error, reason} ->
+          Logger.error("Failed to reconnect to the server reason=#{inspect(reason)}")
+          {:disconnect, reason, conn}
       end
     end
   end
