@@ -1,7 +1,6 @@
 defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
   defstruct [:statement, :command, :encode, :decode, :multipart]
-  @dialyzer :no_improper_lists
 
   @type t :: %__MODULE__{
           statement: iodata,
@@ -87,6 +86,7 @@ defmodule Ch.Query do
 end
 
 defimpl DBConnection.Query, for: Ch.Query do
+  @dialyzer :no_improper_lists
   alias Ch.{Query, Result, RowBinary}
 
   @spec parse(Query.t(), [Ch.query_option()]) :: Query.t()
