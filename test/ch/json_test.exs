@@ -4,10 +4,7 @@ defmodule Ch.JSONTest do
   @moduletag :json
 
   setup do
-    on_exit(fn ->
-      Ch.Test.query("DROP TABLE IF EXISTS json_test", [], database: Ch.Test.database())
-    end)
-
+    on_exit(fn -> Ch.Test.query("DROP TABLE IF EXISTS json_test") end)
     {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 

@@ -43,7 +43,7 @@ defmodule Ch.VariantTest do
     CREATE TABLE variant_test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
     """)
 
-    on_exit(fn -> Ch.Test.query("DROP TABLE variant_test", [], database: Ch.Test.database()) end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE variant_test") end)
 
     Ch.query!(
       conn,
@@ -82,7 +82,7 @@ defmodule Ch.VariantTest do
     CREATE TABLE variant_test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
     """)
 
-    on_exit(fn -> Ch.Test.query("DROP TABLE variant_test", [], database: Ch.Test.database()) end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE variant_test") end)
 
     Ch.query!(
       conn,

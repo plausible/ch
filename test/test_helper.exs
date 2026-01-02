@@ -21,8 +21,17 @@ Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
 default_test_db = System.get_env("CH_DATABASE", "ch_elixir_test")
 Application.put_env(:ch, :database, default_test_db)
 
-Ch.Test.query("DROP DATABASE IF EXISTS {db:Identifier}", %{"db" => default_test_db})
-Ch.Test.query("CREATE DATABASE {db:Identifier}", %{"db" => default_test_db})
+Ch.Test.query(
+  "DROP DATABASE IF EXISTS {db:Identifier}",
+  %{"db" => default_test_db},
+  database: "default"
+)
+
+Ch.Test.query(
+  "CREATE DATABASE {db:Identifier}",
+  %{"db" => default_test_db},
+  database: "default"
+)
 
 %{rows: [[ch_version]]} = Ch.Test.query("SELECT version()")
 

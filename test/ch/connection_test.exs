@@ -170,14 +170,8 @@ defmodule Ch.ConnectionTest do
   end
 
   test "non-utc datetime rowbinary encoding", ctx do
-    query!(
-      ctx,
-      "create table ch_non_utc_datetimes(name String, datetime DateTime) engine Memory"
-    )
-
-    on_exit(fn ->
-      Ch.Test.query("drop table ch_non_utc_datetimes", [], database: Ch.Test.database())
-    end)
+    query!(ctx, "create table ch_non_utc_datetimes(name String, datetime DateTime) engine Memory")
+    on_exit(fn -> Ch.Test.query("drop table ch_non_utc_datetimes") end)
 
     utc = ~U[2024-12-21 05:35:19.886393Z]
 
@@ -248,9 +242,7 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{command: :create, num_rows: nil, rows: [], data: []}} =
              query(ctx, "create table create_example(a UInt8) engine = Memory")
 
-    on_exit(fn ->
-      Ch.Test.query("drop table create_example", [], database: Ch.Test.database())
-    end)
+    on_exit(fn -> Ch.Test.query("drop table create_example") end)
   end
 
   test "create with options", ctx do
@@ -400,10 +392,7 @@ defmodule Ch.ConnectionTest do
 
   test "delete", ctx do
     query!(ctx, "create table delete_t(a UInt8, b String) engine = MergeTree order by tuple()")
-
-    on_exit(fn ->
-      Ch.Test.query("drop table delete_t", [], database: Ch.Test.database())
-    end)
+    on_exit(fn -> Ch.Test.query("drop table delete_t") end)
 
     assert {:ok, %{num_rows: 2}} = query(ctx, "insert into delete_t values (1,'a'), (2,'b')")
 
@@ -464,10 +453,7 @@ defmodule Ch.ConnectionTest do
                query(ctx, "select {a:FixedString(5)}", %{"a" => "aaaaa"})
 
       query!(ctx, "create table fixed_string_t(a FixedString(3)) engine = Memory")
-
-      on_exit(fn ->
-        Ch.Test.query("drop table fixed_string_t", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("drop table fixed_string_t") end)
 
       assert {:ok, %{num_rows: 4}} =
                query(
@@ -512,10 +498,7 @@ defmodule Ch.ConnectionTest do
       assert row == [Decimal.new("2.0000"), Decimal.new("0.6666"), "Decimal(76, 4)"]
 
       query!(ctx, "create table decimal_t(d Decimal32(4)) engine = Memory")
-
-      on_exit(fn ->
-        Ch.Test.query("drop table decimal_t", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("drop table decimal_t") end)
 
       assert %{num_rows: 3} =
                query!(
@@ -546,10 +529,7 @@ defmodule Ch.ConnectionTest do
       assert {:ok, %{num_rows: 1, rows: [[true, false]]}} = query(ctx, "select true, false")
 
       query!(ctx, "create table test_bool(A Int64, B Bool) engine = Memory")
-
-      on_exit(fn ->
-        Ch.Test.query("drop table test_bool", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("drop table test_bool") end)
 
       query!(ctx, "INSERT INTO test_bool VALUES (1, true),(2,0)")
 
@@ -589,10 +569,7 @@ defmodule Ch.ConnectionTest do
                |> Base.decode16!(case: :lower)
 
       query!(ctx, " CREATE TABLE t_uuid (x UUID, y String) ENGINE Memory")
-
-      on_exit(fn ->
-        Ch.Test.query("drop table t_uuid", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("drop table t_uuid") end)
 
       query!(ctx, "INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'")
 
@@ -666,9 +643,7 @@ defmodule Ch.ConnectionTest do
         settings: [enable_json_type: 1]
       )
 
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE test_json_as_string", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE test_json_as_string") end)
 
       query!(
         ctx,
@@ -709,9 +684,7 @@ defmodule Ch.ConnectionTest do
         "CREATE TABLE t_enum(i UInt8, x Enum('hello' = 1, 'world' = 2)) ENGINE Memory"
       )
 
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE t_enum", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE t_enum") end)
 
       query!(ctx, "INSERT INTO t_enum VALUES (0, 'hello'), (1, 'world'), (2, 'hello')")
 
@@ -752,10 +725,7 @@ defmodule Ch.ConnectionTest do
              }).rows == [[%{"hello" => 100, "pg" => 13}]]
 
       query!(ctx, "CREATE TABLE table_map (a Map(String, UInt64)) ENGINE=Memory")
-
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE table_map", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE table_map") end)
 
       query!(
         ctx,
@@ -821,10 +791,7 @@ defmodule Ch.ConnectionTest do
 
       # TODO named tuples
       query!(ctx, "CREATE TABLE tuples_t (`a` Tuple(String, Int64)) ENGINE = Memory")
-
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE tuples_t", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE tuples_t") end)
 
       assert %{num_rows: 2} =
                query!(ctx, "INSERT INTO tuples_t VALUES (('y', 10)), (('x',-10))")
@@ -851,9 +818,7 @@ defmodule Ch.ConnectionTest do
         "CREATE TABLE dt(`timestamp` DateTime('Asia/Istanbul'), `event_id` UInt8) ENGINE = Memory"
       )
 
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE dt", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE dt") end)
 
       query!(ctx, "INSERT INTO dt Values (1546300800, 1), ('2019-01-01 00:00:00', 2)")
 
@@ -920,10 +885,7 @@ defmodule Ch.ConnectionTest do
     # TODO are negatives correct? what's the range?
     test "date32", ctx do
       query!(ctx, "CREATE TABLE new(`timestamp` Date32, `event_id` UInt8) ENGINE = Memory;")
-
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE new", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE new") end)
 
       query!(ctx, "INSERT INTO new VALUES (4102444800, 1), ('2100-01-01', 2)")
 
@@ -986,7 +948,7 @@ defmodule Ch.ConnectionTest do
       )
 
       on_exit(fn ->
-        Ch.Test.query("DROP TABLE time_t", [], settings: settings, database: Ch.Test.database())
+        Ch.Test.query("DROP TABLE time_t", [], settings: settings)
       end)
 
       query!(ctx, "INSERT INTO time_t VALUES ('100:00:00', 1), (12453, 2)", [],
@@ -1032,10 +994,7 @@ defmodule Ch.ConnectionTest do
       )
 
       on_exit(fn ->
-        Ch.Test.query("DROP TABLE time64_3_t", [],
-          settings: settings,
-          database: Ch.Test.database()
-        )
+        Ch.Test.query("DROP TABLE time64_3_t", [], settings: settings)
       end)
 
       query!(
@@ -1095,10 +1054,7 @@ defmodule Ch.ConnectionTest do
       )
 
       on_exit(fn ->
-        Ch.Test.query("DROP TABLE time64_6_t", [],
-          settings: settings,
-          database: Ch.Test.database()
-        )
+        Ch.Test.query("DROP TABLE time64_6_t", [], settings: settings)
       end)
 
       query!(
@@ -1142,10 +1098,7 @@ defmodule Ch.ConnectionTest do
       )
 
       on_exit(fn ->
-        Ch.Test.query("DROP TABLE time64_9_t", [],
-          settings: settings,
-          database: Ch.Test.database()
-        )
+        Ch.Test.query("DROP TABLE time64_9_t", [], settings: settings)
       end)
 
       query!(
@@ -1183,9 +1136,7 @@ defmodule Ch.ConnectionTest do
         "CREATE TABLE datetime64_t(`timestamp` DateTime64(3, 'Asia/Istanbul'), `event_id` UInt8) ENGINE = Memory"
       )
 
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE datetime64_t", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE datetime64_t") end)
 
       query!(
         ctx,
@@ -1293,9 +1244,7 @@ defmodule Ch.ConnectionTest do
         "CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple()"
       )
 
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE nullable", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE nullable") end)
 
       query!(ctx, "INSERT INTO nullable VALUES (1) (NULL) (2) (NULL)")
 
@@ -1330,9 +1279,7 @@ defmodule Ch.ConnectionTest do
       ) ENGINE Memory
       """)
 
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE ch_nulls", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE ch_nulls") end)
 
       query!(
         ctx,
@@ -1354,9 +1301,7 @@ defmodule Ch.ConnectionTest do
       ) ENGINE Memory
       """)
 
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE test_insert_default_value", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE test_insert_default_value") end)
 
       query!(
         ctx,
@@ -1391,10 +1336,7 @@ defmodule Ch.ConnectionTest do
 
     test "can insert and select Point", ctx do
       query!(ctx, "CREATE TABLE geo_point (p Point) ENGINE = Memory()")
-
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE geo_point", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE geo_point") end)
 
       query!(ctx, "INSERT INTO geo_point VALUES((10, 10))")
       query!(ctx, "INSERT INTO geo_point FORMAT RowBinary", [[{20, 20}]], types: ["Point"])
@@ -1428,10 +1370,7 @@ defmodule Ch.ConnectionTest do
 
     test "can insert and select Ring", ctx do
       query!(ctx, "CREATE TABLE geo_ring (r Ring) ENGINE = Memory()")
-
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE geo_ring", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE geo_ring") end)
 
       query!(ctx, "INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)])")
 
@@ -1470,10 +1409,7 @@ defmodule Ch.ConnectionTest do
 
     test "can insert and select Polygon", ctx do
       query!(ctx, "CREATE TABLE geo_polygon (pg Polygon) ENGINE = Memory()")
-
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE geo_polygon", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE geo_polygon") end)
 
       query!(
         ctx,
@@ -1531,10 +1467,7 @@ defmodule Ch.ConnectionTest do
 
     test "can insert and select MultiPolygon", ctx do
       query!(ctx, "CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory()")
-
-      on_exit(fn ->
-        Ch.Test.query("DROP TABLE geo_multipolygon", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("DROP TABLE geo_multipolygon") end)
 
       query!(
         ctx,
@@ -1699,10 +1632,7 @@ defmodule Ch.ConnectionTest do
     test "can pass options to start_link/1", ctx do
       db = "#{Ch.Test.database()}_#{System.unique_integer([:positive])}"
       Ch.Test.query("CREATE DATABASE {db:Identifier}", %{"db" => db})
-
-      on_exit(fn ->
-        Ch.Test.query("DROP DATABASE {db:Identifier}", %{"db" => db})
-      end)
+      on_exit(fn -> Ch.Test.query("DROP DATABASE {db:Identifier}", %{"db" => db}) end)
 
       {:ok, conn} = Ch.start_link(database: db)
       ctx = Map.put(ctx, :conn, conn)
@@ -1727,9 +1657,7 @@ defmodule Ch.ConnectionTest do
       ) engine Memory
       """)
 
-      on_exit(fn ->
-        Ch.Test.query("truncate row_binary_names_and_types_t", [], database: Ch.Test.database())
-      end)
+      on_exit(fn -> Ch.Test.query("truncate row_binary_names_and_types_t") end)
     end
 
     test "error on type mismatch", ctx do

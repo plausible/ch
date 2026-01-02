@@ -14,7 +14,7 @@ defmodule Ch.DynamicTest do
     end
 
     Ch.query!(conn, "CREATE TABLE test (d Dynamic, id String) ENGINE = Memory;")
-    on_exit(fn -> Ch.Test.query("DROP TABLE test", [], database: Ch.Test.database()) end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
 
     insert = fn value ->
       id = inspect(value)
@@ -269,7 +269,7 @@ defmodule Ch.DynamicTest do
   test "creating dynamic", %{conn: conn} do
     # Using Dynamic type in table column definition:
     Ch.query!(conn, "CREATE TABLE test (d Dynamic) ENGINE = Memory;")
-    on_exit(fn -> Ch.Test.query("DROP TABLE test", [], database: Ch.Test.database()) end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
     Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);")
 
     assert Ch.query!(conn, "SELECT d, dynamicType(d) FROM test;").rows == [
@@ -303,7 +303,7 @@ defmodule Ch.DynamicTest do
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#reading-dynamic-nested-types-as-subcolumns
   test "reading dynamic nested types as subcolumns", %{conn: conn} do
     Ch.query!(conn, "CREATE TABLE test (d Dynamic) ENGINE = Memory;")
-    on_exit(fn -> Ch.Test.query("DROP TABLE test", [], database: Ch.Test.database()) end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
     Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);")
 
     assert Ch.query!(
@@ -358,7 +358,7 @@ defmodule Ch.DynamicTest do
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#converting-a-dynamic-column-to-an-ordinary-column
   test "converting a dynamic column to an ordinary column", %{conn: conn} do
     Ch.query!(conn, "CREATE TABLE test (d Dynamic) ENGINE = Memory;")
-    on_exit(fn -> Ch.Test.query("DROP TABLE test", [], database: Ch.Test.database()) end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
     Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), ('42.42'), (true), ('e10');")
 
     assert Ch.query!(conn, "SELECT d::Nullable(Float64) FROM test;").rows == [
@@ -377,7 +377,7 @@ defmodule Ch.DynamicTest do
       "CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;"
     )
 
-    on_exit(fn -> Ch.Test.query("DROP TABLE test", [], database: Ch.Test.database()) end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
     Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), ('String'), ([1, 2, 3]);")
 
     assert Ch.query!(conn, "SELECT v::Dynamic AS d, dynamicType(d) FROM test;").rows == [
@@ -391,7 +391,7 @@ defmodule Ch.DynamicTest do
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#converting-a-dynamicmax_typesn-column-to-another-dynamicmax_typesk
   test "converting a Dynamic(max_types=N) column to another Dynamic(max_types=K)", %{conn: conn} do
     Ch.query!(conn, "CREATE TABLE test (d Dynamic(max_types=4)) ENGINE = Memory;")
-    on_exit(fn -> Ch.Test.query("DROP TABLE test", [], database: Ch.Test.database()) end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
     Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true), ([1, 2, 3]);")
 
     assert Ch.query!(conn, "SELECT d::Dynamic(max_types=5) as d2, dynamicType(d2) FROM test;").rows ==

@@ -8,6 +8,7 @@ defmodule Ch.Test do
     task =
       Task.async(fn ->
         {:ok, pid} = Ch.start_link(opts)
+        opts = Keyword.put_new_lazy(opts, :database, &database/0)
         Ch.query!(pid, sql, params, opts)
       end)
 
