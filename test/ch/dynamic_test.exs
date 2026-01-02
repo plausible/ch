@@ -1,5 +1,6 @@
 defmodule Ch.DynamicTest do
-  use ExUnit.Case
+  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  import Ch.Test, only: [parameterize_query!: 2, parameterize_query!: 3, parameterize_query!: 4]
 
   @moduletag :dynamic
 
@@ -7,24 +8,24 @@ defmodule Ch.DynamicTest do
     {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
-  test "it works", %{conn: conn} do
+  test "it works", ctx do
     select = fn literal ->
-      [row] = Ch.query!(conn, "select #{literal}::Dynamic as d, dynamicType(d)").rows
+      [row] = parameterize_query!(ctx, "select #{literal}::Dynamic as d, dynamicType(d)").rows
       row
     end
 
-    Ch.query!(conn, "CREATE TABLE test (d Dynamic, id String) ENGINE = Memory;")
+    parameterize_query!(ctx, "CREATE TABLE test (d Dynamic, id String) ENGINE = Memory;")
     on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
 
     insert = fn value ->
       id = inspect(value)
 
-      Ch.query!(conn, "insert into test(d, id) format RowBinary", [[value, id]],
+      parameterize_query!(ctx, "insert into test(d, id) format RowBinary", [[value, id]],
         types: ["Dynamic", "String"]
       ).rows
 
       [[inserted]] =
-        Ch.query!(conn, "select d from test where id = {id:String}", %{"id" => id}).rows
+        parameterize_query!(ctx, "select d from test where id = {id:String}", %{"id" => id}).rows
 
       inserted
     end
@@ -96,7 +97,7 @@ defmodule Ch.DynamicTest do
 
     # DateTime 0x11
     assert select.("'2020-01-01 12:34:56'::DateTime") == [
-             Ch.Test.to_clickhouse_naive(conn, ~N[2020-01-01 12:34:56]),
+             Ch.Test.to_clickhouse_naive(ctx.conn, ~N[2020-01-01 12:34:56]),
              "DateTime"
            ]
 
@@ -110,7 +111,10 @@ defmodule Ch.DynamicTest do
 
     # DateTime64(P) 0x13<uint8_precision>
     assert select.("'2020-01-01 12:34:56.123456'::DateTime64(6)") ==
-             [Ch.Test.to_clickhouse_naive(conn, ~N[2020-01-01 12:34:56.123456]), "DateTime64(6)"]
+             [
+               Ch.Test.to_clickhouse_naive(ctx.conn, ~N[2020-01-01 12:34:56.123456]),
+               "DateTime64(6)"
+             ]
 
     # DateTime64(P, time_zone) 0x14<uint8_precision><var_uint_time_zone_name_size><time_zone_name_data>
     assert [dt64, "DateTime64(6, 'Europe/Prague')"] =
@@ -266,13 +270,17 @@ defmodule Ch.DynamicTest do
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#creating-dynamic
-  test "creating dynamic", %{conn: conn} do
+  test "creating dynamic", ctx do
     # Using Dynamic type in table column definition:
-    Ch.query!(conn, "CREATE TABLE test (d Dynamic) ENGINE = Memory;")
+    parameterize_query!(ctx, "CREATE TABLE test (d Dynamic) ENGINE = Memory;")
     on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
-    Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);")
 
-    assert Ch.query!(conn, "SELECT d, dynamicType(d) FROM test;").rows == [
+    parameterize_query!(
+      ctx,
+      "INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);"
+    )
+
+    assert parameterize_query!(ctx, "SELECT d, dynamicType(d) FROM test;").rows == [
              [nil, "None"],
              [42, "Int64"],
              ["Hello, World!", "String"],
@@ -280,13 +288,14 @@ defmodule Ch.DynamicTest do
            ]
 
     # Using CAST from ordinary column:
-    assert Ch.query!(conn, "SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);").rows == [
-             ["Hello, World!", "String"]
-           ]
+    assert parameterize_query!(ctx, "SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);").rows ==
+             [
+               ["Hello, World!", "String"]
+             ]
 
     # Using CAST from Variant column:
-    assert Ch.query!(
-             conn,
+    assert parameterize_query!(
+             ctx,
              "SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NULL)::Dynamic AS d, dynamicType(d) FROM numbers(3)",
              [],
              settings: [
@@ -301,13 +310,17 @@ defmodule Ch.DynamicTest do
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#reading-dynamic-nested-types-as-subcolumns
-  test "reading dynamic nested types as subcolumns", %{conn: conn} do
-    Ch.query!(conn, "CREATE TABLE test (d Dynamic) ENGINE = Memory;")
+  test "reading dynamic nested types as subcolumns", ctx do
+    parameterize_query!(ctx, "CREATE TABLE test (d Dynamic) ENGINE = Memory;")
     on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
-    Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);")
 
-    assert Ch.query!(
-             conn,
+    parameterize_query!(
+      ctx,
+      "INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);"
+    )
+
+    assert parameterize_query!(
+             ctx,
              "SELECT d, dynamicType(d), d.String, d.Int64, d.`Array(Int64)`, d.Date, d.`Array(String)` FROM test;"
            ).rows == [
              [nil, "None", nil, nil, [], nil, []],
@@ -316,8 +329,8 @@ defmodule Ch.DynamicTest do
              [[1, 2, 3], "Array(Int64)", nil, nil, [1, 2, 3], nil, []]
            ]
 
-    assert Ch.query!(
-             conn,
+    assert parameterize_query!(
+             ctx,
              "SELECT toTypeName(d.String), toTypeName(d.Int64), toTypeName(d.`Array(Int64)`), toTypeName(d.Date), toTypeName(d.`Array(String)`)  FROM test LIMIT 1;"
            ).rows == [
              [
@@ -329,8 +342,8 @@ defmodule Ch.DynamicTest do
              ]
            ]
 
-    assert Ch.query!(
-             conn,
+    assert parameterize_query!(
+             ctx,
              "SELECT d, dynamicType(d), dynamicElement(d, 'String'), dynamicElement(d, 'Int64'), dynamicElement(d, 'Array(Int64)'), dynamicElement(d, 'Date'), dynamicElement(d, 'Array(String)') FROM test;"
            ).rows == [
              [nil, "None", nil, nil, [], nil, []],
@@ -341,9 +354,9 @@ defmodule Ch.DynamicTest do
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#converting-a-string-column-to-a-dynamic-column-through-parsing
-  test "converting a string column to a dynamic column through parsing", %{conn: conn} do
-    assert Ch.query!(
-             conn,
+  test "converting a string column to a dynamic column through parsing", ctx do
+    assert parameterize_query!(
+             ctx,
              "SELECT CAST(materialize(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01')), 'Map(String, Dynamic)') as map_of_dynamic, mapApply((k, v) -> (k, dynamicType(v)), map_of_dynamic) as map_of_dynamic_types;",
              [],
              settings: [cast_string_to_dynamic_use_inference: 1]
@@ -356,12 +369,12 @@ defmodule Ch.DynamicTest do
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#converting-a-dynamic-column-to-an-ordinary-column
-  test "converting a dynamic column to an ordinary column", %{conn: conn} do
-    Ch.query!(conn, "CREATE TABLE test (d Dynamic) ENGINE = Memory;")
+  test "converting a dynamic column to an ordinary column", ctx do
+    parameterize_query!(ctx, "CREATE TABLE test (d Dynamic) ENGINE = Memory;")
     on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
-    Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), ('42.42'), (true), ('e10');")
+    parameterize_query!(ctx, "INSERT INTO test VALUES (NULL), (42), ('42.42'), (true), ('e10');")
 
-    assert Ch.query!(conn, "SELECT d::Nullable(Float64) FROM test;").rows == [
+    assert parameterize_query!(ctx, "SELECT d::Nullable(Float64) FROM test;").rows == [
              [nil],
              [42.0],
              [42.42],
@@ -371,16 +384,16 @@ defmodule Ch.DynamicTest do
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#converting-a-variant-column-to-dynamic-column
-  test "converting a variant column to dynamic column", %{conn: conn} do
-    Ch.query!(
-      conn,
+  test "converting a variant column to dynamic column", ctx do
+    parameterize_query!(
+      ctx,
       "CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;"
     )
 
     on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
-    Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), ('String'), ([1, 2, 3]);")
+    parameterize_query!(ctx, "INSERT INTO test VALUES (NULL), (42), ('String'), ([1, 2, 3]);")
 
-    assert Ch.query!(conn, "SELECT v::Dynamic AS d, dynamicType(d) FROM test;").rows == [
+    assert parameterize_query!(ctx, "SELECT v::Dynamic AS d, dynamicType(d) FROM test;").rows == [
              [nil, "None"],
              [42, "UInt64"],
              ["String", "String"],
@@ -389,12 +402,19 @@ defmodule Ch.DynamicTest do
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#converting-a-dynamicmax_typesn-column-to-another-dynamicmax_typesk
-  test "converting a Dynamic(max_types=N) column to another Dynamic(max_types=K)", %{conn: conn} do
-    Ch.query!(conn, "CREATE TABLE test (d Dynamic(max_types=4)) ENGINE = Memory;")
+  test "converting a Dynamic(max_types=N) column to another Dynamic(max_types=K)", ctx do
+    parameterize_query!(ctx, "CREATE TABLE test (d Dynamic(max_types=4)) ENGINE = Memory;")
     on_exit(fn -> Ch.Test.query("DROP TABLE test") end)
-    Ch.query!(conn, "INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true), ([1, 2, 3]);")
 
-    assert Ch.query!(conn, "SELECT d::Dynamic(max_types=5) as d2, dynamicType(d2) FROM test;").rows ==
+    parameterize_query!(
+      ctx,
+      "INSERT INTO test VALUES (NULL), (42), (43), ('42.42'), (true), ([1, 2, 3]);"
+    )
+
+    assert parameterize_query!(
+             ctx,
+             "SELECT d::Dynamic(max_types=5) as d2, dynamicType(d2) FROM test;"
+           ).rows ==
              [
                [nil, "None"],
                [42, "Int64"],
@@ -404,8 +424,8 @@ defmodule Ch.DynamicTest do
                [[1, 2, 3], "Array(Int64)"]
              ]
 
-    assert Ch.query!(
-             conn,
+    assert parameterize_query!(
+             ctx,
              "SELECT d, dynamicType(d), d::Dynamic(max_types=2) as d2, dynamicType(d2), isDynamicElementInSharedData(d2) FROM test;"
            ).rows == [
              [nil, "None", nil, "None", false],
