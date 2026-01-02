@@ -16,7 +16,7 @@ defmodule Ch.ConnectionTest do
 
   defp query(%{conn: conn} = ctx, sql, params \\ [], custom_options \\ []) do
     options = parameterize_query_options(ctx, custom_options)
-    Ch.query(conn, sql, params, optsions)
+    Ch.query(conn, sql, params, options)
   end
 
   defp query!(%{conn: conn} = ctx, sql, params \\ [], custom_options \\ []) do
