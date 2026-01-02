@@ -10,6 +10,7 @@ on:
 
 jobs:
   test:
+    name: "test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} / ClickHouse ${{ matrix.clickhouse || 'latest' }} / TZ ${{ matrix.timezone || 'UTC' }}${{ matrix.dialyzer && ' / Dialyzer' || '' }}${{ matrix.lint && ' / Lint' || '' }})"
     runs-on: ubuntu-latest
 
     env:
@@ -17,34 +18,29 @@ jobs:
 
     strategy:
       matrix:
-        elixir: [1.14, 1.15, 1.16]
-        otp: [25, 26]
-        clickhouse: [latest]
-        timezone: [UTC]
         include:
-          - elixir: 1.17
-            otp: 27
-            clickhouse: latest
-            timezone: UTC
+          # some old elixir/erlang version
+          - elixir: 1.14
+            otp: 25
+
+          # some recent version and non-UTC timezone
           - elixir: 1.18
             otp: 27
-            clickhouse: latest
-            timezone: UTC
-          - elixir: 1.18
-            otp: 28
-            clickhouse: latest
-            timezone: UTC
-          - elixir: 1.18
-            otp: 28
-            clickhouse: latest
             timezone: Europe/Berlin
-          # Plausible
+
+          # the latest elixir/erlang version with all static checks
+          - elixir: 1.19
+            otp: 28
+            dialyzer: true
+            lint: true
+
+          # Plausible versions
           # - https://github.com/plausible/analytics/blob/master/.tool-versions
           # - https://github.com/plausible/analytics/blob/master/.github/workflows/elixir.yml
-          - elixir: 1.18.3
-            otp: 27.3.1
-            clickhouse: 24.12.2.29
-            timezone: UTC
+          - elixir: 1.19.4
+            otp: 27.3.4.6
+            clickhouse: 25.11.5.8
+
           # some older pre-JSON ClickHouse version
           # https://github.com/plausible/ch/issues/273
           - elixir: 1.18
@@ -53,11 +49,11 @@ jobs:
 
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:${{ matrix.clickhouse }}
+        image: clickhouse/clickhouse-server:${{ matrix.clickhouse || 'latest' }}
         ports:
           - 8123:8123
         env:
-          TZ: ${{ matrix.timezone }}
+          TZ: ${{ matrix.timezone || 'UTC' }}
           # https://github.com/ClickHouse/ClickHouse/issues/75494
           CLICKHOUSE_SKIP_USER_SETUP: 1
           options: >-
@@ -67,7 +63,7 @@ jobs:
             --health-retries 5
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - id: beam
         uses: erlef/setup-beam@v1
@@ -75,7 +71,8 @@ jobs:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
 
-      - uses: actions/cache@v4
+      - name: Restore deps cache
+        uses: actions/cache@v5
         with:
           path: |
             deps
@@ -86,16 +83,29 @@ jobs:
             test-${{ steps.beam.outputs.elixir-version }}-refs/heads/master-
 
       - run: mix deps.get --only $MIX_ENV
+        if: ${{ !matrix.lint }}
+
+      - run: mix deps.get --check-locked
+        if: ${{ matrix.lint }}
+
+      - run: mix deps.unlock --check-unused
+        if: ${{ matrix.lint }}
+
       - run: mix compile --warnings-as-errors
+
+      - run: mix format --check-formatted
+        if: ${{ matrix.lint }}
+
       - run: mix test --include slow
 
-  format:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: erlef/setup-beam@v1
+      - name: Restore PLTs cache
+        if: ${{ matrix.dialyzer }}
+        uses: actions/cache@v5
         with:
-          elixir-version: 1
-          otp-version: 28
-      - run: elixir -v
-      - run: mix format --check-formatted
+          path: plts
+          key: plts-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ github.head_ref || github.ref }}
+          restore-keys: |
+            plts-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-refs/heads/master
+
+      - run: mix dialyzer --format github
+        if: ${{ matrix.dialyzer }}

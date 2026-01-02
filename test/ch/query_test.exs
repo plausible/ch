@@ -117,15 +117,15 @@ defmodule Ch.QueryTest do
       # so we raise an error when ClickHouse's Time value is out of Elixir's Time range
 
       assert_raise ArgumentError,
-                   "ClickHouse Time value -1 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
+                   "ClickHouse Time value -1.0 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
                    fn -> Ch.query!(conn, "SELECT '-00:00:01'::time", [], settings: settings) end
 
       assert_raise ArgumentError,
-                   "ClickHouse Time value 3599999 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
+                   "ClickHouse Time value 3599999.0 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
                    fn -> Ch.query!(conn, "SELECT '999:59:59'::time", [], settings: settings) end
 
       assert_raise ArgumentError,
-                   "ClickHouse Time value -3599999 (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)",
+                   "ClickHouse Time value -3599999.0 (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)",
                    fn -> Ch.query!(conn, "SELECT '-999:59:59'::time", [], settings: settings) end
 
       # ** (Ch.Error) Code: 457. DB::Exception: Value 12:34:56.123456 cannot be parsed as Time for query parameter 'time'

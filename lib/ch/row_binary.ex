@@ -553,6 +553,59 @@ defmodule Ch.RowBinary do
      end}
   ]
 
+  @doc false
+  @spec decode_header(binary()) ::
+          {:ok, names :: [String.t()], types :: [term], rest :: binary} | :more
+  def decode_header(row_binary_with_names_and_types)
+
+  for {pattern, value} <- varints do
+    def decode_header(<<unquote(pattern), rest::bytes>>) do
+      decode_header_names(rest, unquote(value), unquote(value), _acc = [])
+    end
+  end
+
+  def decode_header(<<_bin::bytes>>) do
+    :more
+  end
+
+  defp decode_header_names(<<rest::bytes>>, 0, count, names) do
+    decode_header_types(rest, count, _acc = [], :lists.reverse(names))
+  end
+
+  for {pattern, value} <- varints do
+    defp decode_header_names(
+           <<unquote(pattern), name::size(unquote(value))-bytes, rest::bytes>>,
+           left,
+           count,
+           acc
+         ) do
+      decode_header_names(rest, left - 1, count, [name | acc])
+    end
+  end
+
+  defp decode_header_names(<<_bin::bytes>>, _left, _count, _acc) do
+    :more
+  end
+
+  defp decode_header_types(<<rest::bytes>>, 0, types, names) do
+    {:ok, names, decoding_types_reverse(types), rest}
+  end
+
+  for {pattern, value} <- varints do
+    defp decode_header_types(
+           <<unquote(pattern), type::size(unquote(value))-bytes, rest::bytes>>,
+           count,
+           acc,
+           names
+         ) do
+      decode_header_types(rest, count - 1, [type | acc], names)
+    end
+  end
+
+  defp decode_header_types(<<_bin::bytes>>, _count, _acc, _names) do
+    :more
+  end
+
   @doc """
   Decodes [RowBinaryWithNamesAndTypes](https://clickhouse.com/docs/en/interfaces/formats/RowBinaryWithNamesAndTypes) into rows.
 
@@ -601,16 +654,50 @@ defmodule Ch.RowBinary do
   def decode_rows(<<>>, _types), do: []
 
   def decode_rows(<<data::bytes>>, types) do
-    types = decoding_types(types)
-    decode_rows(types, data, [], [], types)
+    decode_rows!(data, decoding_types(types))
+  end
+
+  defp decode_rows!(data, types) do
+    {rows, remaining_data, state} = decode_rows(types, data, [], [], types)
+
+    case state do
+      nil ->
+        rows
+
+      {:cont, types_rest, row} ->
+        raise ArgumentError, """
+        incomplete RowBinary data: ran out of bytes while decoding
+
+        Expected to decode: #{inspect(types_rest)}
+        Remaining bytes: #{byte_size(remaining_data)} bytes
+        Partial row: #{inspect(row)}
+        Completed rows: #{length(rows)}
+        """
+    end
+  end
+
+  @doc false
+  def decode_rows_continue(<<data::bytes>>, types, state) do
+    case state do
+      {:cont, types_rest, row} -> decode_rows(types_rest, data, row, [], types)
+      nil -> decode_rows(types, data, [], [], types)
+    end
   end
 
   @doc false
   def decoding_types([type | types]) do
-    [decoding_type(type) | types]
+    [decoding_type(type) | decoding_types(types)]
   end
 
   def decoding_types([] = done), do: done
+
+  defp decoding_types_reverse(types), do: decoding_types_reverse(types, [])
+
+  defp decoding_types_reverse([type | types], acc) do
+    decoding_types_reverse(types, [decoding_type(type) | acc])
+  end
+
+  defp decoding_types_reverse([], acc), do: acc
 
   defp decoding_type(t) when is_binary(t) do
     decoding_type(Ch.Types.decode(t))
@@ -717,8 +804,7 @@ defmodule Ch.RowBinary do
   defp decode_types(<<>>, 0, _types), do: []
 
   defp decode_types(<<rest::bytes>>, 0, types) do
-    types = types |> decode_types() |> :lists.reverse()
-    decode_rows(types, rest, _row = [], _rows = [], types)
+    decode_rows!(rest, decoding_types_reverse(types))
   end
 
   for {pattern, value} <- varints do
@@ -730,13 +816,6 @@ defmodule Ch.RowBinary do
       decode_types(rest, count - 1, [type | acc])
     end
   end
-
-  @doc false
-  def decode_types([type | types]) do
-    [decoding_type(Ch.Types.decode(type)) | decode_types(types)]
-  end
-
-  def decode_types([] = done), do: done
 
   @compile inline: [decode_string_decode_rows: 5]
 
@@ -750,6 +829,10 @@ defmodule Ch.RowBinary do
          ) do
       decode_rows(types_rest, bin, [to_utf8(s) | row], rows, types)
     end
+  end
+
+  defp decode_string_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
+    to_be_continued(rows, bin, [:string | types_rest], row)
   end
 
   @doc false
@@ -807,6 +890,10 @@ defmodule Ch.RowBinary do
     end
   end
 
+  defp decode_string_json_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
+    to_be_continued(rows, bin, [:json | types_rest], row)
+  end
+
   @compile inline: [decode_binary_decode_rows: 5]
 
   for {pattern, size} <- varints do
@@ -819,6 +906,10 @@ defmodule Ch.RowBinary do
          ) do
       decode_rows(types_rest, bin, [s | row], rows, types)
     end
+  end
+
+  defp decode_binary_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
+    to_be_continued(rows, bin, [:binary | types_rest], row)
   end
 
   @compile inline: [decode_array_decode_rows: 6]
@@ -839,6 +930,10 @@ defmodule Ch.RowBinary do
       types_rest = array_types ++ [{:array_over, row} | types_rest]
       decode_rows(types_rest, bin, [], rows, types)
     end
+  end
+
+  defp decode_array_decode_rows(<<bin::bytes>>, type, types_rest, row, rows, _types) do
+    to_be_continued(rows, bin, [{:array, type} | types_rest], row)
   end
 
   @compile inline: [decode_map_decode_rows: 7]
@@ -869,6 +964,10 @@ defmodule Ch.RowBinary do
 
       decode_rows(types_rest, bin, [], rows, types)
     end
+  end
+
+  defp decode_map_decode_rows(<<bin::bytes>>, key_type, value_type, types_rest, row, rows, _types) do
+    to_be_continued(rows, bin, [{:map, key_type, value_type} | types_rest], row)
   end
 
   defp map_types(count, key_type, value_type) when count > 0 do
@@ -920,14 +1019,7 @@ defmodule Ch.RowBinary do
 
   # DateTime 0x11
   defp decode_dynamic(<<0x11, rest::bytes>>, dynamic, types_rest, row, rows, types) do
-    decode_dynamic_continue(
-      rest,
-      [{:datetime, nil} | dynamic],
-      types_rest,
-      row,
-      rows,
-      types
-    )
+    decode_dynamic_continue(rest, [{:datetime, nil} | dynamic], types_rest, row, rows, types)
   end
 
   # DateTime(time_zone) 0x12 <var_uint_time_zone_name_size><time_zone_name_data>
@@ -940,14 +1032,7 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      decode_dynamic_continue(
-        rest,
-        [{:datetime, tz} | dynamic],
-        types_rest,
-        row,
-        rows,
-        types
-      )
+      decode_dynamic_continue(rest, [{:datetime, tz} | dynamic], types_rest, row, rows, types)
     end
   end
 
@@ -1016,12 +1101,7 @@ defmodule Ch.RowBinary do
   # Decimal64(P, S) 0x1A <uint8_precision><uint8_scale>
   # Decimal128(P, S) 0x1B <uint8_precision><uint8_scale>
   # Decimal256(P, S) 0x1C <uint8_precision><uint8_scale>
-  for {code, size} <- [
-        {0x19, 32},
-        {0x1A, 64},
-        {0x1B, 128},
-        {0x1C, 256}
-      ] do
+  for {code, size} <- [{0x19, 32}, {0x1A, 64}, {0x1B, 128}, {0x1C, 256}] do
     defp decode_dynamic(
            <<unquote(code), _precision, scale, rest::bytes>>,
            dynamic,
@@ -1097,6 +1177,10 @@ defmodule Ch.RowBinary do
     end
   end
 
+  defp decode_dynamic(<<bin::bytes>>, dynamic, types_rest, row, rows, _types) do
+    to_be_continued(rows, bin, [{:dynamic, dynamic} | types_rest], row)
+  end
+
   @compile inline: [decode_dynamic_continue: 6]
 
   defp decode_dynamic_continue(<<rest::bytes>>, dynamic, types_rest, row, rows, types) do
@@ -1126,73 +1210,120 @@ defmodule Ch.RowBinary do
     end
   end
 
+  simple_types = %{
+    u8: %{pattern: quote(do: <<u>>), value: quote(do: u)},
+    u16: %{pattern: quote(do: <<u::16-little>>), value: quote(do: u)},
+    u32: %{pattern: quote(do: <<u::32-little>>), value: quote(do: u)},
+    u64: %{pattern: quote(do: <<u::64-little>>), value: quote(do: u)},
+    u128: %{pattern: quote(do: <<u::128-little>>), value: quote(do: u)},
+    u256: %{pattern: quote(do: <<u::256-little>>), value: quote(do: u)},
+    i8: %{pattern: quote(do: <<i::signed>>), value: quote(do: i)},
+    i16: %{pattern: quote(do: <<i::16-little-signed>>), value: quote(do: i)},
+    i32: %{pattern: quote(do: <<i::32-little-signed>>), value: quote(do: i)},
+    i64: %{pattern: quote(do: <<i::64-little-signed>>), value: quote(do: i)},
+    i128: %{pattern: quote(do: <<i::128-little-signed>>), value: quote(do: i)},
+    i256: %{pattern: quote(do: <<i::256-little-signed>>), value: quote(do: i)},
+    f32: [
+      %{pattern: quote(do: <<f::32-little-float>>), value: quote(do: f)},
+      %{pattern: quote(do: <<_nan_or_inf::32>>), value: quote(do: nil)}
+    ],
+    f64: [
+      %{pattern: quote(do: <<f::64-little-float>>), value: quote(do: f)},
+      %{pattern: quote(do: <<_nan_or_inf::64>>), value: quote(do: nil)}
+    ],
+    uuid: %{
+      pattern: quote(do: <<u1::64-little, u2::64-little>>),
+      value: quote(do: <<u1::64, u2::64>>)
+    },
+    date: %{
+      pattern: quote(do: <<d::16-little>>),
+      value: quote(do: Date.add(@epoch_date, d))
+    },
+    date32: %{
+      pattern: quote(do: <<d::32-little-signed>>),
+      value: quote(do: Date.add(@epoch_date, d))
+    },
+    time: %{
+      pattern: quote(do: <<s::32-little-signed>>),
+      value: quote(do: time_after_midnight(s, 1))
+    },
+    boolean: [
+      %{pattern: quote(do: <<0>>), value: quote(do: false)},
+      %{pattern: quote(do: <<1>>), value: quote(do: true)},
+      %{pattern: quote(do: <<b>>), value: quote(do: raise("invalid boolean value: #{b}"))}
+    ],
+    ipv4: %{
+      pattern: quote(do: <<b4, b3, b2, b1>>),
+      value: quote(do: {b1, b2, b3, b4})
+    },
+    ipv6: %{
+      pattern: quote(do: <<b1::16, b2::16, b3::16, b4::16, b5::16, b6::16, b7::16, b8::16>>),
+      value: quote(do: {b1, b2, b3, b4, b5, b6, b7, b8})
+    },
+    point: %{
+      pattern: quote(do: <<x::64-little-float, y::64-little-float>>),
+      value: quote(do: {x, y})
+    }
+  }
+
+  for {type, clauses} <- simple_types do
+    fun = :"decode_#{type}_decode_rows"
+    @compile inline: [{fun, 5}]
+
+    for %{pattern: pattern, value: value} <- List.wrap(clauses) do
+      defp unquote(fun)(<<unquote(pattern), rest::bytes>>, types_rest, row, rows, types) do
+        decode_rows(types_rest, rest, [unquote(value) | row], rows, types)
+      end
+    end
+
+    defp unquote(fun)(<<bin::bytes>>, types_rest, row, rows, _types) do
+      to_be_continued(rows, bin, [unquote(type) | types_rest], row)
+    end
+  end
+
   defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
     case type do
       :u8 ->
-        <<u, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [u | row], rows, types)
+        decode_u8_decode_rows(bin, types_rest, row, rows, types)
 
       :u16 ->
-        <<u::16-little, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [u | row], rows, types)
+        decode_u16_decode_rows(bin, types_rest, row, rows, types)
 
       :u32 ->
-        <<u::32-little, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [u | row], rows, types)
+        decode_u32_decode_rows(bin, types_rest, row, rows, types)
 
       :u64 ->
-        <<u::64-little, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [u | row], rows, types)
+        decode_u64_decode_rows(bin, types_rest, row, rows, types)
 
       :u128 ->
-        <<u::128-little, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [u | row], rows, types)
+        decode_u128_decode_rows(bin, types_rest, row, rows, types)
 
       :u256 ->
-        <<u::256-little, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [u | row], rows, types)
+        decode_u256_decode_rows(bin, types_rest, row, rows, types)
 
       :i8 ->
-        <<i::signed, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [i | row], rows, types)
+        decode_i8_decode_rows(bin, types_rest, row, rows, types)
 
       :i16 ->
-        <<i::16-little-signed, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [i | row], rows, types)
+        decode_i16_decode_rows(bin, types_rest, row, rows, types)
 
       :i32 ->
-        <<i::32-little-signed, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [i | row], rows, types)
+        decode_i32_decode_rows(bin, types_rest, row, rows, types)
 
       :i64 ->
-        <<i::64-little-signed, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [i | row], rows, types)
+        decode_i64_decode_rows(bin, types_rest, row, rows, types)
 
       :i128 ->
-        <<i::128-little-signed, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [i | row], rows, types)
+        decode_i128_decode_rows(bin, types_rest, row, rows, types)
 
       :i256 ->
-        <<i::256-little-signed, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [i | row], rows, types)
+        decode_i256_decode_rows(bin, types_rest, row, rows, types)
 
       :f32 ->
-        case bin do
-          <<f::32-little-float, bin::bytes>> ->
-            decode_rows(types_rest, bin, [f | row], rows, types)
-
-          <<_nan_or_inf::32, bin::bytes>> ->
-            decode_rows(types_rest, bin, [nil | row], rows, types)
-        end
+        decode_f32_decode_rows(bin, types_rest, row, rows, types)
 
       :f64 ->
-        case bin do
-          <<f::64-little-float, bin::bytes>> ->
-            decode_rows(types_rest, bin, [f | row], rows, types)
-
-          <<_nan_or_inf::64, bin::bytes>> ->
-            decode_rows(types_rest, bin, [nil | row], rows, types)
-        end
+        decode_f64_decode_rows(bin, types_rest, row, rows, types)
 
       :string ->
         decode_string_decode_rows(bin, types_rest, row, rows, types)
@@ -1209,95 +1340,88 @@ defmodule Ch.RowBinary do
       :dynamic ->
         decode_dynamic(bin, _dynamic = [], types_rest, row, rows, types)
 
+      {:dynamic, dynamic} ->
+        decode_dynamic(bin, dynamic, types_rest, row, rows, types)
+
       # TODO utf8?
       {:fixed_string, size} ->
-        <<s::size(size)-bytes, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [s | row], rows, types)
-
-      :boolean ->
         case bin do
-          <<0, bin::bytes>> -> decode_rows(types_rest, bin, [false | row], rows, types)
-          <<1, bin::bytes>> -> decode_rows(types_rest, bin, [true | row], rows, types)
+          <<s::size(size)-bytes, rest::bytes>> ->
+            decode_rows(types_rest, rest, [s | row], rows, types)
+
+          _ ->
+            to_be_continued(rows, bin, [type | types_rest], row)
         end
 
+      :boolean ->
+        decode_boolean_decode_rows(bin, types_rest, row, rows, types)
+
       :uuid ->
-        <<u1::64-little, u2::64-little, bin::bytes>> = bin
-        uuid = <<u1::64, u2::64>>
-        decode_rows(types_rest, bin, [uuid | row], rows, types)
+        decode_uuid_decode_rows(bin, types_rest, row, rows, types)
 
       :date ->
-        <<d::16-little, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
+        decode_date_decode_rows(bin, types_rest, row, rows, types)
 
       :date32 ->
-        <<d::32-little-signed, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [Date.add(@epoch_date, d) | row], rows, types)
+        decode_date32_decode_rows(bin, types_rest, row, rows, types)
 
       :time ->
-        <<s::32-little-signed, bin::bytes>> = bin
-
-        t =
-          if s >= 0 and s < 86400 do
-            Time.from_seconds_after_midnight(s)
-          else
-            # since ClickHouse supports Time values of [-999:59:59, 999:59:59]
-            # and Elixir's Time supports values of [00:00:00, 23:59:59]
-            # we raise an error when ClickHouse's Time value is out of Elixir's Time range
-            raise ArgumentError,
-                  "ClickHouse Time value #{s} (seconds) is out of Elixir's Time range (00:00:00 - 23:59:59)"
-
-            # TODO: we could potentially decode ClickHouse's Time values as Elixir's Duration when it's out of Elixir's Time range
-          end
-
-        decode_rows(types_rest, bin, [t | row], rows, types)
+        decode_time_decode_rows(bin, types_rest, row, rows, types)
 
       {:time64, time_unit} ->
-        <<ticks::64-little-signed, bin::bytes>> = bin
+        case bin do
+          <<ticks::64-little-signed, bin::bytes>> ->
+            time = time_after_midnight(ticks, time_unit)
+            decode_rows(types_rest, bin, [time | row], rows, types)
 
-        t =
-          if ticks >= 0 and ticks < 86400 * time_unit do
-            ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
-          else
-            # since ClickHouse supports Time64 values of [-999:59:59.999999999, 999:59:59.999999999]
-            # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
-            # we raise an error when ClickHouse's Time64 value is out of Elixir's Time range
-            raise ArgumentError,
-                  "ClickHouse Time value #{ticks / time_unit} (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)"
-
-            # TODO: we could potentially decode ClickHouse's Time64 values as Elixir's Duration when it's out of Elixir's Time range
-          end
-
-        decode_rows(types_rest, bin, [t | row], rows, types)
+          _ ->
+            to_be_continued(rows, bin, [type | types_rest], row)
+        end
 
       {:datetime, timezone} ->
-        <<s::32-little, bin::bytes>> = bin
+        case bin do
+          <<s::32-little, bin::bytes>> ->
+            dt =
+              case timezone do
+                nil -> NaiveDateTime.add(@epoch_naive_datetime, s)
+                "UTC" -> DateTime.from_unix!(s)
+                _ -> s |> DateTime.from_unix!() |> DateTime.shift_zone!(timezone)
+              end
 
-        dt =
-          case timezone do
-            nil -> NaiveDateTime.add(@epoch_naive_datetime, s)
-            "UTC" -> DateTime.from_unix!(s)
-            _ -> s |> DateTime.from_unix!() |> DateTime.shift_zone!(timezone)
-          end
+            decode_rows(types_rest, bin, [dt | row], rows, types)
 
-        decode_rows(types_rest, bin, [dt | row], rows, types)
+          _ ->
+            to_be_continued(rows, bin, [type | types_rest], row)
+        end
 
       {:decimal, size, scale} ->
-        <<val::size(size)-little-signed, bin::bytes>> = bin
-        sign = if val < 0, do: -1, else: 1
-        d = Decimal.new(sign, abs(val), -scale)
-        decode_rows(types_rest, bin, [d | row], rows, types)
-
-      {:nullable, type} ->
         case bin do
-          <<1, bin::bytes>> -> decode_rows(types_rest, bin, [nil | row], rows, types)
-          <<0, bin::bytes>> -> decode_rows([type | types_rest], bin, row, rows, types)
+          <<val::size(size)-little-signed, bin::bytes>> ->
+            sign = if val < 0, do: -1, else: 1
+            d = Decimal.new(sign, abs(val), -scale)
+            decode_rows(types_rest, bin, [d | row], rows, types)
+
+          _ ->
+            to_be_continued(rows, bin, [type | types_rest], row)
+        end
+
+      {:nullable, inner_type} ->
+        case bin do
+          <<b, bin::bytes>> ->
+            case b do
+              0 -> decode_rows([inner_type | types_rest], bin, row, rows, types)
+              1 -> decode_rows(types_rest, bin, [nil | row], rows, types)
+            end
+
+          _ ->
+            to_be_continued(rows, bin, [type | types_rest], row)
         end
 
       :nothing ->
         decode_rows(types_rest, bin, [nil | row], rows, types)
 
-      {:array, type} ->
-        decode_array_decode_rows(bin, type, types_rest, row, rows, types)
+      {:array, inner_type} ->
+        decode_array_decode_rows(bin, inner_type, types_rest, row, rows, types)
 
       {:array_over, original_row} ->
         decode_rows(types_rest, bin, [:lists.reverse(row) | original_row], rows, types)
@@ -1326,56 +1450,80 @@ defmodule Ch.RowBinary do
           <<variant_type_index::8, bin::bytes>> ->
             variant_type = Enum.at(variant_types, variant_type_index)
             decode_rows([variant_type | types_rest], bin, row, rows, types)
+
+          _ ->
+            to_be_continued(rows, bin, [type | types_rest], row)
         end
 
       {:datetime64, time_unit, timezone} ->
-        <<s::64-little-signed, bin::bytes>> = bin
+        case bin do
+          <<s::64-little-signed, bin::bytes>> ->
+            dt =
+              case timezone do
+                nil ->
+                  NaiveDateTime.add(@epoch_naive_datetime, s, time_unit)
 
-        dt =
-          case timezone do
-            nil ->
-              NaiveDateTime.add(@epoch_naive_datetime, s, time_unit)
+                "UTC" ->
+                  DateTime.from_unix!(s, time_unit)
 
-            "UTC" ->
-              DateTime.from_unix!(s, time_unit)
+                _ ->
+                  s
+                  |> DateTime.from_unix!(time_unit)
+                  |> DateTime.shift_zone!(timezone)
+              end
 
-            _ ->
-              s
-              |> DateTime.from_unix!(time_unit)
-              |> DateTime.shift_zone!(timezone)
-          end
+            decode_rows(types_rest, bin, [dt | row], rows, types)
 
-        decode_rows(types_rest, bin, [dt | row], rows, types)
+          _ ->
+            to_be_continued(rows, bin, [type | types_rest], row)
+        end
 
       {:enum8, mapping} ->
-        <<v::signed, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
+        case bin do
+          <<v::signed, bin::bytes>> ->
+            decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
+
+          _ ->
+            to_be_continued(rows, bin, [type | types_rest], row)
+        end
 
       {:enum16, mapping} ->
-        <<v::16-little-signed, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
+        case bin do
+          <<v::16-little-signed, bin::bytes>> ->
+            decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
+
+          _ ->
+            to_be_continued(rows, bin, [type | types_rest], row)
+        end
 
       :ipv4 ->
-        <<b4, b3, b2, b1, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [{b1, b2, b3, b4} | row], rows, types)
+        decode_ipv4_decode_rows(bin, types_rest, row, rows, types)
 
       :ipv6 ->
-        <<b1::16, b2::16, b3::16, b4::16, b5::16, b6::16, b7::16, b8::16, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [{b1, b2, b3, b4, b5, b6, b7, b8} | row], rows, types)
+        decode_ipv6_decode_rows(bin, types_rest, row, rows, types)
 
       :point ->
-        <<x::64-little-float, y::64-little-float, bin::bytes>> = bin
-        decode_rows(types_rest, bin, [{x, y} | row], rows, types)
+        decode_point_decode_rows(bin, types_rest, row, rows, types)
     end
   end
 
-  defp decode_rows([], <<>>, row, rows, _types) do
-    :lists.reverse([:lists.reverse(row) | rows])
+  defp decode_rows([], <<>> = empty, row, rows, _types) do
+    rows = :lists.reverse([:lists.reverse(row) | rows])
+    {rows, empty, _no_state = nil}
   end
 
   defp decode_rows([], <<bin::bytes>>, row, rows, types) do
     row = :lists.reverse(row)
     decode_rows(types, bin, [], [row | rows], types)
+  end
+
+  defp decode_rows([_ | _] = types_rest, <<>> = empty, row, rows, _types) do
+    to_be_continued(rows, empty, types_rest, row)
+  end
+
+  @compile inline: [to_be_continued: 4]
+  defp to_be_continued(rows, bin, types_rest, row) do
+    {:lists.reverse(rows), bin, {:cont, types_rest, row}}
   end
 
   @compile inline: [decimal_size: 1]
@@ -1393,5 +1541,20 @@ defmodule Ch.RowBinary do
   for precision <- 0..9 do
     time_unit = round(:math.pow(10, precision))
     defp time_unit(unquote(precision)), do: unquote(time_unit)
+  end
+
+  @compile inline: [time_after_midnight: 2]
+  defp time_after_midnight(ticks, time_unit) do
+    if ticks >= 0 and ticks < 86400 * time_unit do
+      ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
+    else
+      # since ClickHouse supports Time64 values of [-999:59:59.999999999, 999:59:59.999999999]
+      # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
+      # we raise an error when ClickHouse's Time64 value is out of Elixir's Time range
+      raise ArgumentError,
+            "ClickHouse Time value #{:erlang.float_to_binary(ticks / time_unit, [:short])} (seconds) is out of Elixir's Time range (00:00:00.000000 - 23:59:59.999999)"
+
+      # TODO: we could potentially decode ClickHouse's Time/Time64 values as Elixir's Duration when it's out of Elixir's Time range
+    end
   end
 end
