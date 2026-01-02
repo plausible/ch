@@ -67,6 +67,24 @@ Note on datetime encoding in query parameters:
 - `%NaiveDateTime{}` is encoded as text to make it assume the column's or ClickHouse server's timezone
 - `%DateTime{}` is encoded as unix timestamp and is treated as UTC timestamp by ClickHouse
 
+#### Select rows (lots of params, reverse proxy)
+
+For queries with many parameters the resulting URL can become too long for some reverse proxies, resulting in a `414 Request-URI Too Large` error.
+
+To avoid this, you can use the `multipart: true` option to send the query and parameters in the request body.
+
+```elixir
+{:ok, pid} = Ch.start_link()
+
+# Moves parameters from the URL to a multipart/form-data body
+%Ch.Result{rows: [[[1, 2, 3 | _rest]]]} =
+  Ch.query!(pid, "SELECT {ids:Array(UInt64)}", %{"ids" => Enum.to_list(1..10_000)}, multipart: true)
+```
+
+> [!NOTE]
+>
+> `multipart: true` is currently required on each individual query. Support for pool-wide configuration is planned for a future release.
+
 #### Insert rows
 
 ```elixir
@@ -160,11 +178,6 @@ settings = [async_insert: 1]
 %Ch.Result{rows: [["async_insert", "Bool", "1"]]} =
   Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: settings)
 ```
-
-#### Multipart requests
-
-SELECT queries will be automatically sent as multipart requests.
-INSERT queries and streams are treated normally.
 
 ## Caveats
 
