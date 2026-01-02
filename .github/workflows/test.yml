@@ -97,6 +97,9 @@ jobs:
         if: ${{ matrix.lint }}
 
       - run: mix test --include slow
+      - run: mix test --include slow --include multipart
+        env:
+          CH_MULTIPART: true
 
       - name: Restore PLTs cache
         if: ${{ matrix.dialyzer }}
