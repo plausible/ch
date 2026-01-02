@@ -6,22 +6,22 @@ defmodule Ch.ConnectionTest do
     {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
-  defp query(
-         %{conn: conn, query_options: default_options},
-         sql,
-         params \\ [],
-         custom_options \\ []
-       ) do
-    Ch.query(conn, sql, params, Keyword.merge(default_options, custom_options))
+  defp parameterize_query_options(ctx, custom_options) do
+    if extra_options = ctx[:query_options] do
+      Keyword.merge(extra_options, custom_options)
+    else
+      custom_options
+    end
   end
 
-  defp query!(
-         %{conn: conn, query_options: default_options},
-         sql,
-         params \\ [],
-         custom_options \\ []
-       ) do
-    Ch.query!(conn, sql, params, Keyword.merge(default_options, custom_options))
+  defp query(%{conn: conn} = ctx, sql, params \\ [], custom_options \\ []) do
+    options = parameterize_query_options(ctx, custom_options)
+    Ch.query(conn, sql, params, optsions)
+  end
+
+  defp query!(%{conn: conn} = ctx, sql, params \\ [], custom_options \\ []) do
+    options = parameterize_query_options(ctx, custom_options)
+    Ch.query!(conn, sql, params, options)
   end
 
   test "select without params", ctx do
