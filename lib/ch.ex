@@ -31,7 +31,6 @@ defmodule Ch do
     * `:password` - User password
     * `:settings` - Keyword list of ClickHouse settings
     * `:timeout` - HTTP receive timeout in milliseconds
-    * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
     * [`DBConnection.start_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:start_option/0)
 
   """
