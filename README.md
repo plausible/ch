@@ -69,6 +69,10 @@ Note on datetime encoding in query parameters:
 
 #### Select rows (lots of params, reverse proxy)
 
+> [!NOTE]
+>
+> Support for multipart requests was added in `v0.6.2`
+
 For queries with many parameters the resulting URL can become too long for some reverse proxies, resulting in a `414 Request-URI Too Large` error.
 
 To avoid this, you can use the `multipart: true` option to send the query and parameters in the request body.
