@@ -105,6 +105,7 @@ end
 defimpl DBConnection.Query, for: Ch.Query do
   @dialyzer :no_improper_lists
   alias Ch.{Query, Result, RowBinary}
+  alias Ch.Encode.{Multipart, Parameters}
 
   @spec parse(Query.t(), [Ch.query_option()]) :: Query.t()
   def parse(query, _opts), do: query
@@ -156,7 +157,7 @@ defimpl DBConnection.Query, for: Ch.Query do
         {_query_params = [], headers(opts), [statement, ?\n | data]}
 
       true ->
-        {query_params(params), headers(opts), statement}
+        {Parameters.encode_many(params), headers(opts), statement}
     end
   end
 
@@ -177,10 +178,7 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   def encode(%Query{statement: statement}, params, opts) do
-    types = Keyword.get(opts, :types)
-    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
-    format = Keyword.get(opts, :format) || default_format
-    {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+    Multipart.encode(statement, params, opts)
   end
 
   defp multipart_params(params, boundary) when is_map(params) do
@@ -308,106 +306,6 @@ defimpl DBConnection.Query, for: Ch.Query do
       nil = not_found -> not_found
     end
   end
-
-  defp query_params(params) when is_map(params) do
-    Enum.map(params, fn {k, v} -> {"param_#{k}", encode_param(v)} end)
-  end
-
-  defp query_params(params) when is_list(params) do
-    params
-    |> Enum.with_index()
-    |> Enum.map(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
-  end
-
-  defp encode_param(n) when is_integer(n), do: Integer.to_string(n)
-  defp encode_param(f) when is_float(f), do: Float.to_string(f)
-
-  # TODO possibly speed up
-  # For more info see
-  # https://clickhouse.com/docs/en/interfaces/http#tabs-in-url-parameters
-  # "escaped" format is the same as https://clickhouse.com/docs/en/interfaces/formats#tabseparated-data-formatting
-  defp encode_param(b) when is_binary(b) do
-    escape_param([{"\\", "\\\\"}, {"\t", "\\\t"}, {"\n", "\\\n"}], b)
-  end
-
-  defp encode_param(b) when is_boolean(b), do: Atom.to_string(b)
-  defp encode_param(nil), do: "\\N"
-  defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
-  defp encode_param(%Date{} = date), do: Date.to_iso8601(date)
-  defp encode_param(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
-  defp encode_param(%Time{} = time), do: Time.to_iso8601(time)
-
-  defp encode_param(%DateTime{microsecond: microsecond} = dt) do
-    dt = DateTime.shift_zone!(dt, "Etc/UTC")
-
-    case microsecond do
-      {val, precision} when val > 0 and precision > 0 ->
-        size = round(:math.pow(10, precision))
-        unix = DateTime.to_unix(dt, size)
-        seconds = div(unix, size)
-        fractional = rem(unix, size)
-
-        IO.iodata_to_binary([
-          Integer.to_string(seconds),
-          ?.,
-          String.pad_leading(Integer.to_string(fractional), precision, "0")
-        ])
-
-      _ ->
-        dt |> DateTime.to_unix(:second) |> Integer.to_string()
-    end
-  end
-
-  defp encode_param(tuple) when is_tuple(tuple) do
-    IO.iodata_to_binary([?(, encode_array_params(Tuple.to_list(tuple)), ?)])
-  end
-
-  defp encode_param(a) when is_list(a) do
-    IO.iodata_to_binary([?[, encode_array_params(a), ?]])
-  end
-
-  defp encode_param(m) when is_map(m) do
-    IO.iodata_to_binary([?{, encode_map_params(Map.to_list(m)), ?}])
-  end
-
-  defp encode_array_params([last]), do: encode_array_param(last)
-
-  defp encode_array_params([s | rest]) do
-    [encode_array_param(s), ?, | encode_array_params(rest)]
-  end
-
-  defp encode_array_params([] = empty), do: empty
-
-  defp encode_map_params([last]), do: encode_map_param(last)
-
-  defp encode_map_params([kv | rest]) do
-    [encode_map_param(kv), ?, | encode_map_params(rest)]
-  end
-
-  defp encode_map_params([] = empty), do: empty
-
-  defp encode_array_param(s) when is_binary(s) do
-    [?', escape_param([{"'", "''"}, {"\\", "\\\\"}], s), ?']
-  end
-
-  defp encode_array_param(nil), do: "null"
-
-  defp encode_array_param(%s{} = param) when s in [Date, NaiveDateTime] do
-    [?', encode_param(param), ?']
-  end
-
-  defp encode_array_param(v), do: encode_param(v)
-
-  defp encode_map_param({k, v}) do
-    [encode_array_param(k), ?:, encode_array_param(v)]
-  end
-
-  defp escape_param([{pattern, replacement} | escapes], param) do
-    param = String.replace(param, pattern, replacement)
-    escape_param(escapes, param)
-  end
-
-  defp escape_param([], param), do: param
 
   @spec headers(Keyword.t()) :: Mint.Types.headers()
   defp headers(opts), do: Keyword.get(opts, :headers, [])
