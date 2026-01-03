@@ -1,5 +1,50 @@
 # Changelog
 
+## Unreleased
+
+- added support for `multipart/form-data` in queries: https://github.com/plausible/ch/pull/290 -- which allows bypassing URL length limits sometimes imposed by reverse proxies when sending queries with many parameters.
+  
+  ⚠️ This is currently **opt-in** per query ⚠️
+  
+  Global support for the entire connection pool is planned for a future release.
+
+  **Usage**
+  
+  Pass `multipart: true` in the options list for `Ch.query/4`
+
+  ```elixir
+  # Example usage
+  Ch.query(pool, "SELECT {a:String}, {b:String}", %{"a" => "A", "b" => "B"}, multipart: true)
+  ```
+
+  <details>
+  <summary>View raw request format reference</summary>
+
+  ```http
+  POST / HTTP/1.1
+  content-length: 387
+  host: localhost:8123
+  user-agent: ch/0.6.2-dev
+  x-clickhouse-format: RowBinaryWithNamesAndTypes
+  content-type: multipart/form-data; boundary="ChFormBoundaryZZlfchKTcd8ToWjEvn66i3lAxNJ_T9dw"
+
+  --ChFormBoundaryZZlfchKTcd8ToWjEvn66i3lAxNJ_T9dw
+  content-disposition: form-data; name="param_a"
+
+  A
+  --ChFormBoundaryZZlfchKTcd8ToWjEvn66i3lAxNJ_T9dw
+  content-disposition: form-data; name="param_b"
+
+  B
+  --ChFormBoundaryZZlfchKTcd8ToWjEvn66i3lAxNJ_T9dw
+  content-disposition: form-data; name="query"
+
+  select {a:String}, {b:String}
+  --ChFormBoundaryZZlfchKTcd8ToWjEvn66i3lAxNJ_T9dw--
+  ```
+
+  </details>
+
 ## 0.6.1 (2025-12-04)
 
 - handle disconnect during stream https://github.com/plausible/ch/pull/283

@@ -1,17 +1,25 @@
 defmodule Ch.StreamTest do
-  use ExUnit.Case
+  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
   alias Ch.{Result, RowBinary}
+
+  setup ctx do
+    {:ok, query_options: ctx[:query_options] || []}
+  end
 
   setup do
     {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   describe "enumerable Ch.stream/4" do
-    test "emits %Ch.Result{}", %{conn: conn} do
+    test "emits %Ch.Result{}", %{conn: conn, query_options: query_options} do
       results =
         DBConnection.run(conn, fn conn ->
           conn
-          |> Ch.stream("select * from numbers({count:UInt64})", %{"count" => 1_000_000})
+          |> Ch.stream(
+            "select * from numbers({count:UInt64})",
+            %{"count" => 1_000_000},
+            query_options
+          )
           |> Enum.into([])
         end)
 
@@ -19,23 +27,27 @@ defmodule Ch.StreamTest do
                Enum.to_list(0..999_999)
     end
 
-    test "raises on error", %{conn: conn} do
+    test "raises on error", %{conn: conn, query_options: query_options} do
       assert_raise Ch.Error,
                    ~r/Code: 62. DB::Exception: Syntax error: failed at position 8/,
                    fn ->
                      DBConnection.run(conn, fn conn ->
-                       conn |> Ch.stream("select ", %{"count" => 1_000_000}) |> Enum.into([])
+                       conn
+                       |> Ch.stream("select ", %{"count" => 1_000_000}, query_options)
+                       |> Enum.into([])
                      end)
                    end
     end
 
-    test "large strings", %{conn: conn} do
+    test "large strings", %{conn: conn, query_options: query_options} do
       results =
         DBConnection.run(conn, fn conn ->
           conn
-          |> Ch.stream("select repeat('abc', 500000) from numbers({count:UInt64})", %{
-            "count" => 10
-          })
+          |> Ch.stream(
+            "select repeat('abc', 500000) from numbers({count:UInt64})",
+            %{"count" => 10},
+            query_options
+          )
           |> Enum.into([])
         end)
 
@@ -47,8 +59,9 @@ defmodule Ch.StreamTest do
   end
 
   describe "collectable Ch.stream/4" do
-    test "inserts chunks", %{conn: conn} do
+    test "inserts chunks", %{conn: conn, query_options: query_options} do
       Ch.query!(conn, "create table collect_stream(i UInt64) engine Memory")
+      on_exit(fn -> Ch.Test.query("DROP TABLE collect_stream") end)
 
       assert %Ch.Result{command: :insert, num_rows: 1_000_000} =
                DBConnection.run(conn, fn conn ->
@@ -61,7 +74,7 @@ defmodule Ch.StreamTest do
                      conn,
                      "insert into collect_stream(i) format RowBinary",
                      _params = [],
-                     encode: false
+                     Keyword.merge(query_options, encode: false)
                    )
                  )
                end)

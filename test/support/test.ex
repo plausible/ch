@@ -8,10 +8,38 @@ defmodule Ch.Test do
     task =
       Task.async(fn ->
         {:ok, pid} = Ch.start_link(opts)
+        opts = Keyword.put_new_lazy(opts, :database, &database/0)
         Ch.query!(pid, sql, params, opts)
       end)
 
     Task.await(task)
+  end
+
+  # helper for ExUnit.Case :parameterize
+  def parameterize_query_options(ctx, options \\ []) do
+    if default_options = ctx[:query_options] do
+      Keyword.merge(default_options, options)
+    else
+      options
+    end
+  end
+
+  def parameterize_query(ctx, sql, params \\ [], options \\ []) do
+    Ch.query(
+      ctx.conn,
+      sql,
+      params,
+      parameterize_query_options(ctx, options)
+    )
+  end
+
+  def parameterize_query!(ctx, sql, params \\ [], options \\ []) do
+    Ch.query!(
+      ctx.conn,
+      sql,
+      params,
+      parameterize_query_options(ctx, options)
+    )
   end
 
   # TODO packet: :http?

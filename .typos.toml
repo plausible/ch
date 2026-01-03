@@ -1,3 +1,4 @@
 [default.extend-words]
 "som" = "som" # ./test/ch/ecto_type_test.exs
 "ECT" = "ECT" # ./test/ch/query_test.exs
+"Evn" = "Evn" # ./CHANGELOG.md

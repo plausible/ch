@@ -1,8 +1,14 @@
 defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
-  defstruct [:statement, :command, :encode, :decode]
+  defstruct [:statement, :command, :encode, :decode, :multipart]
 
-  @type t :: %__MODULE__{statement: iodata, command: command, encode: boolean, decode: boolean}
+  @type t :: %__MODULE__{
+          statement: iodata,
+          command: command,
+          encode: boolean,
+          decode: boolean,
+          multipart: boolean
+        }
 
   @doc false
   @spec build(iodata, [Ch.query_option()]) :: t
@@ -10,7 +16,15 @@ defmodule Ch.Query do
     command = Keyword.get(opts, :command) || extract_command(statement)
     encode = Keyword.get(opts, :encode, true)
     decode = Keyword.get(opts, :decode, true)
-    %__MODULE__{statement: statement, command: command, encode: encode, decode: decode}
+    multipart = Keyword.get(opts, :multipart, false)
+
+    %__MODULE__{
+      statement: statement,
+      command: command,
+      encode: encode,
+      decode: decode,
+      multipart: multipart
+    }
   end
 
   statements = [
@@ -72,6 +86,7 @@ defmodule Ch.Query do
 end
 
 defimpl DBConnection.Query, for: Ch.Query do
+  @dialyzer :no_improper_lists
   alias Ch.{Query, Result, RowBinary}
 
   @spec parse(Query.t(), [Ch.query_option()]) :: Query.t()
@@ -128,11 +143,80 @@ defimpl DBConnection.Query, for: Ch.Query do
     end
   end
 
+  def encode(%Query{multipart: true, statement: statement}, params, opts) do
+    types = Keyword.get(opts, :types)
+    default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
+    format = Keyword.get(opts, :format) || default_format
+
+    boundary = "ChFormBoundary" <> Base.url_encode64(:crypto.strong_rand_bytes(24))
+    content_type = "multipart/form-data; boundary=\"#{boundary}\""
+    enc_boundary = "--#{boundary}\r\n"
+    multipart = multipart_params(params, enc_boundary)
+    multipart = add_multipart_part(multipart, "query", statement, enc_boundary)
+    multipart = [multipart | "--#{boundary}--\r\n"]
+
+    {_no_query_params = [],
+     [{"x-clickhouse-format", format}, {"content-type", content_type} | headers(opts)], multipart}
+  end
+
   def encode(%Query{statement: statement}, params, opts) do
     types = Keyword.get(opts, :types)
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
     {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+  end
+
+  defp multipart_params(params, boundary) when is_map(params) do
+    multipart_named_params(Map.to_list(params), boundary, [])
+  end
+
+  defp multipart_params(params, boundary) when is_list(params) do
+    multipart_positional_params(params, 0, boundary, [])
+  end
+
+  defp multipart_named_params([{name, value} | params], boundary, acc) do
+    acc =
+      add_multipart_part(
+        acc,
+        "param_" <> URI.encode_www_form(name),
+        encode_param(value),
+        boundary
+      )
+
+    multipart_named_params(params, boundary, acc)
+  end
+
+  defp multipart_named_params([], _boundary, acc), do: acc
+
+  defp multipart_positional_params([value | params], idx, boundary, acc) do
+    acc =
+      add_multipart_part(
+        acc,
+        "param_$" <> Integer.to_string(idx),
+        encode_param(value),
+        boundary
+      )
+
+    multipart_positional_params(params, idx + 1, boundary, acc)
+  end
+
+  defp multipart_positional_params([], _idx, _boundary, acc), do: acc
+
+  @compile inline: [add_multipart_part: 4]
+  defp add_multipart_part(multipart, name, value, boundary) do
+    part = [
+      boundary,
+      "content-disposition: form-data; name=\"",
+      name,
+      "\"\r\n\r\n",
+      value,
+      "\r\n"
+    ]
+
+    case multipart do
+      [] -> part
+      _ -> [multipart | part]
+    end
   end
 
   defp format_row_binary?(statement) when is_binary(statement) do

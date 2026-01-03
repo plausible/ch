@@ -1,5 +1,5 @@
 defmodule Ch.AggregationTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   setup do
     conn = start_supervised!({Ch, database: Ch.Test.database()})
