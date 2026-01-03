@@ -2,6 +2,15 @@ defmodule Ch do
   @moduledoc "Minimal HTTP ClickHouse client."
   alias Ch.{Connection, Query, Result}
 
+  @typedoc """
+  Options shared by both connection startup and query execution.
+
+  * `:database` - Database, defaults to `"default"`
+  * `:username` - Username
+  * `:password` - User password
+  * `:settings` - Keyword list of ClickHouse settings
+  * `:timeout` - HTTP request/receive timeout in milliseconds
+  """
   @type common_option ::
           {:database, String.t()}
           | {:username, String.t()}
@@ -9,6 +18,16 @@ defmodule Ch do
           | {:settings, Keyword.t()}
           | {:timeout, timeout}
 
+  @typedoc """
+  Options for starting the connection pool.
+
+  Includes all keys from `t:common_option/0` and `t:DBConnection.start_option/0` plus:
+
+  * `:scheme` - HTTP scheme, defaults to `"http"`
+  * `:hostname` - server hostname, defaults to `"localhost"`
+  * `:port` - HTTP port, defaults to `8123`
+  * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
+  """
   @type start_option ::
           common_option
           | {:scheme, String.t()}
@@ -18,22 +37,9 @@ defmodule Ch do
           | DBConnection.start_option()
 
   @doc """
-  Start the connection process and connect to ClickHouse.
+  Start the connection pool process.
 
-  ## Options
-
-    * `:scheme` - HTTP scheme, defaults to `"http"`
-    * `:hostname` - server hostname, defaults to `"localhost"`
-    * `:port` - HTTP port, defaults to `8123`
-    * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
-    * `:database` - Database, defaults to `"default"`
-    * `:username` - Username
-    * `:password` - User password
-    * `:settings` - Keyword list of ClickHouse settings
-    * `:timeout` - HTTP receive timeout in milliseconds
-    * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
-    * [`DBConnection.start_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:start_option/0)
-
+  See `t:start_option/0` for available options.
   """
   @spec start_link([start_option]) :: GenServer.on_start()
   def start_link(opts \\ []) do
@@ -41,15 +47,26 @@ defmodule Ch do
   end
 
   @doc """
-  Returns a supervisor child specification for a DBConnection pool.
+  Returns a supervisor child specification for a connection pool.
 
-  See `start_link/1` for supported options.
+  See `t:start_option/0` for supported options.
   """
   @spec child_spec([start_option]) :: :supervisor.child_spec()
   def child_spec(opts) do
     DBConnection.child_spec(Connection, opts)
   end
 
+  @typedoc """
+  Options for executing a query.
+
+  Includes all keys from `t:common_option/0` and `t:DBConnection.connection_option/0` plus:
+
+  * `:command` - Command tag for the query
+  * `:headers` - Custom HTTP headers for the request
+  * `:format` - Custom response format for the request
+  * `:decode` - Whether to automatically decode the response
+  * `:multipart` - Whether to send the query as multipart/form-data
+  """
   @type query_option ::
           common_option
           | {:command, Ch.Query.command()}
@@ -66,20 +83,7 @@ defmodule Ch do
   Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
   `{:error, Exception.t()}` if there was a database error.
 
-  ## Options
-
-    * `:database` - Database
-    * `:username` - Username
-    * `:password` - User password
-    * `:settings` - Keyword list of settings
-    * `:timeout` - Query request timeout
-    * `:command` - Command tag for the query
-    * `:headers` - Custom HTTP headers for the request
-    * `:format` - Custom response format for the request
-    * `:decode` - Whether to automatically decode the response
-    * `:multipart` - Whether to send the query as multipart/form-data
-    * [`DBConnection.connection_option()`](https://hexdocs.pm/db_connection/DBConnection.html#t:connection_option/0)
-
+  See `t:query_option/0` for available options.
   """
   @spec query(DBConnection.conn(), iodata, params, [query_option]) ::
           {:ok, Result.t()} | {:error, Exception.t()}
