@@ -2,6 +2,17 @@ defmodule Ch.Query do
   @moduledoc "Query struct wrapping the SQL statement."
   defstruct [:statement, :command, :encode, :decode, :multipart]
 
+  @typedoc """
+  The Query struct.
+
+  ## Fields
+
+    * `:statement` - The SQL statement to be executed (as `t:iodata/0`).
+    * `:command` - The detected or enforced SQL command type (e.g., `:select`, `:insert`).
+    * `:encode` - Whether to encode parameters (defaults to `true`).
+    * `:decode` - Whether to decode the response (defaults to `true`).
+    * `:multipart` - Whether to use `multipart/form-data` for the request (defaults to `false`).
+  """
   @type t :: %__MODULE__{
           statement: iodata,
           command: command,
@@ -65,6 +76,12 @@ defmodule Ch.Query do
     |> Enum.map(fn {_, command} -> command end)
     |> Enum.reduce(&{:|, [], [&1, &2]})
 
+  @typedoc """
+  Atom representing the type of SQL command.
+
+  Derived automatically from the start of the SQL statement (e.g., `"SELECT ..."` -> `:select`),
+  or provided explicitly via options.
+  """
   @type command :: unquote(command_union)
 
   defp extract_command(statement)
