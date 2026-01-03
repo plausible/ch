@@ -1,6 +1,6 @@
 defmodule Ch.FaultsTest do
   alias Ch.Result
-  use ExUnit.Case
+  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
   import Ch.Test, only: [intercept_packets: 1]
 
   defp capture_async_log(f) do
@@ -18,9 +18,13 @@ defmodule Ch.FaultsTest do
     {:ok, clickhouse: clickhouse, listen: listen, port: port}
   end
 
+  setup ctx do
+    {:ok, query_options: ctx[:query_options] || []}
+  end
+
   describe "connect/1" do
     test "reconnects to eventually reachable server", ctx do
-      %{listen: listen, port: port, clickhouse: clickhouse} = ctx
+      %{listen: listen, port: port, clickhouse: clickhouse, query_options: query_options} = ctx
 
       # make the server unreachable
       :ok = :gen_tcp.close(listen)
@@ -31,7 +35,7 @@ defmodule Ch.FaultsTest do
       log =
         capture_async_log(fn ->
           assert {:error, %DBConnection.ConnectionError{reason: :queue_timeout}} =
-                   Ch.query(conn, "select 1 + 1")
+                   Ch.query(conn, "select 1 + 1", [], query_options)
 
           # make the server reachable
           {:ok, listen} = :gen_tcp.listen(port, @socket_opts)
@@ -42,7 +46,9 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
+            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
+                     Ch.query(conn, "select 1 + 1", [], query_options)
+
             send(test, :done)
           end)
 
@@ -252,7 +258,12 @@ defmodule Ch.FaultsTest do
   end
 
   describe "query" do
-    test "reconnects after timeout", %{port: port, listen: listen, clickhouse: clickhouse} do
+    test "reconnects after timeout", %{
+      port: port,
+      listen: listen,
+      clickhouse: clickhouse,
+      query_options: query_options
+    } do
       test = self()
 
       log =
@@ -268,7 +279,7 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :timeout}} =
-                     Ch.query(conn, "select 1 + 1")
+                     Ch.query(conn, "select 1 + 1", [], query_options)
           end)
 
           # failed select 1 + 1
@@ -283,7 +294,9 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
+            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
+                     Ch.query(conn, "select 1 + 1", [], query_options)
+
             send(test, :done)
           end)
 
@@ -298,7 +311,7 @@ defmodule Ch.FaultsTest do
     end
 
     test "reconnects after closed on response", ctx do
-      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+      %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
       test = self()
 
       log =
@@ -314,7 +327,7 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(conn, "select 1 + 1")
+                     Ch.query(conn, "select 1 + 1", [], query_options)
           end)
 
           # failed select 1 + 1
@@ -330,7 +343,9 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
+            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
+                     Ch.query(conn, "select 1 + 1", [], query_options)
+
             send(test, :done)
           end)
 
@@ -344,7 +359,7 @@ defmodule Ch.FaultsTest do
     end
 
     test "reconnects after Connection: close response from server", ctx do
-      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+      %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
       test = self()
 
       log =
@@ -359,7 +374,9 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} = Ch.query(conn, "select 1 + 1")
+            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
+                     Ch.query(conn, "select 1 + 1", [], query_options)
+
             send(test, :done)
           end)
 
@@ -386,7 +403,7 @@ defmodule Ch.FaultsTest do
 
           spawn_link(fn ->
             assert {:ok, %{num_rows: 1, rows: [[2]]}} =
-                     Ch.query(conn, "select 1 + 1")
+                     Ch.query(conn, "select 1 + 1", [], query_options)
 
             send(test, :done)
           end)
@@ -405,7 +422,7 @@ defmodule Ch.FaultsTest do
     # TODO non-chunked request
 
     test "reconnects after closed before streaming request", ctx do
-      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+      %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
 
       test = self()
       rows = [[1, 2], [3, 4]]
@@ -431,7 +448,7 @@ defmodule Ch.FaultsTest do
                        conn,
                        "insert into unknown_table(a,b) format RowBinary",
                        stream,
-                       encode: false
+                       Keyword.merge(query_options, encode: false)
                      )
           end)
 
@@ -448,7 +465,7 @@ defmodule Ch.FaultsTest do
                        conn,
                        "insert into unknown_table(a,b) format RowBinary",
                        stream,
-                       encode: false
+                       Keyword.merge(query_options, encode: false)
                      )
 
             assert message =~ ~r/UNKNOWN_TABLE/
@@ -467,7 +484,7 @@ defmodule Ch.FaultsTest do
     end
 
     test "reconnects after closed while streaming request", ctx do
-      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+      %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
 
       test = self()
       rows = [[1, 2], [3, 4]]
@@ -490,7 +507,7 @@ defmodule Ch.FaultsTest do
                        conn,
                        "insert into unknown_table(a,b) format RowBinary",
                        stream,
-                       encode: false
+                       Keyword.merge(query_options, encode: false)
                      )
           end)
 
@@ -511,7 +528,7 @@ defmodule Ch.FaultsTest do
                        conn,
                        "insert into unknown_table(a,b) format RowBinary",
                        stream,
-                       encode: false
+                       Keyword.merge(query_options, encode: false)
                      )
 
             assert message =~ ~r/UNKNOWN_TABLE/
@@ -530,7 +547,7 @@ defmodule Ch.FaultsTest do
     end
 
     test "warns on different server name", ctx do
-      %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+      %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
       test = self()
 
       header = "X-ClickHouse-Server-Display-Name"
@@ -549,7 +566,7 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           spawn_link(fn ->
-            assert {:ok, %Result{rows: [[1]]}} = Ch.query(conn, "select 1")
+            assert {:ok, %Result{rows: [[1]]}} = Ch.query(conn, "select 1", [], query_options)
             send(test, :done)
           end)
 
