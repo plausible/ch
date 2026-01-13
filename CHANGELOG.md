@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- use `disconnect_and_retry` (added in DBConnection v2.9.0) instead of `disconnect` for connection errors https://github.com/plausible/ch/pull/292
+
 ## 0.6.2 (2026-01-03)
 
 - added support for `multipart/form-data` in queries: https://github.com/plausible/ch/pull/290 -- which allows bypassing URL length limits sometimes imposed by reverse proxies when sending queries with many parameters.

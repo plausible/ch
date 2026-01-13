@@ -264,8 +264,6 @@ defmodule Ch.FaultsTest do
       clickhouse: clickhouse,
       query_options: query_options
     } do
-      test = self()
-
       log =
         capture_async_log(fn ->
           {:ok, conn} = Ch.start_link(port: port, timeout: 100)
@@ -277,10 +275,10 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :timeout}} =
-                     Ch.query(conn, "select 1 + 1", [], query_options)
-          end)
+          select =
+            Task.async(fn ->
+              Ch.query(conn, "select 1 + 1", [], query_options)
+            end)
 
           # failed select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
@@ -293,18 +291,11 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
-                     Ch.query(conn, "select 1 + 1", [], query_options)
-
-            send(test, :done)
-          end)
-
           # select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          assert_receive :done
+          assert {:ok, %Ch.Result{rows: [[2]]}} = Task.await(select)
         end)
 
       assert log =~ "disconnected: ** (Mint.TransportError) timeout"
@@ -312,7 +303,6 @@ defmodule Ch.FaultsTest do
 
     test "reconnects after closed on response", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
-      test = self()
 
       log =
         capture_async_log(fn ->
@@ -325,10 +315,10 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(conn, "select 1 + 1", [], query_options)
-          end)
+          select =
+            Task.async(fn ->
+              Ch.query(conn, "select 1 + 1", [], query_options)
+            end)
 
           # failed select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
@@ -342,17 +332,11 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
-                     Ch.query(conn, "select 1 + 1", [], query_options)
-
-            send(test, :done)
-          end)
-
           # select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
-          assert_receive :done
+
+          assert {:ok, %{rows: [[2]]}} = Task.await(select)
         end)
 
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
@@ -360,7 +344,6 @@ defmodule Ch.FaultsTest do
 
     test "reconnects after Connection: close response from server", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
-      test = self()
 
       log =
         capture_async_log(fn ->
@@ -373,12 +356,10 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
-                     Ch.query(conn, "select 1 + 1", [], query_options)
-
-            send(test, :done)
-          end)
+          select =
+            Task.async(fn ->
+              Ch.query(conn, "select 1 + 1", [], query_options)
+            end)
 
           # first select 1 + 1
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
@@ -390,9 +371,12 @@ defmodule Ch.FaultsTest do
               "Connection: Close"
             )
 
+          assert response =~ "Connection: Close"
+
           :ok = :gen_tcp.send(mint, response)
           :ok = :gen_tcp.close(mint)
-          assert_receive :done
+
+          assert {:ok, %Ch.Result{rows: [[2]]}} = Task.await(select)
 
           # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -401,22 +385,19 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          spawn_link(fn ->
-            assert {:ok, %{num_rows: 1, rows: [[2]]}} =
-                     Ch.query(conn, "select 1 + 1", [], query_options)
+          select =
+            Task.async(fn ->
+              Ch.query(conn, "select 2 + 2", [], query_options)
+            end)
 
-            send(test, :done)
-          end)
-
-          # select 1 + 1
+          # select 2 + 2
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          assert_receive :done
+          assert {:ok, %Ch.Result{rows: [[4]]}} = Task.await(select)
         end)
 
-      refute log =~ "disconnected: **"
-      assert log =~ "connection was closed by the server"
+      assert log =~ "disconnected: ** (Mint.HTTPError) the connection is closed"
     end
 
     # TODO non-chunked request
@@ -424,7 +405,6 @@ defmodule Ch.FaultsTest do
     test "reconnects after closed before streaming request", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
 
-      test = self()
       rows = [[1, 2], [3, 4]]
       stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
 
@@ -442,15 +422,15 @@ defmodule Ch.FaultsTest do
           # disconnect before insert
           :ok = :gen_tcp.close(mint)
 
-          spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(
-                       conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       Keyword.merge(query_options, encode: false)
-                     )
-          end)
+          insert =
+            Task.async(fn ->
+              Ch.query(
+                conn,
+                "insert into unknown_table(a,b) format RowBinary",
+                stream,
+                Keyword.merge(query_options, encode: false)
+              )
+            end)
 
           # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -459,25 +439,12 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          spawn_link(fn ->
-            assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(
-                       conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       Keyword.merge(query_options, encode: false)
-                     )
-
-            assert message =~ ~r/UNKNOWN_TABLE/
-
-            send(test, :done)
-          end)
-
           # insert
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          assert_receive :done
+          assert {:error, %Ch.Error{code: 60, message: message}} = Task.await(insert)
+          assert message =~ ~r/UNKNOWN_TABLE/
         end)
 
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
@@ -486,7 +453,6 @@ defmodule Ch.FaultsTest do
     test "reconnects after closed while streaming request", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
 
-      test = self()
       rows = [[1, 2], [3, 4]]
       stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
 
@@ -501,15 +467,15 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          spawn_link(fn ->
-            assert {:error, %Mint.TransportError{reason: :closed}} =
-                     Ch.query(
-                       conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       Keyword.merge(query_options, encode: false)
-                     )
-          end)
+          insert =
+            Task.async(fn ->
+              Ch.query(
+                conn,
+                "insert into unknown_table(a,b) format RowBinary",
+                stream,
+                Keyword.merge(query_options, encode: false)
+              )
+            end)
 
           # close after first packet from mint arrives
           assert_receive {:tcp, ^mint, _packet}
@@ -522,25 +488,12 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          spawn_link(fn ->
-            assert {:error, %Ch.Error{code: 60, message: message}} =
-                     Ch.query(
-                       conn,
-                       "insert into unknown_table(a,b) format RowBinary",
-                       stream,
-                       Keyword.merge(query_options, encode: false)
-                     )
-
-            assert message =~ ~r/UNKNOWN_TABLE/
-
-            send(test, :done)
-          end)
-
           # insert
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          assert_receive :done
+          assert {:error, %Ch.Error{code: 60, message: message}} = Task.await(insert)
+          assert message =~ ~r/UNKNOWN_TABLE/
         end)
 
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
