@@ -1346,7 +1346,7 @@ defmodule Ch.RowBinary do
       # TODO utf8?
       {:fixed_string, size} ->
         case bin do
-          <<s::size(size)-bytes, rest::bytes>> ->
+          <<s::size(^size)-bytes, rest::bytes>> ->
             decode_rows(types_rest, rest, [s | row], rows, types)
 
           _ ->
@@ -1396,7 +1396,7 @@ defmodule Ch.RowBinary do
 
       {:decimal, size, scale} ->
         case bin do
-          <<val::size(size)-little-signed, bin::bytes>> ->
+          <<val::size(^size)-little-signed, bin::bytes>> ->
             sign = if val < 0, do: -1, else: 1
             d = Decimal.new(sign, abs(val), -scale)
             decode_rows(types_rest, bin, [d | row], rows, types)
