@@ -546,19 +546,20 @@ defmodule Ch.Types do
   end
 
   defp decode_int(<<?-, i, rest::bytes>>, stack, outer_acc) when is_numeric(i) do
-    decode_int_cont(rest, -(i - ?0), stack, outer_acc)
+    decode_int_cont(rest, i - ?0, -1, stack, outer_acc)
   end
 
   defp decode_int(<<i, rest::bytes>>, stack, outer_acc) when is_numeric(i) do
-    decode_int_cont(rest, i - ?0, stack, outer_acc)
+    decode_int_cont(rest, i - ?0, 1, stack, outer_acc)
   end
 
-  defp decode_int_cont(<<i, rest::bytes>>, acc, stack, outer_acc) when is_numeric(i) do
-    decode_int_cont(rest, acc * 10 + i - ?0, stack, outer_acc)
+  defp decode_int_cont(<<i, rest::bytes>>, acc, multiplier, stack, outer_acc)
+       when is_numeric(i) do
+    decode_int_cont(rest, acc * 10 + i - ?0, multiplier, stack, outer_acc)
   end
 
-  defp decode_int_cont(<<rest::bytes>>, int, stack, acc) do
-    decode(stack, rest, [int | acc])
+  defp decode_int_cont(<<rest::bytes>>, int, multiplier, stack, acc) do
+    decode(stack, rest, [int * multiplier | acc])
   end
 
   @doc """
