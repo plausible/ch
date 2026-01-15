@@ -158,6 +158,12 @@ defmodule Ch.TypesTest do
 
       assert decode(" Enum8 ( 'hello' = 1 , 'world' = 2 ) ") ==
                {:enum8, [{"hello", 1}, {"world", 2}]}
+
+      assert decode("Enum8('enum8_min' = -128, 'enum8_zero' = 0, 'enum8_max' = 127)") ==
+               {:enum8, [{"enum8_min", -128}, {"enum8_zero", 0}, {"enum8_max", 127}]}
+
+      assert decode("Enum16('enum16_min' = -32768, 'enum16_zero' = 0, 'enum16_max' = 32767)") ==
+               {:enum16, [{"enum16_min", -32768}, {"enum16_zero", 0}, {"enum16_max", 32767}]}
     end
 
     test "simple aggregate function" do

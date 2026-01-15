@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- fix negative integer parsing in Enum8 and Enum16 types
+
 ## 0.7.0 (2026-01-13)
 
 - use `disconnect_and_retry` (added in DBConnection v2.9.0) instead of `disconnect` for connection errors https://github.com/plausible/ch/pull/292
