@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- fix negative integer parsing in Enum8 and Enum16 types
+- fix negative integer parsing in Enum8 and Enum16 types https://github.com/plausible/ch/pull/295
 
 ## 0.7.0 (2026-01-13)
 
