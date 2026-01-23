@@ -388,7 +388,7 @@ defmodule Ch.JSONTest do
            ]
 
     assert_raise ArgumentError,
-                 "Unsupported type definiton (starting with 0x34) while decoding dynamic JSON. Only single-byte type identifiers are currently supported.",
+                 "Unsupported type definition (starting with 0x34) while decoding dynamic JSON. Only single-byte type identifiers are currently supported.",
                  fn ->
                    Ch.query!(
                      conn,

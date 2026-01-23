@@ -1201,7 +1201,7 @@ defmodule Ch.RowBinary do
 
   def skip_type(<<type, _::bytes>>) do
     raise ArgumentError,
-          "Unsupported type definiton (starting with 0x#{Base.encode16(<<type>>)}) while decoding dynamic JSON. Only single-byte type identifiers are currently supported."
+          "Unsupported type definition (starting with 0x#{Base.encode16(<<type>>)}) while decoding dynamic JSON. Only single-byte type identifiers are currently supported."
   end
 
   # TODO
