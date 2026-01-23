@@ -345,18 +345,57 @@ defmodule Ch.JSONTest do
              ]
            ]
 
-    # TODO
-    assert_raise ArgumentError, "unsupported dynamic type JSON", fn ->
-      Ch.query!(conn, "SELECT json.a.b, dynamicType(json.a.b) FROM json_test;", [], query_options)
-    end
+    assert Ch.query!(conn, "SELECT json.a.b FROM json_test;", [], query_options).rows == [
+             [
+               [
+                 %{"c" => 42, "d" => "Hello", "f" => [[%{"g" => 42.42}]], "k" => %{"j" => 1000}},
+                 %{"c" => 43},
+                 %{
+                   "d" => "My",
+                   "e" => [1, 2, 3],
+                   "f" => [[%{"g" => 43.43, "h" => "2020-01-01"}]],
+                   "k" => %{"j" => 2000}
+                 }
+               ]
+             ],
+             [[1, 2, 3]],
+             [
+               [
+                 %{"c" => 44, "f" => [[%{"h" => "2020-01-02"}]]},
+                 %{
+                   "d" => "World",
+                   "e" => [4, 5, 6],
+                   "f" => [[%{"g" => 44.44}]],
+                   "k" => %{"j" => 3000}
+                 }
+               ]
+             ]
+           ]
 
-    assert_raise ArgumentError, "unsupported dynamic type JSON", fn ->
-      Ch.query!(
-        conn,
-        "SELECT json.a.b.:`Array(JSON)`.c, json.a.b.:`Array(JSON)`.f, json.a.b.:`Array(JSON)`.d FROM json_test;",
-        [],
-        query_options
-      )
-    end
+    assert Ch.query!(
+             conn,
+             "SELECT json.a.b[].c, json.a.b[].f, json.a.b[].d FROM json_test;",
+             [],
+             query_options
+           ).rows == [
+             [
+               [42, 43, nil],
+               [[[%{"g" => 42.42}]], nil, [[%{"g" => 43.43, "h" => "2020-01-01"}]]],
+               ["Hello", nil, "My"]
+             ],
+             [[], [], []],
+             [[44, nil], [[[%{"h" => "2020-01-02"}]], [[%{"g" => 44.44}]]], [nil, "World"]]
+           ]
+
+    assert_raise ArgumentError,
+                 "Unsupported type definiton (starting with 0x34) while decoding dynamic JSON. Only single-byte type identifiers are currently supported.",
+                 fn ->
+                   Ch.query!(
+                     conn,
+                     ~s|SELECT '{"a": "10:00:00.050"}'::JSON(a Time64)::Dynamic;|,
+                     [],
+                     query_options
+                   )
+                 end
   end
 end
