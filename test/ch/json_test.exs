@@ -387,6 +387,8 @@ defmodule Ch.JSONTest do
              [[44, nil], [[[%{"h" => "2020-01-02"}]], [[%{"g" => 44.44}]]], [nil, "World"]]
            ]
 
+    query_options = Keyword.put(query_options, :enable_time_time64_type, 1)
+
     assert_raise ArgumentError,
                  "Unsupported type definition (starting with 0x34) while decoding dynamic JSON. Only single-byte type identifiers are currently supported.",
                  fn ->
