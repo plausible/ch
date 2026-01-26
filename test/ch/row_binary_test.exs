@@ -595,11 +595,17 @@ defmodule Ch.RowBinaryTest do
     end
 
     test "datetime64" do
-      types = ["DateTime64(3)", "DateTime64(6, 'UTC')", "DateTime64(9, 'Asia/Tokyo')"]
+      types = [
+        "DateTime64(0)",
+        "DateTime64(3)",
+        "DateTime64(6, 'UTC')",
+        "DateTime64(9, 'Asia/Tokyo')"
+      ]
 
       data = [
         [
-          encode({:datetime64, 1000}, ~N[2022-01-01 12:00:00.123]),
+          encode({:datetime64, 1}, ~N[2022-01-01 12:00:00]),
+          encode({:datetime64, 1_000}, ~N[2022-01-01 12:00:00.123]),
           encode({:datetime64, 1_000_000}, ~U[2022-01-01 12:00:00.123456Z]),
           encode(
             {:datetime64, 1_000_000_000},
@@ -608,7 +614,8 @@ defmodule Ch.RowBinaryTest do
           )
         ],
         [
-          encode({:datetime64, 1000}, ~N[2042-12-31 23:59:59.987]),
+          encode({:datetime64, 1}, ~N[2042-12-31 23:59:59]),
+          encode({:datetime64, 1_000}, ~N[2042-12-31 23:59:59.987]),
           encode({:datetime64, 1_000_000}, ~U[2042-12-31 23:59:59.987654Z]),
           encode(
             {:datetime64, 1_000_000_000},
@@ -620,12 +627,14 @@ defmodule Ch.RowBinaryTest do
 
       assert byte_by_byte(data, types) == [
                [
-                 ~N[2022-01-01 12:00:00.123000],
+                 ~N[2022-01-01 12:00:00],
+                 ~N[2022-01-01 12:00:00.123],
                  ~U[2022-01-01 12:00:00.123456Z],
                  DateTime.new!(~D[2022-01-01], ~T[12:00:00.123456], "Asia/Tokyo")
                ],
                [
-                 ~N[2042-12-31 23:59:59.987000],
+                 ~N[2042-12-31 23:59:59],
+                 ~N[2042-12-31 23:59:59.987],
                  ~U[2042-12-31 23:59:59.987654Z],
                  DateTime.new!(~D[2042-12-31], ~T[23:59:59.987654], "Asia/Tokyo")
                ]

@@ -1462,6 +1462,7 @@ defmodule Ch.RowBinary do
               case timezone do
                 nil ->
                   NaiveDateTime.add(@epoch_naive_datetime, s, time_unit)
+                  |> truncate(time_unit)
 
                 "UTC" ->
                   DateTime.from_unix!(s, time_unit)
@@ -1537,11 +1538,16 @@ defmodule Ch.RowBinary do
     end
   end
 
-  @compile inline: [time_unit: 1]
+  @compile inline: [time_unit: 1, time_prec: 1]
   for precision <- 0..9 do
     time_unit = round(:math.pow(10, precision))
+
     defp time_unit(unquote(precision)), do: unquote(time_unit)
+    defp time_prec(unquote(time_unit)), do: unquote(precision)
   end
+
+  defp truncate(%{microsecond: {micros, _prec}} = date, time_unit),
+    do: %{date | microsecond: {micros, time_prec(time_unit)}}
 
   @compile inline: [time_after_midnight: 2]
   defp time_after_midnight(ticks, time_unit) do
