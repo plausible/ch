@@ -400,4 +400,21 @@ defmodule Ch.JSONTest do
                    )
                  end
   end
+
+  test "encode JSON in dynamic column", %{conn: conn, query_options: query_options} do
+    Ch.query!(conn, "CREATE TABLE json_test (value Dynamic) ENGINE = Memory;", [], query_options)
+
+    query_options = Keyword.put(query_options, :types, [:dynamic])
+
+    Ch.query!(
+      conn,
+      "INSERT INTO json_test (value) FORMAT RowBinary",
+      [[%{"json_obj" => 42}]],
+      query_options
+    )
+
+    assert Ch.query!(conn, "SELECT value FROM json_test").rows == [
+             [%{"json_obj" => 42}]
+           ]
+  end
 end
