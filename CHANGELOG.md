@@ -2,6 +2,10 @@
 
 ## 0.7.1 (2026-01-15)
 
+> [!WARNING]
+> This version drops Elixir v1.14 support
+
+- fix Elixir 1.20 pin warnings https://github.com/plausible/ch/pull/293
 - fix negative integer parsing in Enum8 and Enum16 types https://github.com/plausible/ch/pull/295
 
 ## 0.7.0 (2026-01-13)
