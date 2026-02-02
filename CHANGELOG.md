@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- RowBinary: truncate NaiveDateTime resulting from DateTime64: https://github.com/plausible/ch/pull/297
+
 ## 0.7.1 (2026-01-15)
 
 > [!WARNING]
