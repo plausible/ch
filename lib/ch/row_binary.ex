@@ -180,6 +180,38 @@ defmodule Ch.RowBinary do
   end
 
   @doc false
+  def encode_varint(i) when is_integer(i) and i < 128, do: i
+  def encode_varint(i) when is_integer(i), do: encode_varint_cont(i)
+
+  @doc false
+  def encode_varint_new(v) when v < 1 <<< 7, do: v
+  def encode_varint_new(v) when v < 1 <<< 14, do: <<1::1, v::7, v >>> 7>>
+  def encode_varint_new(v) when v < 1 <<< 21, do: <<1::1, v::7, 1::1, v >>> 7::7, v >>> 14>>
+
+  def encode_varint_new(v) when v < 1 <<< 28,
+    do: <<1::1, v::7, 1::1, v >>> 7::7, 1::1, v >>> 14::7, v >>> 21>>
+
+  def encode_varint_new(v) when v < 1 <<< 35,
+    do: <<1::1, v::7, 1::1, v >>> 7::7, 1::1, v >>> 14::7, 1::1, v >>> 21::7, v >>> 28>>
+
+  def encode_varint_new(v) when v < 1 <<< 42,
+    do:
+      <<1::1, v::7, 1::1, v >>> 7::7, 1::1, v >>> 14::7, 1::1, v >>> 21::7, 1::1, v >>> 28::7,
+        v >>> 35>>
+
+  def encode_varint_new(v) when v < 1 <<< 49,
+    do:
+      <<1::1, v::7, 1::1, v >>> 7::7, 1::1, v >>> 14::7, 1::1, v >>> 21::7, 1::1, v >>> 28::7,
+        1::1, v >>> 35::7, v >>> 42>>
+
+  def encode_varint_new(v) when v < 1 <<< 56,
+    do:
+      <<1::1, v::7, 1::1, v >>> 7::7, 1::1, v >>> 14::7, 1::1, v >>> 21::7, 1::1, v >>> 28::7,
+        1::1, v >>> 35::7, 1::1, v >>> 42::7, v >>> 49>>
+
+  def encode_varint_new(v), do: <<1::1, v::7, encode_varint_new(v >>> 7)::bytes>>
+
+  @doc false
   def encode(type, value)
 
   def encode(:varint, i) when is_integer(i) and i < 128, do: i
