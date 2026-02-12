@@ -454,6 +454,49 @@ defmodule Ch.QueryTest do
       # assert [[[1, nil, 3]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1, nil, 3]], query_options).rows
     end
 
+    test "encode datetimes close to unix epoch", %{conn: conn, query_options: query_options} do
+      assert [[~U[1970-01-01 00:00:00Z]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:DateTime('UTC')}",
+                 [~U[1970-01-01 00:00:00Z]],
+                 query_options
+               ).rows
+
+      assert [[~U[1970-01-01 00:00:00.001Z]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:DateTime64(3, 'UTC')}",
+                 [~U[1970-01-01 00:00:00.001Z]],
+                 query_options
+               ).rows
+
+      assert [[~U[1969-12-31 23:59:59Z]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:DateTime64(0, 'UTC')}",
+                 [~U[1969-12-31 23:59:59Z]],
+                 query_options
+               ).rows
+
+      # This is currently blocked on https://github.com/ClickHouse/ClickHouse/issues/96745
+      # assert [[~U[1969-12-31 23:59:59.500Z]]] ==
+      #          Ch.query!(
+      #            conn,
+      #            "SELECT {$0:DateTime64(3, 'UTC')}",
+      #            [~U[1969-12-31 23:59:59.500Z]],
+      #            query_options
+      #          ).rows
+
+      assert [[~U[1969-12-31 23:59:58.500Z]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:DateTime64(3, 'UTC')}",
+                 [~U[1969-12-31 23:59:58.500Z]],
+                 query_options
+               ).rows
+    end
+
     test "encode network types", %{conn: conn, query_options: query_options} do
       # TODO, or wrap in custom struct like in postgrex
       # assert [["127.0.0.1/32"]] =
