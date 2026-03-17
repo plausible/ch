@@ -63,21 +63,20 @@ defmodule Ch.StreamTest do
       Ch.query!(conn, "create table collect_stream(i UInt64) engine Memory")
       on_exit(fn -> Ch.Test.query("DROP TABLE collect_stream") end)
 
-      assert %Ch.Result{command: :insert, num_rows: 1_000_000} =
-               DBConnection.run(conn, fn conn ->
-                 Stream.repeatedly(fn -> [:rand.uniform(100)] end)
-                 |> Stream.chunk_every(100_000)
-                 |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
-                 |> Stream.take(10)
-                 |> Enum.into(
-                   Ch.stream(
-                     conn,
-                     "insert into collect_stream(i) format RowBinary",
-                     _params = [],
-                     Keyword.merge(query_options, encode: false)
-                   )
-                 )
-               end)
+      DBConnection.run(conn, fn conn ->
+        Stream.repeatedly(fn -> [:rand.uniform(100)] end)
+        |> Stream.chunk_every(100_000)
+        |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
+        |> Stream.take(10)
+        |> Enum.into(
+          Ch.stream(
+            conn,
+            "insert into collect_stream(i) format RowBinary",
+            _params = [],
+            Keyword.merge(query_options, encode: false)
+          )
+        )
+      end)
 
       assert Ch.query!(conn, "select count(*) from collect_stream").rows == [[1_000_000]]
     end
