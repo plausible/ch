@@ -266,7 +266,7 @@ defmodule Ch.FaultsTest do
     } do
       log =
         capture_async_log(fn ->
-          {:ok, conn} = Ch.start_link(port: port, timeout: 100)
+          {:ok, conn} = Ch.start_link(port: port)
 
           # connect
           {:ok, mint} = :gen_tcp.accept(listen)
@@ -277,6 +277,7 @@ defmodule Ch.FaultsTest do
 
           select =
             Task.async(fn ->
+              query_options = Keyword.put(query_options, :timeout, 100)
               Ch.query(conn, "select 1 + 1", [], query_options)
             end)
 
@@ -298,7 +299,8 @@ defmodule Ch.FaultsTest do
           assert {:ok, %Ch.Result{rows: [[2]]}} = Task.await(select)
         end)
 
-      assert log =~ "disconnected: ** (Mint.TransportError) timeout"
+      assert log =~
+               "timed out because it queued and checked out the connection for longer than 100ms"
     end
 
     test "reconnects after closed on response", ctx do
