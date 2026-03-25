@@ -9,14 +9,12 @@ defmodule Ch do
   * `:username` - Username
   * `:password` - User password
   * `:settings` - Keyword list of ClickHouse settings
-  * `:timeout` - HTTP request/receive timeout in milliseconds
   """
   @type common_option ::
           {:database, String.t()}
           | {:username, String.t()}
           | {:password, String.t()}
           | {:settings, Keyword.t()}
-          | {:timeout, timeout}
 
   @typedoc """
   Options for starting the connection pool.
