@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- RowBinary: truncate NaiveDateTime resulting from DateTime64: https://github.com/plausible/ch/pull/297
-- HTTP: drop Mint timeouts, rely on ownership duration instead
+- RowBinary: truncate NaiveDateTime resulting from DateTime64 https://github.com/plausible/ch/pull/297
+- HTTP: drop Mint timeouts, rely on ownership duration instead https://github.com/plausible/ch/pull/301
 
 ## 0.7.1 (2026-01-15)
 
