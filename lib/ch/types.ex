@@ -4,7 +4,7 @@ defmodule Ch.Types do
   """
 
   types =
-    [
+    List.flatten([
       {_encoded = "String", _decoded = :string, _args = []},
       {"Bool", :boolean, []},
       for size <- [8, 16, 32, 64, 128, 256] do
@@ -48,8 +48,7 @@ defmodule Ch.Types do
       {"Polygon", :polygon, []},
       {"MultiPolygon", :multipolygon, []},
       {"Nothing", :nothing, []}
-    ]
-    |> List.flatten()
+    ])
 
   for {encoded, name, []} <- types do
     @doc """

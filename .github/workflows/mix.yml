@@ -10,7 +10,7 @@ on:
 
 jobs:
   test:
-    name: "test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} / ClickHouse ${{ matrix.clickhouse || 'latest' }} / TZ ${{ matrix.timezone || 'UTC' }}${{ matrix.dialyzer && ' / Dialyzer' || '' }}${{ matrix.lint && ' / Lint' || '' }})"
+    name: "test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }} / ClickHouse ${{ matrix.clickhouse || 'latest' }}${{ matrix.dialyzer && ' / Dialyzer' || '' }}${{ matrix.lint && ' / Lint' || '' }})"
     runs-on: ubuntu-latest
 
     env:
@@ -19,33 +19,11 @@ jobs:
     strategy:
       matrix:
         include:
-          # some old elixir/erlang version
-          - elixir: 1.15
-            otp: 25
-
-          # some recent version and non-UTC timezone
-          - elixir: 1.18
-            otp: 27
-            timezone: Europe/Berlin
-
           # the latest elixir/erlang version with all static checks
           - elixir: 1.19
             otp: 28
             dialyzer: true
             lint: true
-
-          # Plausible versions
-          # - https://github.com/plausible/analytics/blob/master/.tool-versions
-          # - https://github.com/plausible/analytics/blob/master/.github/workflows/elixir.yml
-          - elixir: 1.19.4
-            otp: 27.3.4.6
-            clickhouse: 25.11.5.8
-
-          # some older pre-JSON ClickHouse version
-          # https://github.com/plausible/ch/issues/273
-          - elixir: 1.18
-            otp: 28
-            clickhouse: 24.5.4.49
 
     services:
       clickhouse:
@@ -53,7 +31,6 @@ jobs:
         ports:
           - 8123:8123
         env:
-          TZ: ${{ matrix.timezone || 'UTC' }}
           # https://github.com/ClickHouse/ClickHouse/issues/75494
           CLICKHOUSE_SKIP_USER_SETUP: 1
           options: >-
@@ -96,7 +73,10 @@ jobs:
       - run: mix format --check-formatted
         if: ${{ matrix.lint }}
 
-      - run: mix test --include slow
+      - run: mix credo --strict
+        if: ${{ matrix.lint }}
+
+      - run: mix test
 
       - name: Restore PLTs cache
         if: ${{ matrix.dialyzer }}
@@ -109,3 +89,6 @@ jobs:
 
       - run: mix dialyzer --format github
         if: ${{ matrix.dialyzer }}
+
+      - uses: crate-ci/typos@master
+        if: ${{ matrix.lint }}

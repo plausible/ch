@@ -609,7 +609,8 @@ defmodule Ch.RowBinaryTest do
           encode({:datetime64, 1_000_000}, ~U[2022-01-01 12:00:00.123456Z]),
           encode(
             {:datetime64, 1_000_000_000},
-            DateTime.new!(~D[2022-01-01], ~T[12:00:00.123456], "Asia/Tokyo")
+            ~D[2022-01-01]
+            |> DateTime.new!(~T[12:00:00.123456], "Asia/Tokyo")
             |> DateTime.shift_zone!("Etc/UTC")
           )
         ],
@@ -619,7 +620,8 @@ defmodule Ch.RowBinaryTest do
           encode({:datetime64, 1_000_000}, ~U[2042-12-31 23:59:59.987654Z]),
           encode(
             {:datetime64, 1_000_000_000},
-            DateTime.new!(~D[2042-12-31], ~T[23:59:59.987654], "Asia/Tokyo")
+            ~D[2042-12-31]
+            |> DateTime.new!(~T[23:59:59.987654], "Asia/Tokyo")
             |> DateTime.shift_zone!("Etc/UTC")
           )
         ]

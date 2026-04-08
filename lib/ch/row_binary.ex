@@ -197,7 +197,7 @@ defmodule Ch.RowBinary do
     # assuming it can be sent as text and not "native" binary JSON
     # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
     # TODO
-    encode(:string, Jason.encode_to_iodata!(json))
+    encode(:string, JSON.encode_to_iodata!(json))
   end
 
   def encode({:fixed_string, size}, str) when byte_size(str) == size do
@@ -886,7 +886,7 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [Jason.decode!(s) | row], rows, types)
+      decode_rows(types_rest, bin, [JSON.decode!(s) | row], rows, types)
     end
   end
 
@@ -1461,7 +1461,8 @@ defmodule Ch.RowBinary do
             dt =
               case timezone do
                 nil ->
-                  NaiveDateTime.add(@epoch_naive_datetime, s, time_unit)
+                  @epoch_naive_datetime
+                  |> NaiveDateTime.add(s, time_unit)
                   |> truncate(time_unit)
 
                 "UTC" ->
