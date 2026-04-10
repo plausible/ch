@@ -3,6 +3,7 @@
 ## Unreleased
 
 - RowBinary: truncate NaiveDateTime resulting from DateTime64: https://github.com/plausible/ch/pull/297
+- drop chunked requests from `Ch.query/4` https://github.com/plausible/ch/pull/305
 
 ## 0.7.1 (2026-01-15)
 
