@@ -68,14 +68,15 @@ defmodule Ch.StreamTest do
         |> Stream.chunk_every(100_000)
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
         |> Stream.take(10)
-        |> Enum.into(
+        |> Stream.into(
           Ch.stream(
             conn,
-            "insert into collect_stream(i) format RowBinary",
+            "insert into collect_stream(i) format RowBinary\n",
             _params = [],
             Keyword.merge(query_options, encode: false)
           )
         )
+        |> Stream.run()
       end)
 
       assert Ch.query!(conn, "select count(*) from collect_stream").rows == [[1_000_000]]

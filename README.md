@@ -158,16 +158,17 @@ csv = [0, 1] |> Enum.map(&to_string/1) |> Enum.intersperse(?\n)
 
 Ch.query!(pid, "CREATE TABLE IF NOT EXISTS ch_demo(id UInt64) ENGINE Null")
 
-stream = Stream.repeatedly(fn -> [:rand.uniform(100)] end)
-chunked = Stream.chunk_every(stream, 100)
-encoded = Stream.map(chunked, fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
-ten_encoded_chunks = Stream.take(encoded, 10)
-
-%Ch.Result{num_rows: 1000} =
-  Ch.query(pid, "INSERT INTO ch_demo(id) FORMAT RowBinary", ten_encoded_chunks, encode: false)
+DBConnection.run(pid, fn conn ->
+  Stream.repeatedly(fn -> [:rand.uniform(100)] end)
+  |> Stream.chunk_every(100)
+  |> Stream.map(fn chunk -> Ch.RowBinary.encode_rows(chunk, _types = ["UInt64"]) end)
+  |> Stream.take(10)
+  |> Stream.into(Ch.stream(conn, "INSERT INTO ch_demo(id) FORMAT RowBinary\n"))
+  |> Stream.run()
+end)
 ```
 
-This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request while unfolding the stream resulting in lower memory usage.
+This query makes a [`transfer-encoding: chunked`](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) HTTP request.
 
 #### Query with custom [settings](https://clickhouse.com/docs/en/operations/settings/settings)
 

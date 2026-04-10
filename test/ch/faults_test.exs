@@ -405,8 +405,7 @@ defmodule Ch.FaultsTest do
     test "reconnects after closed before streaming request", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
 
-      rows = [[1, 2], [3, 4]]
-      stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
+      Process.flag(:trap_exit, true)
 
       log =
         capture_async_log(fn ->
@@ -424,12 +423,20 @@ defmodule Ch.FaultsTest do
 
           insert =
             Task.async(fn ->
-              Ch.query(
-                conn,
-                "insert into unknown_table(a,b) format RowBinary",
-                stream,
-                Keyword.merge(query_options, encode: false)
-              )
+              DBConnection.run(conn, fn conn ->
+                sink =
+                  Ch.stream(
+                    conn,
+                    "insert into unknown_table(a,b) format RowBinary",
+                    _params = %{},
+                    Keyword.merge(query_options, encode: false)
+                  )
+
+                (_rows = [[1, 2], [3, 4]])
+                |> Stream.map(fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
+                |> Stream.into(sink)
+                |> Stream.run()
+              end)
             end)
 
           # reconnect
@@ -443,8 +450,8 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          assert {:error, %Ch.Error{code: 60, message: message}} = Task.await(insert)
-          assert message =~ ~r/UNKNOWN_TABLE/
+          assert {{%DBConnection.ConnectionError{}, _stacktrace}, _task} =
+                   catch_exit(Task.await(insert))
         end)
 
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
@@ -452,9 +459,6 @@ defmodule Ch.FaultsTest do
 
     test "reconnects after closed while streaming request", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
-
-      rows = [[1, 2], [3, 4]]
-      stream = Stream.map(rows, fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
 
       log =
         capture_async_log(fn ->
@@ -469,12 +473,20 @@ defmodule Ch.FaultsTest do
 
           insert =
             Task.async(fn ->
-              Ch.query(
-                conn,
-                "insert into unknown_table(a,b) format RowBinary",
-                stream,
-                Keyword.merge(query_options, encode: false)
-              )
+              DBConnection.run(conn, fn conn ->
+                sink =
+                  Ch.stream(
+                    conn,
+                    "insert into unknown_table(a,b) format RowBinary",
+                    _params = %{},
+                    Keyword.merge(query_options, encode: false)
+                  )
+
+                (_rows = [[1, 2], [3, 4]])
+                |> Stream.map(fn row -> Ch.RowBinary.encode_row(row, [:u8, :u8]) end)
+                |> Stream.into(sink)
+                |> Stream.run()
+              end)
             end)
 
           # close after first packet from mint arrives

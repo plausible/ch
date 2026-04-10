@@ -114,13 +114,6 @@ defmodule Ch do
     %Ch.Stream{conn: conn, query: query, params: params, opts: opts}
   end
 
-  # TODO drop
-  @doc false
-  @spec run(DBConnection.conn(), (DBConnection.t() -> any), Keyword.t()) :: any
-  def run(conn, f, opts \\ []) when is_function(f, 1) do
-    DBConnection.run(conn, f, opts)
-  end
-
   if Code.ensure_loaded?(Ecto.ParameterizedType) do
     @behaviour Ecto.ParameterizedType
 

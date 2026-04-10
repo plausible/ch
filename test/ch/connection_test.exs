@@ -341,13 +341,13 @@ defmodule Ch.ConnectionTest do
     end
 
     test "manual RowBinary", %{table: table} = ctx do
-      stmt = "insert into #{table}(a, b) format RowBinary"
+      stmt = "insert into #{table}(a, b) format RowBinary\n"
 
       types = ["UInt8", "String"]
       rows = [[1, "a"], [2, "b"]]
       data = RowBinary.encode_rows(rows, types)
 
-      parameterize_query!(ctx, stmt, data, encode: false)
+      parameterize_query!(ctx, [stmt | data], _params = %{}, encode: false)
 
       assert %{rows: rows} =
                parameterize_query!(ctx, "select * from {table:Identifier}", %{"table" => table})
@@ -357,24 +357,28 @@ defmodule Ch.ConnectionTest do
 
     test "chunked", %{table: table} = ctx do
       types = ["UInt8", "String"]
-      rows = [[1, "a"], [2, "b"], [3, "c"]]
+      rows = [[1, "a"], [2, "b"], [3, "c"], [4, "d"], [5, "e"]]
 
-      stream =
+      DBConnection.run(ctx.conn, fn conn ->
+        sink =
+          Ch.stream(
+            conn,
+            "insert into #{table}(a, b) format RowBinary\n",
+            _params = %{},
+            Keyword.merge(ctx.query_options, encode: false)
+          )
+
         rows
         |> Stream.chunk_every(2)
         |> Stream.map(fn chunk -> RowBinary.encode_rows(chunk, types) end)
-
-      parameterize_query(
-        ctx,
-        "insert into #{table}(a, b) format RowBinary",
-        stream,
-        encode: false
-      )
+        |> Stream.into(sink)
+        |> Stream.run()
+      end)
 
       assert {:ok, %{rows: rows}} =
                parameterize_query(ctx, "select * from {table:Identifier}", %{"table" => table})
 
-      assert rows == [[1, "a"], [2, "b"], [3, "c"]]
+      assert rows == [[1, "a"], [2, "b"], [3, "c"], [4, "d"], [5, "e"]]
     end
 
     test "select", %{table: table} = ctx do
@@ -1334,8 +1338,8 @@ defmodule Ch.ConnectionTest do
       # weird thing about nullables is that, similar to bool, in binary format, any byte larger than 0 is `null`
       parameterize_query(
         ctx,
-        "insert into nullable format RowBinary",
-        <<1, 2, 3, 4, 5>>,
+        ["insert into nullable format RowBinary\n" | <<1, 2, 3, 4, 5>>],
+        _params = %{},
         encode: false
       )
 
@@ -1708,7 +1712,7 @@ defmodule Ch.ConnectionTest do
     test "disconnects on early halt", ctx do
       logs =
         ExUnit.CaptureLog.capture_log(fn ->
-          Ch.run(ctx.conn, fn conn ->
+          DBConnection.run(ctx.conn, fn conn ->
             conn |> Ch.stream("select number from system.numbers") |> Enum.take(1)
           end)
 

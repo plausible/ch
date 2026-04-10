@@ -128,22 +128,15 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   @spec encode(Query.t(), params, [Ch.query_option()]) ::
           {query_params, Mint.Types.headers(), body}
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t(),
+        when params: map | [term] | [row :: [term]] | iodata,
              query_params: [{String.t(), String.t()}],
-             body: iodata | Enumerable.t()
+             body: iodata
 
-  def encode(%Query{command: :insert, encode: false, statement: statement}, data, opts) do
-    body =
-      case data do
-        _ when is_list(data) or is_binary(data) -> [statement, ?\n | data]
-        _ -> Stream.concat([[statement, ?\n]], data)
-      end
-
-    {_query_params = [], headers(opts), body}
-  end
-
-  def encode(%Query{command: :insert, statement: statement}, params, opts) do
+  def encode(%Query{command: :insert, encode: encode, statement: statement}, params, opts) do
     cond do
+      not encode ->
+        {query_params(params), headers(opts), statement}
+
       names = Keyword.get(opts, :names) ->
         types = Keyword.fetch!(opts, :types)
         header = RowBinary.encode_names_and_types(names, types)
