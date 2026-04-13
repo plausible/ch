@@ -1,12 +1,12 @@
 defmodule Ch.PoolTest do
   use ExUnit.Case, async: true
 
-  setup do
-    {:ok, pool: start_supervised!({Ch.Pool, scheme: :http, host: "localhost", port: 8123})}
+  setup ctx do
+    Help.setup_pool(ctx)
   end
 
-  test "select", %{pool: pool} do
-    assert Ch.Pool.query!(pool, "select 1").rows == [[1]]
+  test "select", ctx do
+    assert Help.query!(ctx, "select 1").rows == [[1]]
 
     uuid = "9B29BD20-924C-4DE5-BDB3-8C2AA1FCE1FC"
     uuid_bin = uuid |> String.replace("-", "") |> Base.decode16!()
@@ -43,37 +43,53 @@ defmodule Ch.PoolTest do
           {_type, _value, _expected} -> param
         end
 
-      assert Ch.Pool.query!(pool, "select {a:#{type}}", %{"a" => value}).rows == [[expected]]
+      assert Help.query!(ctx, "select {a:#{type}}", %{"a" => value}).rows == [[expected]]
     end)
   end
 
-  test "insert", %{pool: pool} do
-    settings = [session_id: "test_insert_#{System.unique_integer()}"]
+  test "insert", ctx do
+    assert Help.query!(ctx, "create temporary table test_insert(a UInt8, b String) engine Memory")
 
-    session_query = fn statement ->
-      Ch.Pool.query!(pool, statement, %{}, settings: settings)
-    end
-
-    assert session_query.("create temporary table test_insert(a UInt8, b String) engine Memory")
-
-    assert session_query.("insert into test_insert values (1, 'hello')")
+    assert Help.query!(
+             ctx,
+             "insert into test_insert values (1, 'hello'), ({two:UInt8}, {world:String})",
+             %{"two" => "2", "world" => "world"}
+           )
 
     types = ["UInt8", "String"]
 
-    rowbinary = [
-      Ch.RowBinary.encode_names_and_types(["a", "b"], types)
-      | Ch.RowBinary.encode_rows([[2, "world"], [3, "foo"], [4, "bar"]], types)
-    ]
+    # rowbinary
 
-    assert session_query.([
-             "insert into test_insert format RowBinaryWithNamesAndTypes\n" | rowbinary
+    assert Help.query!(ctx, [
+             "insert into test_insert format RowBinaryWithNamesAndTypes\n",
+             Ch.RowBinary.encode_names_and_types(["a", "b"], types)
+             | Ch.RowBinary.encode_rows([[3, "foo"], [4, "bar"], [5, "baz"]], types)
            ])
 
-    assert session_query.("select * from test_insert order by a asc").rows == [
+    # compressed rowbinary
+    assert Help.query!(
+             ctx,
+             :zstd.compress([
+               "insert into test_insert format RowBinaryWithNamesAndTypes\n",
+               Ch.RowBinary.encode_names_and_types(["a", "b"], types)
+               | Ch.RowBinary.encode_rows(
+                   [[6, "clickhouse"], [7, "postgres"], [8, "sqlite"]],
+                   types
+                 )
+             ]),
+             _params = %{},
+             headers: [{"content-encoding", "zstd"}]
+           )
+
+    assert Help.query!(ctx, "select * from test_insert order by a asc").rows == [
              [1, "hello"],
              [2, "world"],
              [3, "foo"],
-             [4, "bar"]
+             [4, "bar"],
+             [5, "baz"],
+             [6, "clickhouse"],
+             [7, "postgres"],
+             [8, "sqlite"]
            ]
   end
 end
