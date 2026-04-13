@@ -64,7 +64,7 @@ defmodule Ch.MixProject do
       {:nimble_pool, "~> 1.1"},
       {:nimble_options, "~> 1.1"},
       {:telemetry, "~> 1.4"},
-      {:telemetry_docs, "~> 0.1.0"},
+      {:telemetry_docs, "~> 0.1.0", only: :dev},
       {:decimal, "~> 2.0"},
       {:ecto, "~> 3.13.0", optional: true},
       {:benchee, "~> 1.0", only: :bench},

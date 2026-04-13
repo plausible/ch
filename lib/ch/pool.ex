@@ -108,18 +108,22 @@ defmodule Ch.Pool do
 
   @impl NimblePool
   def init_worker(config) do
+    {:ok, :template, config}
+  end
+
+  @impl NimblePool
+  def handle_checkout(:request, _from, :template = template, config) do
     %{scheme: scheme, host: host, port: port, transport_options: options} = config
-    {:ok, {:idle, scheme, host, port, options}, config}
+    {:ok, {template, scheme, host, port, options}, template, config}
+  end
+
+  def handle_checkout(:request, _from, %Mint.HTTP1{} = conn, config) do
+    {:ok, {:ok, conn}, conn, config}
   end
 
   @impl NimblePool
-  def handle_checkout(:request, _from, conn, config) do
-    {:ok, conn, conn, config}
-  end
-
-  @impl NimblePool
-  def handle_checkin({:ok, conn}, _from, _conn, config) do
-    {:ok, {:connected, conn}, config}
+  def handle_checkin({:ok, %Mint.HTTP1{} = conn}, _from, _conn, config) do
+    {:ok, conn, config}
   end
 
   def handle_checkin({:remove, reason}, _from, _conn, config) do
@@ -128,18 +132,18 @@ defmodule Ch.Pool do
 
   @impl NimblePool
   def handle_ping(_conn, _config) do
-    {:remove, :idle_timeout}
+    {:remove, :worker_idle_timeout}
   end
 
   # TODO handle_info?
 
   @impl NimblePool
   def terminate_worker(_reason, conn, config) do
-    with {:connected, conn} <- conn, do: Mint.HTTP1.close(conn)
+    with %Mint.HTTP1{} <- conn, do: Mint.HTTP1.close(conn)
     {:ok, config}
   end
 
-  defp ensure_connected({:idle, scheme, host, port, options}, owner, deadline) do
+  defp ensure_connected({:template, scheme, host, port, options}, owner, deadline) do
     timeout = Ch.HTTP.timeout_from_deadline(deadline)
     options = Keyword.put(options, :timeout, timeout)
 
@@ -159,7 +163,7 @@ defmodule Ch.Pool do
     end
   end
 
-  defp ensure_connected({:connected, conn}, _owner, _deadline), do: {:ok, conn}
+  defp ensure_connected({:ok, %Mint.HTTP1{}} = ok, _owner, _deadline), do: ok
 
   defp checkin(conn) do
     if Mint.HTTP1.open?(conn) do
