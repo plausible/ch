@@ -50,6 +50,7 @@ defmodule Ch.PoolTest do
   test "insert", ctx do
     assert Help.query!(ctx, "create temporary table test_insert(a UInt8, b String) engine Memory")
 
+    # params
     assert Help.query!(
              ctx,
              "insert into test_insert values (1, 'hello'), ({two:UInt8}, {world:String})",
@@ -59,7 +60,6 @@ defmodule Ch.PoolTest do
     types = ["UInt8", "String"]
 
     # rowbinary
-
     assert Help.query!(ctx, [
              "insert into test_insert format RowBinaryWithNamesAndTypes\n",
              Ch.RowBinary.encode_names_and_types(["a", "b"], types)
