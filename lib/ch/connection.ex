@@ -310,7 +310,7 @@ defmodule Ch.Connection do
         end
 
       {:error, conn, reason} ->
-        {:disconnect_and_retry, reason, conn}
+        {:disconnect, reason, conn}
     end
   end
 
@@ -320,17 +320,11 @@ defmodule Ch.Connection do
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
 
-    result =
-      if is_function(body, 2) do
-        request_chunked(conn, "POST", path, headers, body, opts)
-      else
-        request(conn, "POST", path, headers, body, opts)
-      end
-
-    case result do
-      {:ok, conn, responses} -> {:ok, query, responses, conn}
-      {:error, _reason, _conn} = client_error -> client_error
-      {:disconnect, reason, conn} -> {:disconnect_and_retry, reason, conn}
+    # NOTE: we don't `disconnect_and_retry` inserts
+    if is_function(body, 2) do
+      request_chunked(conn, "POST", path, headers, body, opts)
+    else
+      request(conn, "POST", path, headers, body, opts)
     end
   end
 
