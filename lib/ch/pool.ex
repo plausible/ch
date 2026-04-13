@@ -55,7 +55,6 @@ defmodule Ch.Pool do
         pool,
         :request,
         fn {pid, _ref}, conn ->
-          # TODO what if caller dies? does nimble pool terminate the worker? probably
           # TODO retry transient closed/etc. errors?
           with {:ok, conn} <- ensure_connected(conn, pid, deadline),
                {:ok, conn, response} <- Ch.HTTP.request(conn, request, deadline) do
