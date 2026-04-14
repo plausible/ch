@@ -16,7 +16,8 @@ defmodule Ch.MixProject do
       docs: docs(),
       package: package(),
       source_url: @source_url,
-      dialyzer: [plt_local_path: "plts", plt_core_path: "plts"]
+      dialyzer: [plt_local_path: "plts", plt_core_path: "plts"],
+      test_coverage: [tool: ExCoveralls]
     ]
   end
 
@@ -24,6 +25,18 @@ defmodule Ch.MixProject do
   def application do
     [
       extra_applications: [:logger | extra_applications(Mix.env())]
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.json": :test,
+        "coveralls.html": :test,
+        "coveralls.github": :test
+      ]
     ]
   end
 
@@ -46,7 +59,8 @@ defmodule Ch.MixProject do
       {:benchee, "~> 1.0", only: [:bench]},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
-      {:tz, "~> 0.28.1", only: [:test]}
+      {:tz, "~> 0.28.1", only: [:test]},
+      {:excoveralls, "~> 0.18.5", only: :test}
     ]
   end
 
