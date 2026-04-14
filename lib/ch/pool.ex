@@ -8,25 +8,82 @@ defmodule Ch.Pool do
   @type statement :: iodata
   @type params :: %{String.t() => term}
 
-  @pool_size 10
-  @worker_idle_timeout to_timeout(second: 5)
   @query_timeout to_timeout(second: 30)
 
   # TODO
   @type query_result :: term
   @type query_error :: Ch.Error.t() | Mint.Types.error()
 
-  # TODO nimble options, todo can pass settings
+  @start_options_schema [
+    name: [
+      type: :any,
+      doc: "Process name registration (e.g. `MyPool` or `{:via, Registry, :ch}`)."
+    ],
+    pool_size: [
+      type: :pos_integer,
+      doc: "Maximum number of concurrent connections.",
+      default: 10
+    ],
+    worker_idle_timeout: [
+      type: :timeout,
+      doc: """
+      Time a connection can stay idle before the pool closes it.
+      Should be lower than ClickHouse's `keep_alive_timeout`.
+      """,
+      default: to_timeout(second: 5)
+    ],
+    url: [
+      type: :string,
+      doc: "The ClickHouse endpoint URL.",
+      default: "http://localhost:8123"
+    ],
+    connect_options: [
+      type: :keyword_list,
+      default: [],
+      doc: "Options passed to `Mint.HTTP.connect/4` (e.g. `:timeout`, `:proxy`)."
+    ]
+  ]
+
+  @typedoc """
+  The options supported by `start_link/1`.
+  """
+  @type start_option :: unquote(NimbleOptions.option_typespec(@start_options_schema))
+
+  @doc """
+  Starts a new Ch pool process.
+
+  Supported options:
+  #{NimbleOptions.docs(@start_options_schema)}
+  """
   @spec start_link(keyword) :: GenServer.on_start()
   def start_link(options) do
-    {name, options} = Keyword.pop(options, :name)
-    {pool_size, options} = Keyword.pop(options, :pool_size, @pool_size)
+    options = NimbleOptions.validate!(options, @start_options_schema)
 
-    {worker_idle_timeout, options} =
-      Keyword.pop(options, :worker_idle_timeout, @worker_idle_timeout)
+    name = Keyword.get(options, :name)
+    pool_size = Keyword.fetch!(options, :pool_size)
+    worker_idle_timeout = Keyword.fetch!(options, :worker_idle_timeout)
+    url = Keyword.fetch!(options, :url)
+
+    connect_options =
+      options
+      |> Keyword.get(:connect_options, [])
+      |> Keyword.put(:mode, :passive)
+
+    %URI{scheme: scheme, host: host, port: port} = URI.parse(url)
+
+    scheme =
+      case scheme do
+        "http" -> :http
+        "https" -> :https
+        _other -> raise ArgumentError, "unexpected HTTP scheme: #{inspect(scheme)}"
+      end
+
+    initial_pool_state = %{
+      template: {:template, scheme, host, port, connect_options}
+    }
 
     NimblePool.start_link(
-      worker: {__MODULE__, options},
+      worker: {__MODULE__, initial_pool_state},
       pool_size: pool_size,
       worker_idle_timeout: worker_idle_timeout,
       lazy: true,
@@ -34,11 +91,16 @@ defmodule Ch.Pool do
     )
   end
 
+  @doc """
+  Returns a child spec to allow Ch pool to be started under a supervisor.
+
+  ## Options
+
+  The options are exactly the same as for `start_link/1`.
+  """
   @spec child_spec(keyword) :: Supervisor.child_spec()
   def child_spec(options) do
-    options
-    |> Keyword.put(:worker, {__MODULE__, options})
-    |> NimblePool.child_spec()
+    %{id: __MODULE__, start: {__MODULE__, :start_link, [options]}}
   end
 
   @spec query(NimblePool.pool(), statement, params, keyword) ::
@@ -49,7 +111,7 @@ defmodule Ch.Pool do
     {timeout, options} = Keyword.pop(options, :timeout, @query_timeout)
     deadline = Ch.HTTP.deadline_from_timeout(timeout)
 
-    # TODO retry on closed
+    # TODO retry on closed? backoff?
     result =
       NimblePool.checkout!(
         pool,
@@ -85,23 +147,7 @@ defmodule Ch.Pool do
   end
 
   @impl NimblePool
-  def init_pool(options) do
-    scheme = Keyword.fetch!(options, :scheme)
-    host = Keyword.fetch!(options, :host)
-    port = Keyword.fetch!(options, :port)
-
-    transport_options =
-      options
-      |> Keyword.get(:transport_options, [])
-      |> Keyword.put(:mode, :passive)
-
-    config = %{
-      scheme: scheme,
-      host: host,
-      port: port,
-      transport_options: transport_options
-    }
-
+  def init_pool(config) do
     {:ok, config}
   end
 
@@ -112,8 +158,7 @@ defmodule Ch.Pool do
 
   @impl NimblePool
   def handle_checkout(:request, _from, :template = template, config) do
-    %{scheme: scheme, host: host, port: port, transport_options: options} = config
-    {:ok, {template, scheme, host, port, options}, template, config}
+    {:ok, config.template, template, config}
   end
 
   def handle_checkout(:request, _from, %Mint.HTTP1{} = conn, config) do

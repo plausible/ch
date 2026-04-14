@@ -1,14 +1,10 @@
 defmodule Help do
   @moduledoc false
 
-  def start_supervised_pool!(_test_context) do
-    ExUnit.Callbacks.start_supervised!({Ch.Pool, scheme: :http, host: "localhost", port: 8123})
-  end
-
   def setup_pool(%{pool: pool}) when is_pid(pool), do: :ok
 
   def setup_pool(test_context) do
-    {:ok, pool: start_supervised_pool!(test_context), session_id: session_id(test_context)}
+    {:ok, pool: ExUnit.Callbacks.start_supervised!(Ch.Pool), session_id: session_id(test_context)}
   end
 
   def query!(test_context, statement, params \\ %{}, options \\ []) do
