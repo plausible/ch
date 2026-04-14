@@ -6,13 +6,14 @@ defmodule Ch.HTTP do
   def deadline_from_timeout(:infinity = inf), do: inf
 
   def deadline_from_timeout(timeout) do
-    System.monotonic_time(:millisecond) + timeout
+    System.monotonic_time() + System.convert_time_unit(timeout, :millisecond, :native)
   end
 
   def timeout_from_deadline(:infinity = inf), do: inf
 
   def timeout_from_deadline(deadline) do
-    max(0, deadline - System.monotonic_time(:millisecond))
+    timeout_native = max(0, deadline - System.monotonic_time())
+    System.convert_time_unit(timeout_native, :native, :millisecond)
   end
 
   def encode_request(method, statement, params, options) do
