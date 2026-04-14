@@ -2,6 +2,7 @@
 
 [![Documentation badge](https://img.shields.io/badge/Documentation-ff69b4)](https://hexdocs.pm/ch)
 [![Hex.pm badge](https://img.shields.io/badge/Package%20on%20hex.pm-informational)](https://hex.pm/packages/ch)
+[![Coverage Status](https://coveralls.io/repos/github/plausible/ch/badge.svg?branch=coveralls)](https://coveralls.io/github/plausible/ch?branch=coveralls)
 
 Minimal HTTP [ClickHouse](https://clickhouse.com) client for Elixir.
 
