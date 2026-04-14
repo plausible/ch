@@ -1,6 +1,13 @@
 defmodule Ch.Telemetry do
   @moduledoc """
-  TODO
+  Telemetry integration for event tracing, metrics, and logging.
+
+  A complete list of emitted events is available in the [Telemetry Events](telemetry-events.md) reference.
+
+  ### Default Logging Handler
+
+  Xinesis provides a default Telemetry handler that logs connection and request events at appropriate log levels.
+  To enable this default logging, call `attach_default_handler/0`, to disable it, call `detach_default_handler/0`.
   """
 
   @default_handler_id "ch-default-handler"

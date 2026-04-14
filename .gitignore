@@ -27,3 +27,6 @@ ch-*.tar
 
 # Dialyzer PLTs
 /plts/
+
+# Generated docs.
+pages/telemetry-events.md
