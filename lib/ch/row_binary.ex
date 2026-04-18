@@ -835,6 +835,7 @@ defmodule Ch.RowBinary do
     to_be_continued(rows, bin, [:string | types_rest], row)
   end
 
+  # TODO remove
   @doc false
   def to_utf8(str) do
     utf8 = to_utf8(str, 0, 0, str, [])

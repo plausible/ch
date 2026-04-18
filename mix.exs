@@ -64,19 +64,20 @@ defmodule Ch.MixProject do
   defp deps do
     [
       {:mint, "~> 1.0"},
-      {:nimble_pool, "~> 1.1"},
-      {:nimble_options, "~> 1.1"},
-      {:telemetry, "~> 1.4"},
+      {:nimble_pool, "~> 1.0"},
+      {:nimble_options, "~> 1.0"},
+      {:telemetry, "~> 1.0"},
       {:telemetry_docs, "~> 0.1.0", only: :dev},
       {:decimal, "~> 2.0"},
       {:ecto, "~> 3.13.0", optional: true},
       {:benchee, "~> 1.0", only: :bench},
+      {:benchee_github, "~> 0.1", only: :bench},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev},
       {:tz, "~> 0.28.1", only: :test},
-      {:nimble_lz4, "~> 1.1", only: [:dev, :test, :bench]},
-      {:stream_data, "~> 1.3", only: :test},
-      {:credo, "~> 1.7", only: [:dev, :test]}
+      {:nimble_lz4, "~> 1.0", only: [:dev, :test, :bench]},
+      {:stream_data, "~> 1.0", only: :test},
+      {:credo, "~> 1.0", only: [:dev, :test]}
     ]
   end
 

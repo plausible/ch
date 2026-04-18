@@ -1,0 +1,63 @@
+name: bench
+
+on:
+  push:
+    branches: [master]
+  schedule:
+    - cron: "42 10 * * *"
+  workflow_dispatch:
+
+# Write access is needed to push benchmark data to gh-pages.
+# This workflow intentionally does NOT run on pull_request to avoid
+# granting write permissions to untrusted forks.
+permissions:
+  contents: write
+
+jobs:
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+
+    env:
+      MIX_ENV: bench
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: beam
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19"
+          otp-version: "28"
+
+      - name: Restore deps cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: bench-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            bench-${{ steps.beam.outputs.elixir-version }}-
+
+      - run: mix deps.get
+
+      - run: mix benchee_github.clean
+
+      - run: mix run bench/ci.exs
+
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Ch RowBinary
+          tool: customSmallerIsBetter
+          output-file-path: bench_output.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: benchmarks
+          # Alert on >20% regression compared to previous run on master
+          alert-threshold: "120%"
+          comment-on-alert: true
+          fail-on-alert: false
+          summary-always: true
