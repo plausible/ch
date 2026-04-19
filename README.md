@@ -36,11 +36,22 @@ deadline = Ch.HTTP.to_deadline(to_timeout(second: 15))
   )
 
 try do
-  {path, headers, body} = Ch.HTTP.encode("SELECT 1")
+  path = Ch.HTTP.path(%{})
 
-  with {:ok, _ref, conn} <- Mint.HTTP1.request(conn, "POST", path, headers, body),
-       {:ok, {200, _headers, body}, conn} <- Ch.HTTP.recv_all(conn, deadline),
-       {:ok, _names, rows} <- Ch.HTTP.decode(200, _headers, body) do
+  with {:ok, _ref, conn} <- Mint.HTTP1.request(conn, "POST", path, [], "SELECT 1"),
+       {:ok, conn, responses} <- Mint.HTTP1.recv(conn, 0, Ch.HTTP.to_timeout(deadline)) do
+    state = Ch.HTTP.decode_start()
+
+    {_state, rows} =
+      Enum.reduce(responses, {state, []}, fn response, {state, acc} ->
+        case Ch.HTTP.decode_continue(state, response) do
+          {:rows, rows, _names, state} -> {state, acc ++ rows}
+          {:cont, state} -> {state, acc}
+          {:ok, _names, rows} -> {state, acc ++ rows}
+          _ -> {state, acc}
+        end
+      end)
+
     rows
   end
 after

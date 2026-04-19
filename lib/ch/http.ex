@@ -1,75 +1,6 @@
 defmodule Ch.HTTP do
   @moduledoc """
   Stateless helpers for `Mint.HTTP1` with ClickHouse-specific encoding and decoding.
-
-  Provides three layers of functionality:
-
-    1. **Deadline / timeout helpers** — convert between relative millisecond timeouts
-       and absolute monotonic deadlines, so a single deadline propagates correctly
-       across multiple network calls.
-
-    2. **Request encoding** — build a `{path, headers, body}` triple ready for
-       `Mint.HTTP1.request/5`. Parameter binding is handled transparently.
-
-    3. **Response decoding** — single-shot (`decode/3`) or streaming
-       (`decode_start/1` + `decode_continue/2`) decoding of ClickHouse HTTP responses.
-
-  The caller retains full control of the connection lifecycle and the HTTP method.
-  Body compression is the caller's responsibility: compress `body` manually and pass
-  `{"content-encoding", "gzip"}` in `opts[:headers]`. Responses with
-  `content-encoding: gzip` are decompressed automatically by `decode/3`.
-
-  ## Single-shot usage
-
-      deadline = Ch.HTTP.to_deadline(to_timeout(second: 15))
-
-      {:ok, conn} =
-        Mint.HTTP1.connect(:http, "localhost", 8123,
-          mode: :passive,
-          timeout: Ch.HTTP.to_timeout(deadline)
-        )
-
-      try do
-        {path, headers, body} = Ch.HTTP.encode("CREATE TABLE demo(a Int64) ENGINE Null")
-
-        with {:ok, _ref, conn} <- Mint.HTTP1.request(conn, "POST", path, headers, body),
-             {:ok, {status, headers, body}, conn} <- Ch.HTTP.recv_all(conn, deadline),
-             :ok <- Ch.HTTP.decode(status, headers, body) do
-          :ok
-        end
-      after
-        Mint.HTTP1.close(conn)
-      end
-
-  ## Streaming
-
-  For large result sets, use `decode_start/1` + `decode_continue/2` to process rows
-  as Mint data chunks arrive, without buffering the entire response body. The caller
-  handles `:status` and `:headers` responses, then passes only data to the decoder:
-
-      # active-mode receive loop (passive mode: same but with Mint.HTTP1.recv/3)
-      receive do
-        message ->
-          {:ok, conn, responses} = Mint.HTTP1.stream(conn, message)
-
-          Enum.reduce(responses, state, fn
-            {:status, _ref, _status}, state ->
-              state
-
-            {:headers, _ref, headers}, _state ->
-              Ch.HTTP.decode_start(headers)
-
-            {:data, _ref, chunk}, state ->
-              case Ch.HTTP.decode_continue(chunk, state) do
-                {:rows, rows, names, state} -> process_rows(rows, names); state
-                {:more, state} -> state
-              end
-
-            {:done, _ref}, state ->
-              {:ok, names, rows} = Ch.HTTP.decode_continue(:end_of_input, state)
-              done(names, rows)
-          end)
-      end
   """
 
   import Kernel, except: [to_timeout: 1]
@@ -82,22 +13,8 @@ defmodule Ch.HTTP do
   """
   @type deadline :: {:deadline, integer} | :infinity
 
-  @typedoc """
-  Opaque streaming decoder state.
-
-  Returned by `decode_start/1` and updated by each call to `decode_continue/2`.
-  """
-  @opaque decode_state ::
-            {:awaiting_rb_header, buf :: binary}
-            | {:decoding_rows, names :: [String.t()], types :: [term], row_state :: term,
-               remainder :: binary}
-            | {:raw, acc :: iodata}
-
   @doc """
-  Converts a relative timeout (milliseconds) or existing `t:deadline/0` to a `t:deadline/0`.
-
-  Passing an already-converted `{:deadline, _}` tuple is a no-op, making this safe to
-  call at multiple layers of the call stack without double-adding the offset.
+  Converts a relative timeout (milliseconds) to a `t:deadline/0`.
   """
   @spec to_deadline(timeout | deadline) :: deadline
   def to_deadline(:infinity), do: :infinity
@@ -108,10 +25,7 @@ defmodule Ch.HTTP do
   end
 
   @doc """
-  Returns the remaining milliseconds until `deadline`, suitable for passing to Mint.
-
-  Always returns `>= 0`; clamps to `0` if the deadline has already passed (Mint does
-  not accept negative timeouts).
+  Returns the remaining milliseconds until a `t:deadline/0`.
   """
   @spec to_timeout(timeout | deadline) :: timeout
   def to_timeout(:infinity), do: :infinity
@@ -122,305 +36,221 @@ defmodule Ch.HTTP do
   end
 
   @doc """
-  Encodes a ClickHouse HTTP request with no parameters.
+  Builds the request path for a ClickHouse HTTP request.
 
-  Equivalent to `encode(statement, %{}, [])`.
+  ### Examples
+
+      iex> Ch.HTTP.path(%{})
+      "/"
+
+      iex> Ch.HTTP.path(%{"city" => "Prague"})
+      "/?param_city=Prague"
+
+      iex> Ch.HTTP.path(%{}, output_format_binary_write_json_as_string: true)
+      "/?output_format_binary_write_json_as_string=true"
+
+      iex> Ch.HTTP.path(%{"city" => "Prague"}, %{"query_id" => "550e8400"})
+      "/?param_city=Prague&query_id=550e8400"
+
   """
-  @spec encode(statement :: iodata) ::
-          {path :: String.t(), headers :: Mint.Types.headers(), body :: iodata}
-  def encode(statement) do
-    encode(statement, %{}, [])
-  end
-
-  @doc """
-  Encodes a ClickHouse HTTP request with parameters and options.
-
-  Returns `{path, headers, body}` ready for `Mint.HTTP1.request/5`. The HTTP method
-  (`"POST"`) and connection lifecycle remain the caller's responsibility.
-
-  ## Parameters
-
-  Parameters are encoded using ClickHouse's
-  [escaped HTTP format](https://clickhouse.com/docs/en/interfaces/http#tabs-in-url-parameters),
-  which follows the same escaping rules as ClickHouse's TSV format: tab (`\\t`),
-  newline (`\\n`), and backslash (`\\`) are backslash-escaped.
-
-    * **Named** — `%{"city" => "Prague"}` → `?param_city=Prague`
-    * **Positional** — `["Prague", 42]` → `?param_$0=Prague&param_$1=42`
-
-  ## Options
-
-    * `:headers` — additional Mint-style headers forwarded verbatim, e.g.
-      `[{"x-clickhouse-user", "alice"}, {"x-clickhouse-key", "secret"}]`.
-
-  ## Body
-
-  The returned `body` is the `statement` iodata unchanged. No RowBinary encoding or
-  compression is applied — those are the caller's responsibility:
-
-      compressed = :zlib.compress(IO.iodata_to_binary(statement))
-      {path, headers, body} =
-        Ch.HTTP.encode(compressed, %{}, headers: [{"content-encoding", "gzip"}])
-  """
-  @spec encode(
-          statement :: iodata,
-          params :: %{String.t() => term} | [term],
-          opts :: keyword
-        ) ::
-          {path :: String.t(), headers :: Mint.Types.headers(), body :: iodata}
-  def encode(statement, params, opts) do
-    query_params = encode_params(params)
-
-    path =
-      case query_params do
-        [] -> "/"
-        _ -> "/?" <> URI.encode_query(query_params)
-      end
-
-    headers = Keyword.get(opts, :headers, [])
-    {path, headers, statement}
-  end
-
-  @doc """
-  Receives a complete HTTP response from a passive `Mint.HTTP1` connection.
-
-  Accumulates all Mint response messages until `{:done, ref}` and returns the
-  raw `{status, headers, body}` triple, which can be passed directly to `decode/3`.
-
-  Accepts a plain timeout in milliseconds or a `t:deadline/0`. When given a deadline,
-  the remaining time is recomputed before each `Mint.HTTP1.recv/3` call.
-  """
-  @spec recv_all(Mint.HTTP1.t(), timeout | deadline) ::
-          {:ok, {status :: non_neg_integer, Mint.Types.headers(), body :: binary}, Mint.HTTP1.t()}
-          | {:error, Mint.HTTP1.t(), Mint.Types.error()}
-  def recv_all(conn, timeout_or_deadline) do
-    deadline = to_deadline(timeout_or_deadline)
-    do_recv_all(conn, _status = nil, _headers = [], _data = [], deadline)
-  end
-
-  defp do_recv_all(conn, status, headers, data, deadline) do
-    case Mint.HTTP1.recv(conn, 0, to_timeout(deadline)) do
-      {:ok, conn, responses} ->
-        case handle_responses(responses, status, headers, data) do
-          {:ok, status, headers, body} ->
-            {:ok, {status, headers, body}, conn}
-
-          {:more, status, headers, data} ->
-            do_recv_all(conn, status, headers, data, deadline)
-
-          {:error, reason} ->
-            {:error, conn, reason}
-        end
-
-      {:error, conn, reason, _responses} ->
-        {:error, conn, reason}
+  @spec path(%{String.t() => term}, Enumerable.t()) :: String.t()
+  def path(params, options \\ []) do
+    case encode_params(params) ++ options do
+      [] -> "/"
+      qp -> "/?" <> URI.encode_query(qp)
     end
   end
 
-  @dialyzer {:no_improper_lists, handle_responses: 4}
-  defp handle_responses([{:status, _ref, status} | rest], _status, headers, data) do
-    handle_responses(rest, status, headers, data)
+  @doc """
+  Initialises a streaming ClickHouse response decoder.
+
+  Accepts an optional `decoders` map, mapping from format name to a decoder function.
+
+  Only `RowBinaryWithNamesAndTypes` format is supported by default. For all other formats,
+  the data is left as is.
+  """
+  def decode_start(opts \\ []) do
+    decoders =
+      Keyword.get(opts, :decoders, %{
+        "RowBinaryWithNamesAndTypes" => &__MODULE__.decode_rowbinary_stream/2,
+        :_ => &__MODULE__.decode_raw_stream/2
+      })
+
+    {:init, decoders}
   end
 
-  defp handle_responses([{:headers, _ref, new_headers} | rest], status, prev_headers, data) do
-    handle_responses(rest, status, prev_headers ++ new_headers, data)
+  @doc false
+  def decode_rowbinary_stream(new_data, {:rows, names, types, prev_data, state}) do
+    data = prev_data <> new_data
+    {rows, rest, state} = Ch.RowBinary.decode_rows_continue(data, types, state)
+    {:more, %{names: names, rows: rows}, {:rows, names, types, rest, state}}
   end
 
-  defp handle_responses([{:data, _ref, new_data} | rest], status, headers, prev_data) do
-    handle_responses(rest, status, headers, [prev_data | new_data])
+  def decode_rowbinary_stream(new_data, state) do
+    data =
+      case state do
+        :init -> new_data
+        {:header, prev_data} -> prev_data <> new_data
+      end
+
+    case Ch.RowBinary.decode_header(data) do
+      :more -> {:more, [], {:header, data}}
+      {:ok, names, types, rest} -> decode_rowbinary_stream(rest, {:rows, names, types, rest, nil})
+    end
   end
 
-  defp handle_responses([{:done, _ref} | _rest], status, headers, data) do
-    {:ok, status, headers, IO.iodata_to_binary(data)}
+  @doc false
+  def decode_raw_stream(data, state) do
+    {:more, data, state}
   end
 
-  defp handle_responses([{:error, _ref, reason} | _rest], _status, _headers, _data) do
+  @doc """
+  Feeds a Mint response tuple into the streaming decoder.
+
+  This function handles the entire Mint response lifecycle (`:status`, `:headers`,
+  `:data`, `:done`, `:error`) for a single request.
+  """
+  @spec decode_continue(Mint.Types.response(), decoder) ::
+          :ok
+          | {:more, decoded, decoder}
+          | {:error, error}
+          | :done
+        when decoded: term,
+             decoder: term,
+             error: Mint.Types.error() | Ch.Error.t()
+  def decode_continue(response, decoder)
+
+  def decode_continue({:status, _ref, status}, {:init, decoders}) do
+    {:cont, {:status, status, decoders}}
+  end
+
+  def decode_continue({:headers, _ref, headers}, {:status, 200, decoders}, ) do
+    format = get_header(headers, "x-clickhouse-format")
+
+    state =
+      cond do
+        format == "RowBinaryWithNamesAndTypes" ->
+          {:rowbinary, <<>>}
+
+        format == nil ->
+          {:empty}
+
+        decoder = decoders[format] ->
+          {:custom, decoder, decoder.decode_start(headers)}
+
+        true ->
+          {:unknown_format, format}
+      end
+
+    {:cont, state}
+  end
+
+  def decode_continue({:headers, _ref, headers}, {:status, _status, decoders}) do
+    code =
+      if code = get_header(headers, "x-clickhouse-exception-code") do
+        String.to_integer(code)
+      end
+
+    {:cont, {:error_body, status, code, []}}
+  end
+
+  def decode_continue({:data, _ref, chunk}, decoder) do
+    decode_continue_data(state, chunk)
+  end
+
+  def decode_continue({:done, _ref}, decoder) do
+    decode_continue_data(state, :done)
+  end
+
+  def decode_continue({:error, _ref, reason}, _decoder) do
     {:error, reason}
   end
 
-  defp handle_responses([], status, headers, data) do
-    {:more, status, headers, data}
-  end
+  defp decode_continue_data(state, chunk_or_done)
 
-  @doc """
-  Decodes a complete ClickHouse HTTP response.
-
-  Accepts the `{status, headers, body}` triple returned by `recv_all/2`.
-  Handles errors, decompression, and `RowBinaryWithNamesAndTypes` decoding.
-
-    * Non-200 status → `{:error, Ch.Error.t()}` with code and message from ClickHouse.
-    * `content-encoding: gzip` → automatically decompressed before parsing.
-    * `x-clickhouse-format: RowBinaryWithNamesAndTypes` → `{:ok, names, rows}`.
-    * Empty body (DDL, INSERT without result) → `:ok`.
-    * Other or absent format → `{:ok, [], [body]}` with the raw binary.
-
-  ## Example
-
-      {:ok, {status, headers, body}, conn} = Ch.HTTP.recv_all(conn, deadline)
-      case Ch.HTTP.decode(status, headers, body) do
-        {:ok, names, rows} -> ...
-        :ok -> ...
-        {:error, error} -> ...
-      end
-  """
-  @spec decode(
-          status :: non_neg_integer,
-          headers :: Mint.Types.headers(),
-          body :: binary
-        ) ::
-          :ok
-          | {:ok, names :: [String.t()], rows :: [[term]]}
-          | {:error, Ch.Error.t()}
-  def decode(status, headers, body)
-
-  def decode(status, headers, body) when status != 200 do
-    code =
-      case get_header(headers, "x-clickhouse-exception-code") do
-        nil -> nil
-        code -> String.to_integer(code)
-      end
-
-    {:error, Ch.Error.exception(code: code, message: body)}
-  end
-
-  def decode(200, headers, body) do
-    body = maybe_decompress(body, get_header(headers, "content-encoding"))
-
-    case get_header(headers, "x-clickhouse-format") do
-      "RowBinaryWithNamesAndTypes" ->
-        [names | rows] = Ch.RowBinary.decode_names_and_rows(body)
-        {:ok, names, rows}
-
-      _other ->
-        case body do
-          "" -> :ok
-          _ -> {:ok, [], [body]}
-        end
+  defp decode_continue_data({:custom, decoder, state}, chunk_or_done) do
+    case decoder.decode_continue(state, chunk_or_done) do
+      {:rows, rows, names, new_state} -> {:rows, rows, names, {:custom, decoder, new_state}}
+      {:cont, new_state} -> {:cont, {:custom, decoder, new_state}}
+      {:ok, names, rows} -> {:ok, names, rows}
+      :ok -> :ok
+      {:error, error} -> {:error, error}
     end
   end
 
-  @doc """
-  Initialises a streaming ClickHouse response decoder from response headers.
+  # --- :done (finalise) ---
 
-  Inspects `x-clickhouse-format` to determine how to decode incoming data chunks.
-  The returned `t:decode_state/0` is passed to `decode_continue/2` along with each
-  binary chunk extracted from `{:data, ref, chunk}` Mint responses.
+  # empty body before RowBinary header — DDL/INSERT sent with wrong format header?
+  defp decode_continue_data({:rowbinary, <<>>}, :done), do: :ok
 
-  The caller is responsible for handling `{:status, _, _}` and `{:headers, _, _}`
-  responses before calling `decode_start/1`, and for passing `{:done, _}` as
-  `:end_of_input` to `decode_continue/2`.
-
-  ## Example
-
-      {:headers, _ref, headers} = ... # from Mint.HTTP1.stream/2
-      state = Ch.HTTP.decode_start(headers)
-
-      {:data, _ref, chunk} = ...
-      case Ch.HTTP.decode_continue(chunk, state) do
-        {:rows, rows, names, state} -> ...
-        {:more, state} -> ...
-      end
-
-      {:done, _ref} = ...
-      {:ok, names, []} = Ch.HTTP.decode_continue(:end_of_input, state)
-  """
-  @spec decode_start(headers :: Mint.Types.headers()) :: decode_state
-  def decode_start(headers) do
-    case get_header(headers, "x-clickhouse-format") do
-      "RowBinaryWithNamesAndTypes" -> {:awaiting_rb_header, <<>>}
-      _other -> {:raw, []}
-    end
+  defp decode_continue_data({:rowbinary, _buf}, :done) do
+    {:error,
+     Ch.Error.exception(code: nil, message: "incomplete RowBinaryWithNamesAndTypes header")}
   end
 
-  @doc """
-  Feeds a binary chunk into a streaming decoder, advancing its state.
-
-  Pass binary chunks extracted from `{:data, ref, chunk}` Mint response tuples.
-  When the response is complete (`:done` received from Mint), pass `:end_of_input`
-  to finalise and retrieve any remaining output.
-
-  ## Return values
-
-    * `{:rows, rows, names, state}` — one or more complete rows decoded. `names` is
-      the list of column names from the `RowBinaryWithNamesAndTypes` header.
-      Continue calling `decode_continue/2` with the next chunk.
-    * `{:more, state}` — chunk consumed, no complete rows yet (e.g. still accumulating
-      the RowBinary header). Continue with the next chunk.
-    * `{:ok, names, rows}` — stream complete. If rows were emitted incrementally via
-      `{:rows, ...}`, the final `rows` list here will be empty.
-    * `{:error, Ch.Error.t()}` — decoding failed.
-  """
-  @spec decode_continue(chunk :: binary | :end_of_input, decode_state) ::
-          {:rows, rows :: [[term]], names :: [String.t()], decode_state}
-          | {:more, decode_state}
-          | {:ok, names :: [String.t()], rows :: [[term]]}
-          | {:error, Ch.Error.t()}
-  def decode_continue(:end_of_input, state) do
-    flush_state(state)
+  defp decode_continue_data({:decoding_rows, names, _types, _row_state, _remainder}, :done) do
+    # all rows emitted via {:rows, ...} during streaming
+    {:ok, names, []}
   end
 
-  def decode_continue(chunk, {:awaiting_rb_header, buf}) when is_binary(chunk) do
+  defp decode_continue_data({:empty}, :done), do: :ok
+
+  defp decode_continue_data({:unknown_format, format}, :done) do
+    {:error, {:unknown_format, format}}
+  end
+
+  defp decode_continue_data({:error_body, _status, code, acc}, :done) do
+    {:error, Ch.Error.exception(code: code, message: IO.iodata_to_binary(acc))}
+  end
+
+  # --- binary chunks ---
+
+  defp decode_continue_data({:rowbinary, buf}, chunk) when is_binary(chunk) do
     buf = buf <> chunk
 
     case Ch.RowBinary.decode_header(buf) do
       :more ->
-        {:more, {:awaiting_rb_header, buf}}
+        {:cont, {:rowbinary, buf}}
 
       {:ok, names, types, rest} ->
         {rows, remainder, row_state} = Ch.RowBinary.decode_rows_continue(rest, types, nil)
         new_state = {:decoding_rows, names, types, row_state, remainder}
 
         case rows do
-          [] -> {:more, new_state}
+          [] -> {:cont, new_state}
           _ -> {:rows, rows, names, new_state}
         end
     end
   end
 
-  def decode_continue(chunk, {:decoding_rows, names, types, row_state, remainder})
-      when is_binary(chunk) do
+  defp decode_continue_data({:decoding_rows, names, types, row_state, remainder}, chunk)
+       when is_binary(chunk) do
     {rows, new_remainder, new_row_state} =
       Ch.RowBinary.decode_rows_continue(remainder <> chunk, types, row_state)
 
     new_state = {:decoding_rows, names, types, new_row_state, new_remainder}
 
     case rows do
-      [] -> {:more, new_state}
+      [] -> {:cont, new_state}
       _ -> {:rows, rows, names, new_state}
     end
   end
 
-  def decode_continue(chunk, {:raw, acc}) when is_binary(chunk) do
-    {:more, {:raw, [acc | chunk]}}
+  defp decode_continue_data({:empty}, chunk) when is_binary(chunk) do
+    # unexpected data on what should be an empty response; ignore
+    {:cont, {:empty}}
   end
 
-  defp flush_state({:awaiting_rb_header, <<>>}) do
-    {:ok, [], []}
+  defp decode_continue_data({:unknown_format, format}, chunk) when is_binary(chunk) do
+    # discard chunks; error reported at :done
+    {:cont, {:unknown_format, format}}
   end
 
-  defp flush_state({:awaiting_rb_header, _buf}) do
-    {:error,
-     Ch.Error.exception(code: nil, message: "incomplete RowBinaryWithNamesAndTypes header")}
-  end
-
-  defp flush_state({:decoding_rows, names, _types, _row_state, _remainder}) do
-    # All rows already emitted via {:rows, ...} during streaming
-    {:ok, names, []}
-  end
-
-  defp flush_state({:raw, acc}) do
-    case IO.iodata_to_binary(acc) do
-      "" -> {:ok, [], []}
-      body -> {:ok, [], [body]}
-    end
+  defp decode_continue_data({:error_body, status, code, acc}, chunk) when is_binary(chunk) do
+    {:cont, {:error_body, status, code, [acc | chunk]}}
   end
 
   ## Private helpers
-
-  defp maybe_decompress(body, "gzip"), do: :zlib.gunzip(body)
-  defp maybe_decompress(body, "zstd"), do: :zstd.decompress(body)
-  defp maybe_decompress(body, _encoding), do: body
-
 
   defp get_header(headers, key) do
     case List.keyfind(headers, key, 0) do
@@ -434,17 +264,8 @@ defmodule Ch.HTTP do
   # ClickHouse uses an "escaped" parameter format identical to its TSV format escaping
   # (see https://clickhouse.com/docs/en/interfaces/http#tabs-in-url-parameters):
   # tab (\t), newline (\n), and backslash (\) are backslash-escaped.
-  #
-  # Named params:      %{"city" => "Prague"} → [{"param_city", "Prague"}]
-  # Positional params: ["Prague", 42]        → [{"param_$0", "Prague"}, {"param_$1", "42"}]
   defp encode_params(params) when is_map(params) do
     Enum.map(params, fn {k, v} -> {"param_#{k}", encode_param(v)} end)
-  end
-
-  defp encode_params(params) when is_list(params) do
-    params
-    |> Enum.with_index()
-    |> Enum.map(fn {v, idx} -> {"param_$#{idx}", encode_param(v)} end)
   end
 
   defp encode_param(n) when is_integer(n), do: Integer.to_string(n)

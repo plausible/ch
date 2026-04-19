@@ -41,10 +41,8 @@ defmodule Ch.Guides.InsertsTest do
       compressed = :zlib.gzip(body)
       assert :zlib.gunzip(compressed) == body
 
-      {_path, headers, ^compressed} =
-        Ch.HTTP.encode(compressed, %{}, headers: [{"content-encoding", "gzip"}])
-
-      assert {"content-encoding", "gzip"} in headers
+      path = Ch.HTTP.path(%{}, [{"content-encoding", "gzip"}])
+      assert path =~ "content-encoding=gzip"
     end
   end
 

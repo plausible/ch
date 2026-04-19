@@ -3,7 +3,7 @@ defmodule Ch.Pool do
   TODO
   """
 
-  @behaviour NimblePool
+  use GenServer
 
   @type statement :: iodata
   @type params :: %{String.t() => term}
@@ -24,23 +24,10 @@ defmodule Ch.Pool do
       doc: "Maximum number of concurrent connections.",
       default: 10
     ],
-    worker_idle_timeout: [
-      type: :timeout,
-      doc: """
-      Time a connection can stay idle before the pool closes it.
-      Should be lower than ClickHouse's `keep_alive_timeout`.
-      """,
-      default: to_timeout(second: 5)
-    ],
     url: [
       type: :string,
       doc: "The ClickHouse endpoint URL.",
       default: "http://localhost:8123"
-    ],
-    connect_options: [
-      type: :keyword_list,
-      default: [],
-      doc: "Options passed to `Mint.HTTP.connect/4` (e.g. `:timeout`, `:proxy`)."
     ]
   ]
 
@@ -61,13 +48,7 @@ defmodule Ch.Pool do
 
     name = Keyword.get(options, :name)
     pool_size = Keyword.fetch!(options, :pool_size)
-    worker_idle_timeout = Keyword.fetch!(options, :worker_idle_timeout)
     url = Keyword.fetch!(options, :url)
-
-    connect_options =
-      options
-      |> Keyword.get(:connect_options, [])
-      |> Keyword.put(:mode, :passive)
 
     %URI{scheme: scheme, host: host, port: port} = URI.parse(url)
 
@@ -78,59 +59,42 @@ defmodule Ch.Pool do
         _other -> raise ArgumentError, "unexpected HTTP scheme: #{inspect(scheme)}"
       end
 
-    initial_pool_state = %{
-      template: {:template, scheme, host, port, connect_options}
-    }
-
-    NimblePool.start_link(
-      worker: {__MODULE__, initial_pool_state},
+    config = [
       pool_size: pool_size,
-      worker_idle_timeout: worker_idle_timeout,
-      lazy: true,
-      name: name
-    )
+      template: {scheme, host, port}
+    ]
+
+    GenServer.start_link(__MODULE__, config, name: name)
   end
 
   @doc """
-  Returns a child spec to allow Ch pool to be started under a supervisor.
+  Stops the given `pool`.
 
-  ## Options
-
-  The options are exactly the same as for `start_link/1`.
+  The pool exits with the given `reason`. The pool has `timeout` milliseconds to stop
+  before it's unilaterally killed by the runtime.
   """
-  @spec child_spec(keyword) :: Supervisor.child_spec()
-  def child_spec(options) do
-    %{id: __MODULE__, start: {__MODULE__, :start_link, [options]}}
+  def stop(pool, reason \\ :normal, timeout \\ :infinity) do
+    GenServer.stop(pool, reason, timeout)
   end
 
   @spec query(NimblePool.pool(), statement, params, keyword) ::
           {:ok, query_result} | {:error, query_error}
   def query(pool, statement, params \\ %{}, options \\ []) do
-    request = Ch.HTTP.encode_request("POST", statement, params, options)
-
     {timeout, options} = Keyword.pop(options, :timeout, @query_timeout)
-    deadline = Ch.HTTP.deadline_from_timeout(timeout)
+
+    deadline = Ch.HTTP.to_deadline(timeout)
+    path = Ch.HTTP.path(params, options)
 
     # TODO retry on closed? backoff?
-    result =
-      NimblePool.checkout!(
-        pool,
-        :request,
-        fn {pid, _ref}, conn ->
-          # TODO retry transient closed/etc. errors?
-          with {:ok, conn} <- ensure_connected(conn, pid, deadline),
-               {:ok, conn, response} <- Ch.HTTP.request(conn, request, deadline) do
-            {{:ok, response}, checkin(conn)}
-          else
-            {:error, reason} = error -> {error, {:remove, reason}}
-          end
-        end,
-        timeout
-      )
-
-    with {:ok, response} <- result do
-      Ch.HTTP.decode_response(response, options)
-    end
+    # TODO retry transient closed/etc. errors?
+    checkout(pool, timeout, fn ref, conn ->
+      with {:ok, conn} <- ensure_connected(conn, pool, deadline),
+           {:ok, conn, result} <- request(conn, path, statement, deadline) do
+        {result, checkin(conn)}
+      else
+        {:error, reason} = error -> {error, {:remove, reason}}
+      end
+    end)
   end
 
   @spec query!(NimblePool.pool(), statement, params, keyword) :: query_result
@@ -141,45 +105,134 @@ defmodule Ch.Pool do
     end
   end
 
-  @spec stop(NimblePool.pool(), reason :: term, timeout) :: :ok
-  def stop(pool, reason \\ :normal, timeout \\ :infinity) do
-    NimblePool.stop(pool, reason, timeout)
+  defp checkout(pool, timeout, fun) when is_function(fun) do
+    monitor_ref = Process.monitor(pool)
+
+    # TODO noconnect?
+    GenServer.cast(pool, {:out, self(), monitor_ref, timeout})
+
+    receive do
+      {^monitor_ref, conn, request_ref} ->
+        Process.demonitor(monitor_ref, [:flush])
+        {result, conn} = fun.(conn)
+        GenServer.cast(pool, {:in, conn, request_ref})
+        result
+
+      {^monitor_ref, :timeout} ->
+        Process.demonitor(monitor_ref, [:flush])
+        {:error, :timeout}
+
+      {:DOWN, ^monitor_ref, :process, _pid, reason} ->
+        {:error, reason}
+    end
   end
 
-  @impl NimblePool
-  def init_pool(config) do
-    {:ok, config}
+  @impl GenServer
+  def init(config) do
+    Process.flag(:trap_exit, true)
+
+    pool_size = Keyword.fetch!(config, :pool_size)
+    template = Keyword.fetch!(config, :template)
+
+    state = %{
+      queue: :queue.new(),
+      requests: %{},
+      monitors: %{},
+      resources: :queue.new(),
+      pool_size: pool_size,
+      template: template
+    }
+
+    {:ok, state}
   end
 
-  @impl NimblePool
-  def init_worker(config) do
-    {:ok, :template, config}
+  @impl GenServer
+  def handle_cast({:out, pid, request_ref, timeout}, state) do
+    monitor_ref = Process.monitor(pid)
+
+    %{requests: requests, monitors: monitors} = state
+    requests = Map.put(requests, request_ref, {pid, monitor_ref, :out})
+    monitors = Map.put(monitors, monitor_ref, request_ref)
+    state = %{state | requests: requests, monitors: monitors}
+    state = maybe_checkout(request_ref, monitor_ref, timeout, pid, state)
+
+    {:noreply, state}
   end
 
-  @impl NimblePool
-  def handle_checkout(:request, _from, :template = template, config) do
-    {:ok, config.template, template, config}
+  def handle_cast({:in, conn, monitor_ref}, state) do
+    Process.demonitor(monitor_ref, [:flush])
+
+    %{requests: requests, resources: resources} = state
+
+    resources =
+      case handle_checkin(conn) do
+        {:ok, conn} ->
+          :queue.in(conn, resources)
+
+        {:remove, reason} ->
+          remove_worker(reason, conn)
+          resources
+      end
+
+    state = remove_requests(state, monitor_ref)
+    state = maybe_checkout(%{state | resources: resources})
+    {:noreply, state}
   end
 
-  def handle_checkout(:request, _from, %Mint.HTTP1{} = conn, config) do
-    {:ok, {:ok, conn}, conn, config}
+  @impl GenServer
+  def handle_info({:DOWN, monitor_ref, _, _, _} = down, state) do
   end
 
-  @impl NimblePool
-  def handle_checkin({:ok, %Mint.HTTP1{} = conn}, _from, _conn, config) do
+  def handle_info({:ping, worker}, state) do
+  end
+
+  @impl GenServer
+  def terminate(reason, state) do
+  end
+
+  defp maybe_checkout(%{queue: queue, requests: requests} = state) do
+    case :queue.out(queue) do
+      {{:value, {pid, ref}, queue}} ->
+        case requests do
+          # the request still exists, so we can checkout the resource
+          %{^ref => {^pid, mon_ref, :out, deadline}} ->
+            maybe_checkout(command, mon_ref, deadline, {pid, ref}, %{state | queue: queue})
+
+          # it should never happen
+          %{^ref => _} ->
+            exit(:unexpected_checkout)
+
+          # the request is no longer active, try the next one
+          %{} ->
+            maybe_checkout(%{state | queue: queue})
+        end
+
+      {:empty, _queue} ->
+        state
+    end
+  end
+
+  defp handle_checkin({:ok, %Mint.HTTP1{} = conn}, _from, _conn, config) do
     {:ok, conn, config}
   end
 
-  def handle_checkin({:remove, reason}, _from, _conn, config) do
+  defp handle_checkin({:remove, reason}, _from, _conn, config) do
     {:remove, reason, config}
   end
 
-  @impl NimblePool
-  def handle_ping(_conn, _config) do
+  defp handle_checkout(:request, _from, :template = template, config) do
+    {:ok, config.template, template, config}
+  end
+
+  defp handle_checkout(:request, _from, %Mint.HTTP1{} = conn, config) do
+    {:ok, {:ok, conn}, conn, config}
+  end
+
+  defp handle_ping(_conn, _config) do
     {:remove, :worker_idle_timeout}
   end
 
-  # TODO handle_info?
+  # TODO handle_info
 
   @impl NimblePool
   def terminate_worker(_reason, conn, config) do
@@ -187,11 +240,10 @@ defmodule Ch.Pool do
     {:ok, config}
   end
 
-  defp ensure_connected({:template, scheme, host, port, options}, owner, deadline) do
+  defp ensure_connected({:template, scheme, host, port}, owner, deadline) do
     timeout = Ch.HTTP.timeout_from_deadline(deadline)
-    options = Keyword.put(options, :timeout, timeout)
 
-    case Mint.HTTP1.connect(scheme, host, port, options) do
+    case Mint.HTTP1.connect(scheme, host, port, mode: :passive, timeout: timeout) do
       {:ok, conn} ->
         case Mint.HTTP1.controlling_process(conn, owner) do
           {:ok, _conn} = ok ->

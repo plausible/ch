@@ -16,8 +16,10 @@ names = ["id", "name", "created_at"]
 header = Ch.RowBinary.encode_names_and_types(names, types)
 rows = Ch.RowBinary.encode_rows([[1, "pageview", DateTime.utc_now()]], types)
 
-body = IO.iodata_to_binary([statement, header | rows])
-{path, headers, _body} = Ch.HTTP.encode(body)
+body = [header | rows]
+path = Ch.HTTP.path(%{})
+headers = [{"x-clickhouse-format", "RowBinaryWithNamesAndTypes"}]
+{:ok, _ref, conn} = Mint.HTTP1.request(conn, "POST", path, headers, body)
 ```
 
 ## Batching with a GenServer
@@ -92,8 +94,9 @@ A successful INSERT response includes an `x-clickhouse-summary` header:
 {"written_rows": "150000", "written_bytes": "3145728", ...}
 ```
 
-Extract it from the response headers — see `Ch.HTTP.decode/3` which returns it
-parsed as a map in the result.
+Extract it from the response headers yourself whenever you receive an
+`{:headers, ref, headers}` tuple from Mint. Use `Ch.HTTP.decode_continue/2` to
+handle the rest of the response.
 
 ## Tests
 

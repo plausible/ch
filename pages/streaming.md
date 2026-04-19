@@ -11,24 +11,27 @@ rows as Mint chunks arrive rather than buffering the entire response body first.
 
 ## API
 
-`decode_start/1` initialises a decoder from response headers (inspects
-`x-clickhouse-format`). `decode_continue/2` accepts raw binary chunks extracted
-from `{:data, ref, chunk}` Mint responses, and returns rows incrementally.
+`decode_start/1` initialises the decoder configuration (e.g. custom `decoders`).
+`decode_continue/2` accepts Mint response tuples directly (`:status`, `:headers`,
+`:data`, `:done`, `:error`) and returns decoded rows or transition states.
 
 ```
 {:rows, rows, names, state}  -- rows decoded from this chunk; continue
-{:more, state}               -- no complete rows yet; continue
-{:ok, names, []}             -- done (all rows already emitted via :rows)
-{:error, Ch.Error.t()}       -- ClickHouse error
+{:cont, state}               -- tuple consumed, state advanced; continue
+{:ok, names, rows}           -- done (emits any final rows)
+:ok                        -- done (no rows, e.g. DDL/INSERT)
+{:error, Ch.Error.t()}       -- ClickHouse server-side error
+{:error, reason}             -- Mint connection or transport error
 ```
 
 ## Passive mode (recv loop)
 
 ```elixir
-{path, headers, body} = Ch.HTTP.encode("SELECT number FROM system.numbers LIMIT 10000000")
-{:ok, _ref, conn} = Mint.HTTP1.request(conn, "POST", path, headers, body)
+path = Ch.HTTP.path(%{})
+body = "SELECT number FROM system.numbers LIMIT 10000000"
+{:ok, _ref, conn} = Mint.HTTP1.request(conn, "POST", path, [], body)
 
-state = nil
+state = Ch.HTTP.decode_start()
 
 conn =
   Stream.resource(
@@ -36,22 +39,15 @@ conn =
     fn {conn, state} ->
       case Mint.HTTP1.recv(conn, 0, 5_000) do
         {:ok, conn, responses} ->
+          # Feed Mint responses directly to the decoder
           {rows, state} =
-            Enum.reduce(responses, {[], state}, fn
-              {:status, _ref, _status}, acc ->
-                acc
-
-              {:headers, _ref, headers}, {rows, _state} ->
-                {rows, Ch.HTTP.decode_start(headers)}
-
-              {:data, _ref, chunk}, {rows, state} ->
-                case Ch.HTTP.decode_continue(chunk, state) do
-                  {:rows, new_rows, _names, state} -> {rows ++ new_rows, state}
-                  {:more, state} -> {rows, state}
-                end
-
-              {:done, _ref}, acc ->
-                acc
+            Enum.reduce(responses, {[], state}, fn resp, {rows, state} ->
+              case Ch.HTTP.decode_continue(state, resp) do
+                {:rows, new_rows, _names, state} -> {rows ++ new_rows, state}
+                {:cont, state} -> {rows, state}
+                {:ok, _names, new_rows} -> {rows ++ new_rows, state}
+                _ -> {rows, state}
+              end
             end)
 
           {rows, {conn, state}}
@@ -78,31 +74,22 @@ defp recv_loop(conn, state) do
       case Mint.HTTP1.stream(conn, message) do
         {:ok, conn, responses} ->
           state =
-            Enum.reduce(responses, state, fn
-              {:status, _ref, _status}, state ->
-                state
+            Enum.reduce(responses, state, fn resp, state ->
+              case Ch.HTTP.decode_continue(state, resp) do
+                {:rows, rows, names, state} ->
+                  handle_rows(rows, names)
+                  state
 
-              {:headers, _ref, headers}, _state ->
-                Ch.HTTP.decode_start(headers)
+                {:cont, state} ->
+                  state
 
-              {:data, _ref, chunk}, state ->
-                case Ch.HTTP.decode_continue(chunk, state) do
-                  {:rows, rows, names, state} ->
-                    handle_rows(rows, names)
-                    state
-
-                  {:more, state} ->
-                    state
-                end
-
-              {:done, _ref}, state ->
-                {:done, state}
+                # Check for termination in a real app
+                _ ->
+                  state
+              end
             end)
 
-          case state do
-            {:done, _} -> :ok
-            state -> recv_loop(conn, state)
-          end
+          recv_loop(conn, state)
       end
   end
 end

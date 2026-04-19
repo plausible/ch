@@ -6,32 +6,48 @@ defmodule Ch.Guides.StreamingTest do
   # Simulates a RowBinaryWithNamesAndTypes response split into N chunks,
   # runs it through decode_start/decode_continue, collects all rows.
   defp stream_decode(binary, chunk_size) do
+    state = Ch.HTTP.decode_start()
     headers = [{"x-clickhouse-format", "RowBinaryWithNamesAndTypes"}]
-    state = Ch.HTTP.decode_start(headers)
 
-    chunks = for <<chunk::binary-size(chunk_size) <- binary>>, do: chunk
+    responses = [
+      {:status, nil, 200},
+      {:headers, nil, headers}
+    ]
+
+    responses =
+      responses ++
+        for <<chunk::binary-size(chunk_size) <- binary>>, do: {:data, nil, chunk}
+
     remainder_size = rem(byte_size(binary), chunk_size)
 
-    chunks =
+    responses =
       if remainder_size > 0 do
-        chunks ++ [binary_part(binary, byte_size(binary) - remainder_size, remainder_size)]
+        responses ++
+          [{:data, nil, binary_part(binary, byte_size(binary) - remainder_size, remainder_size)}]
       else
-        chunks
+        responses
       end
 
-    {names, rows, state} =
-      Enum.reduce(chunks, {nil, [], state}, fn chunk, {names, rows_acc, state} ->
-        case Ch.HTTP.decode_continue(chunk, state) do
-          {:rows, new_rows, chunk_names, state} ->
-            {names || chunk_names, rows_acc ++ new_rows, state}
+    responses = responses ++ [{:done, nil}]
 
-          {:more, state} ->
-            {names, rows_acc, state}
+    {names, rows, state} =
+      Enum.reduce(responses, {nil, [], state}, fn resp, {names, rows_acc, state} ->
+        case Ch.HTTP.decode_continue(state, resp) do
+          {:rows, new_rows, chunk_names, new_state} ->
+            {names || chunk_names, rows_acc ++ new_rows, new_state}
+
+          {:cont, new_state} ->
+            {names, rows_acc, new_state}
+
+          {:ok, chunk_names, new_rows} ->
+            {names || chunk_names, rows_acc ++ new_rows, nil}
+
+          :ok ->
+            {names, rows_acc, nil}
         end
       end)
 
-    {:ok, final_names, final_rows} = Ch.HTTP.decode_continue(:end_of_input, state)
-    {names || final_names, rows ++ final_rows}
+    {names, rows}
   end
 
   describe "decode_start/decode_continue" do
@@ -81,17 +97,19 @@ defmodule Ch.Guides.StreamingTest do
     end
 
     test "empty response" do
-      headers = [{"x-clickhouse-format", "RowBinaryWithNamesAndTypes"}]
-      state = Ch.HTTP.decode_start(headers)
-      assert {:ok, [], []} = Ch.HTTP.decode_continue(:end_of_input, state)
+      state = Ch.HTTP.decode_start()
+      {:cont, state} = Ch.HTTP.decode_continue(state, {:status, nil, 200})
+      {:cont, state} = Ch.HTTP.decode_continue(state, {:headers, nil, []})
+      assert :ok = Ch.HTTP.decode_continue(state, {:done, nil})
     end
 
-    test "non-RowBinary format accumulates raw body" do
+    test "unknown format accumulates error body" do
+      state = Ch.HTTP.decode_start()
       headers = [{"x-clickhouse-format", "TabSeparated"}]
-      state = Ch.HTTP.decode_start(headers)
-      {:more, state} = Ch.HTTP.decode_continue("col1\tcol2\n", state)
-      {:more, state} = Ch.HTTP.decode_continue("val1\tval2\n", state)
-      assert {:ok, [], [_body]} = Ch.HTTP.decode_continue(:end_of_input, state)
+      {:cont, state} = Ch.HTTP.decode_continue(state, {:status, nil, 200})
+      {:cont, state} = Ch.HTTP.decode_continue(state, {:headers, nil, headers})
+      {:cont, state} = Ch.HTTP.decode_continue(state, {:data, nil, "col1\tcol2\n"})
+      assert {:error, {:unknown_format, "TabSeparated"}} = Ch.HTTP.decode_continue(state, {:done, nil})
     end
   end
 
