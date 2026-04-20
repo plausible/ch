@@ -1452,13 +1452,11 @@ defmodule Ch.RowBinary do
       {:datetime, timezone} ->
         case bin do
           <<s::32-little, bin::bytes>> ->
-            dt = DateTime.from_unix!(s)
-
             dt =
               case timezone do
-                nil -> DateTime.to_naive(dt)
-                "UTC" -> dt
-                _ -> DateTime.shift_zone!(dt, timezone)
+                nil -> NaiveDateTime.from_gregorian_seconds(s + @epoch_gregorian_seconds)
+                "UTC" -> DateTime.from_unix!(s)
+                _ -> s |> DateTime.from_unix!() |> DateTime.shift_zone!(timezone)
               end
 
             decode_rows(types_rest, bin, [dt | row], rows, types)
