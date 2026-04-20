@@ -7,6 +7,7 @@
 - RowBinary: de- and encode dynamic JSON https://github.com/plausible/ch/pull/296
 - use gregorian seconds for naive datetime encoding in rowbinary (it's faster this way) https://github.com/plausible/ch/pull/311
 - use `DateTime.to_unix/2` + `DateTime.to_naive/1` for naive datetime decoding in RowBinary https://github.com/plausible/ch/pull/313
+- allow non-UTC timezones for DateTime64 RowBinary encoding https://github.com/plausible/ch/pull/315
 
 ## 0.7.1 (2026-01-15)
 
