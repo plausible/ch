@@ -1528,14 +1528,19 @@ defmodule Ch.RowBinary do
 
       {:datetime64, time_unit, timezone} ->
         case bin do
-          <<s::64-little-signed, bin::bytes>> ->
-            dt = DateTime.from_unix!(s, time_unit)
-
+          <<ticks::64-little-signed, bin::bytes>> ->
             dt =
               case timezone do
-                nil -> DateTime.to_naive(dt)
-                "UTC" -> dt
-                _ -> DateTime.shift_zone!(dt, timezone)
+                nil ->
+                  gregorian_seconds = div(ticks, time_unit) + @epoch_gregorian_seconds
+                  microsecond_precision = microsecond_precision(ticks, time_unit)
+                  NaiveDateTime.from_gregorian_seconds(gregorian_seconds, microsecond_precision)
+
+                "UTC" ->
+                  DateTime.from_unix!(ticks, time_unit)
+
+                _ ->
+                  ticks |> DateTime.from_unix!(time_unit) |> DateTime.shift_zone!(timezone)
               end
 
             decode_rows(types_rest, bin, [dt | row], rows, types)
@@ -1623,4 +1628,23 @@ defmodule Ch.RowBinary do
       # TODO: we could potentially decode ClickHouse's Time/Time64 values as Elixir's Duration when it's out of Elixir's Time range
     end
   end
+
+  defp microsecond_precision(ticks, time_unit) when time_unit <= 1_000_000 do
+    remainder = rem(ticks, time_unit)
+    {remainder * div(1_000_000, time_unit), precision(time_unit)}
+  end
+
+  defp microsecond_precision(ticks, time_unit) do
+    remainder = rem(ticks, time_unit)
+    {div(remainder, div(time_unit, 1_000_000)), 6}
+  end
+
+  @compile inline: [precision: 1]
+  defp precision(1), do: 0
+  defp precision(10), do: 1
+  defp precision(100), do: 2
+  defp precision(1_000), do: 3
+  defp precision(10_000), do: 4
+  defp precision(100_000), do: 5
+  defp precision(1_000_000), do: 6
 end
