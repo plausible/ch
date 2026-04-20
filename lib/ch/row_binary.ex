@@ -1533,7 +1533,8 @@ defmodule Ch.RowBinary do
               case timezone do
                 nil ->
                   gregorian_seconds = div(ticks, time_unit) + @epoch_gregorian_seconds
-                  microsecond_precision = microsecond_precision(ticks, time_unit)
+                  subsecond_ticks = rem(ticks, time_unit)
+                  microsecond_precision = microsecond_precision(subsecond_ticks, time_unit)
                   NaiveDateTime.from_gregorian_seconds(gregorian_seconds, microsecond_precision)
 
                 "UTC" ->
@@ -1608,10 +1609,15 @@ defmodule Ch.RowBinary do
     end
   end
 
-  @compile inline: [time_unit: 1]
+  @compile inline: [time_unit: 1, time_precision: 1]
   for precision <- 0..9 do
     time_unit = Integer.pow(10, precision)
+
     defp time_unit(unquote(precision)), do: unquote(time_unit)
+
+    if precision <= 6 do
+      defp time_precision(unquote(time_unit)), do: unquote(precision)
+    end
   end
 
   @compile inline: [time_after_midnight: 2]
@@ -1629,22 +1635,12 @@ defmodule Ch.RowBinary do
     end
   end
 
-  defp microsecond_precision(ticks, time_unit) when time_unit <= 1_000_000 do
-    remainder = rem(ticks, time_unit)
-    {remainder * div(1_000_000, time_unit), precision(time_unit)}
+  @compile inline: [microsecond_precision: 2]
+  defp microsecond_precision(subsecond_ticks, time_unit) when time_unit <= 1_000_000 do
+    {subsecond_ticks * div(1_000_000, time_unit), time_precision(time_unit)}
   end
 
-  defp microsecond_precision(ticks, time_unit) do
-    remainder = rem(ticks, time_unit)
-    {div(remainder, div(time_unit, 1_000_000)), 6}
+  defp microsecond_precision(subsecond_ticks, time_unit) do
+    {div(subsecond_ticks, div(time_unit, 1_000_000)), 6}
   end
-
-  @compile inline: [precision: 1]
-  defp precision(1), do: 0
-  defp precision(10), do: 1
-  defp precision(100), do: 2
-  defp precision(1_000), do: 3
-  defp precision(10_000), do: 4
-  defp precision(100_000), do: 5
-  defp precision(1_000_000), do: 6
 end
