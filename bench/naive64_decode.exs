@@ -38,16 +38,17 @@ defmodule Bench do
   defp precision(_), do: 6
 end
 
-# representative unix millisecond timestamps
 millis = Enum.map(1..1_000_000, fn i -> 1_700_000_000_000 + i end)
 micros = Enum.map(1..1_000_000, fn i -> 1_700_000_000_000_000 + i end)
 
 Benchee.run(
   %{
-    "via_unix ms" => fn -> Enum.each(millis, &Bench.via_unix(&1, 1_000)) end,
-    "via_gregorian ms" => fn -> Enum.each(millis, &Bench.via_gregorian(&1, 1_000)) end,
-    "via_unix us" => fn -> Enum.each(micros, &Bench.via_unix(&1, 1_000_000)) end,
-    "via_gregorian us" => fn -> Enum.each(micros, &Bench.via_gregorian(&1, 1_000_000)) end
+    "via_unix" => fn input -> Enum.each(input, &Bench.via_unix(&1, 1_000)) end,
+    "via_gregorian" => fn input -> Enum.each(input, &Bench.via_gregorian(&1, 1_000)) end
   },
-  profile_after: true
+  inputs: %{
+    "milliseconds" => millis,
+    "microseconds" => micros
+  }
+  # profile_after: true
 )
