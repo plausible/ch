@@ -545,7 +545,134 @@ defmodule Ch.FaultsTest do
     end
   end
 
+  describe "transactions" do
+    test "sends begin and commit over the same session", %{
+      port: port,
+      listen: listen,
+      clickhouse: clickhouse
+    } do
+      test = self()
+      {:ok, conn} = Ch.start_link(port: port)
+
+      {:ok, mint} = :gen_tcp.accept(listen)
+
+      # handshake
+      :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+      :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+      task =
+        Task.async(fn ->
+          DBConnection.transaction(conn, fn conn ->
+            assert DBConnection.status(conn) == :transaction
+            send(test, :inside_transaction)
+            :committed
+          end)
+        end)
+
+      begin_request = intercept_packets(mint)
+      assert request_body(begin_request) == "BEGIN TRANSACTION"
+
+      begin_params = request_query_params(begin_request)
+      assert begin_params["session_id"]
+      assert begin_params["session_timeout"] == "300"
+      :ok = :gen_tcp.send(mint, ok_response())
+
+      assert_receive :inside_transaction
+
+      commit_request = intercept_packets(mint)
+      assert request_body(commit_request) == "COMMIT"
+      assert request_query_params(commit_request) == begin_params
+      :ok = :gen_tcp.send(mint, ok_response())
+
+      assert Task.await(task) == {:ok, :committed}
+      assert DBConnection.status(conn) == :idle
+    end
+
+    test "marks the transaction as failed after a query error", %{
+      port: port,
+      listen: listen,
+      clickhouse: clickhouse
+    } do
+      test = self()
+      {:ok, conn} = Ch.start_link(port: port)
+
+      {:ok, mint} = :gen_tcp.accept(listen)
+
+      # handshake
+      :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+      :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+      task =
+        Task.async(fn ->
+          DBConnection.transaction(conn, fn conn ->
+            assert DBConnection.status(conn) == :transaction
+
+            assert {:error, %Ch.Error{code: 47}} =
+                     Ch.query(conn, "select missing_transaction_column")
+
+            send(test, {:transaction_status, DBConnection.status(conn)})
+            DBConnection.rollback(conn, :query_failed)
+          end)
+        end)
+
+      begin_request = intercept_packets(mint)
+      begin_params = request_query_params(begin_request)
+      assert request_body(begin_request) == "BEGIN TRANSACTION"
+      :ok = :gen_tcp.send(mint, ok_response())
+
+      query_request = intercept_packets(mint)
+      assert request_body(query_request) == "select missing_transaction_column"
+      assert request_query_params(query_request) == begin_params
+
+      :ok =
+        :gen_tcp.send(
+          mint,
+          error_response(47, "Code: 47. DB::Exception: Unknown expression identifier")
+        )
+
+      assert_receive {:transaction_status, :error}
+      rollback_request = intercept_packets(mint)
+      assert request_body(rollback_request) == "ROLLBACK"
+      assert request_query_params(rollback_request) == begin_params
+      :ok = :gen_tcp.send(mint, ok_response())
+
+      assert Task.await(task) == {:error, :query_failed}
+      assert DBConnection.status(conn) == :idle
+    end
+  end
+
   defp first_byte(binary) do
     :binary.part(binary, 0, 1)
+  end
+
+  defp ok_response do
+    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+  end
+
+  defp error_response(code, message) do
+    "HTTP/1.1 500 Internal Server Error\r\n" <>
+      "X-ClickHouse-Exception-Code: #{code}\r\n" <>
+      "Content-Length: #{byte_size(message)}\r\n\r\n" <> message
+  end
+
+  defp request_query_params(request) do
+    request
+    |> request_target()
+    |> URI.parse()
+    |> Map.get(:query, "")
+    |> URI.decode_query()
+  end
+
+  defp request_body(request) do
+    case String.split(request, "\r\n\r\n", parts: 2) do
+      [_headers, body] -> body
+      [_headers] -> ""
+    end
+  end
+
+  defp request_target(request) do
+    [request_line | _rest] = String.split(request, "\r\n", parts: 2)
+    [_method, target, _version] = String.split(request_line, " ", parts: 3)
+    target
   end
 end
