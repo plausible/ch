@@ -13,13 +13,9 @@ end
 
 Benchee.run(
   %{
-    "diff" => fn date ->
-      Enum.each(1..1_000_000, fn _ -> Bench.diff(date) end)
-    end,
-    "gregorian" => fn date ->
-      Enum.each(1..1_000_000, fn _ -> Bench.gregorian(date) end)
-    end
+    "diff" => &Bench.diff/1,
+    "gregorian" => &Bench.gregorian/1
   },
-  inputs: %{"now" => Date.utc_today()},
+  inputs: %{"today" => Date.utc_today()},
   profile_after: true
 )
