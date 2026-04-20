@@ -569,20 +569,20 @@ defmodule Ch.FaultsTest do
           end)
         end)
 
-      begin_request = intercept_packets(mint)
-      assert request_body(begin_request) == "BEGIN TRANSACTION"
+      begin_request = parse_request(intercept_packets(mint))
+      assert begin_request.body == "BEGIN TRANSACTION"
 
-      begin_params = request_query_params(begin_request)
+      begin_params = begin_request.query_params
       assert begin_params["session_id"]
       assert begin_params["session_timeout"] == "300"
-      :ok = :gen_tcp.send(mint, ok_response())
+      :ok = :gen_tcp.send(mint, response())
 
       assert_receive :inside_transaction
 
-      commit_request = intercept_packets(mint)
-      assert request_body(commit_request) == "COMMIT"
-      assert request_query_params(commit_request) == begin_params
-      :ok = :gen_tcp.send(mint, ok_response())
+      commit_request = parse_request(intercept_packets(mint))
+      assert commit_request.body == "COMMIT"
+      assert commit_request.query_params == begin_params
+      :ok = :gen_tcp.send(mint, response())
 
       assert Task.await(task) == {:ok, :committed}
       assert DBConnection.status(conn) == :idle
@@ -615,26 +615,30 @@ defmodule Ch.FaultsTest do
           end)
         end)
 
-      begin_request = intercept_packets(mint)
-      begin_params = request_query_params(begin_request)
-      assert request_body(begin_request) == "BEGIN TRANSACTION"
-      :ok = :gen_tcp.send(mint, ok_response())
+      begin_request = parse_request(intercept_packets(mint))
+      begin_params = begin_request.query_params
+      assert begin_request.body == "BEGIN TRANSACTION"
+      :ok = :gen_tcp.send(mint, response())
 
-      query_request = intercept_packets(mint)
-      assert request_body(query_request) == "select missing_transaction_column"
-      assert request_query_params(query_request) == begin_params
+      query_request = parse_request(intercept_packets(mint))
+      assert query_request.body == "select missing_transaction_column"
+      assert query_request.query_params == begin_params
 
       :ok =
         :gen_tcp.send(
           mint,
-          error_response(47, "Code: 47. DB::Exception: Unknown expression identifier")
+          response(
+            500,
+            [{"X-ClickHouse-Exception-Code", "47"}],
+            "Code: 47. DB::Exception: Unknown expression identifier"
+          )
         )
 
       assert_receive {:transaction_status, :error}
-      rollback_request = intercept_packets(mint)
-      assert request_body(rollback_request) == "ROLLBACK"
-      assert request_query_params(rollback_request) == begin_params
-      :ok = :gen_tcp.send(mint, ok_response())
+      rollback_request = parse_request(intercept_packets(mint))
+      assert rollback_request.body == "ROLLBACK"
+      assert rollback_request.query_params == begin_params
+      :ok = :gen_tcp.send(mint, response())
 
       assert Task.await(task) == {:error, :query_failed}
       assert DBConnection.status(conn) == :idle
@@ -645,34 +649,34 @@ defmodule Ch.FaultsTest do
     :binary.part(binary, 0, 1)
   end
 
-  defp ok_response do
-    "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+  defp response(status_code \\ 200, headers \\ [], body \\ "")
+
+  defp response(status_code, headers, body) do
+    "HTTP/1.1 #{status_code} #{reason_phrase(status_code)}\r\n" <>
+      Enum.map_join(headers, "", fn {name, value} -> "#{name}: #{value}\r\n" end) <>
+      "Content-Length: #{byte_size(body)}\r\n\r\n" <> body
   end
 
-  defp error_response(code, message) do
-    "HTTP/1.1 500 Internal Server Error\r\n" <>
-      "X-ClickHouse-Exception-Code: #{code}\r\n" <>
-      "Content-Length: #{byte_size(message)}\r\n\r\n" <> message
-  end
+  defp parse_request(request) do
+    {head, body} =
+      case String.split(request, "\r\n\r\n", parts: 2) do
+        [head, body] -> {head, body}
+        [head] -> {head, ""}
+      end
 
-  defp request_query_params(request) do
-    request
-    |> request_target()
-    |> URI.parse()
-    |> Map.get(:query, "")
-    |> URI.decode_query()
-  end
-
-  defp request_body(request) do
-    case String.split(request, "\r\n\r\n", parts: 2) do
-      [_headers, body] -> body
-      [_headers] -> ""
-    end
-  end
-
-  defp request_target(request) do
-    [request_line | _rest] = String.split(request, "\r\n", parts: 2)
+    [request_line | _headers] = String.split(head, "\r\n", parts: 2)
     [_method, target, _version] = String.split(request_line, " ", parts: 3)
-    target
+
+    %{
+      body: body,
+      query_params:
+        target
+        |> URI.parse()
+        |> Map.get(:query, "")
+        |> URI.decode_query()
+    }
   end
+
+  defp reason_phrase(200), do: "OK"
+  defp reason_phrase(500), do: "Internal Server Error"
 end
