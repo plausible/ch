@@ -346,9 +346,7 @@ defmodule Ch.RowBinary do
   end
 
   def encode({:datetime64, time_unit}, %DateTime{} = datetime) do
-    {seconds, micros} = DateTime.to_gregorian_seconds(datetime)
-
-    <<(seconds - @epoch_gregorian_seconds) * time_unit + div(micros * time_unit, 1_000_000)::64-little-signed>>
+    <<DateTime.to_unix(datetime, time_unit)::64-little-signed>>
   end
 
   def encode({:datetime64, _time_unit}, nil), do: <<0::64>>
