@@ -7,8 +7,8 @@ defmodule Ch.RowBinary do
   import Bitwise
 
   @epoch_date ~D[1970-01-01]
-  @epoch_naive_datetime NaiveDateTime.new!(@epoch_date, ~T[00:00:00])
   @epoch_utc_datetime DateTime.new!(@epoch_date, ~T[00:00:00])
+  @epoch_gregorian_seconds 62_167_219_200
 
   @doc false
   def encode_names_and_types(names, types) do
@@ -330,7 +330,8 @@ defmodule Ch.RowBinary do
   end
 
   def encode(:datetime, %NaiveDateTime{} = datetime) do
-    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime)::32-little>>
+    {seconds, _micros} = NaiveDateTime.to_gregorian_seconds(datetime)
+    <<seconds - @epoch_gregorian_seconds::32-little>>
   end
 
   def encode(:datetime, %DateTime{time_zone: "Etc/UTC"} = datetime) do
@@ -344,7 +345,9 @@ defmodule Ch.RowBinary do
   def encode(:datetime, nil), do: <<0::32>>
 
   def encode({:datetime64, time_unit}, %NaiveDateTime{} = datetime) do
-    <<NaiveDateTime.diff(datetime, @epoch_naive_datetime, time_unit)::64-little-signed>>
+    {seconds, micros} = NaiveDateTime.to_gregorian_seconds(datetime)
+
+    <<(seconds - @epoch_gregorian_seconds) * time_unit + div(micros * time_unit, 1_000_000)::64-little-signed>>
   end
 
   def encode({:datetime64, time_unit}, %DateTime{time_zone: "Etc/UTC"} = datetime) do
