@@ -6,8 +6,8 @@ defmodule Ch.RowBinary do
 
   import Bitwise
 
-  @epoch_date ~D[1970-01-01]
   @epoch_gregorian_seconds 62_167_219_200
+  @epoch_gregorian_days 719_528
 
   @doc false
   def encode_names_and_types(names, types) do
@@ -352,13 +352,13 @@ defmodule Ch.RowBinary do
   def encode({:datetime64, _time_unit}, nil), do: <<0::64>>
 
   def encode(:date, %Date{} = date) do
-    <<Date.diff(date, @epoch_date)::16-little>>
+    <<Date.to_gregorian_days(date) - @epoch_gregorian_days::16-little>>
   end
 
   def encode(:date, nil), do: <<0::16>>
 
   def encode(:date32, %Date{} = date) do
-    <<Date.diff(date, @epoch_date)::32-little-signed>>
+    <<Date.to_gregorian_days(date) - @epoch_gregorian_days::32-little-signed>>
   end
 
   def encode(:date32, nil), do: <<0::32>>
@@ -1308,11 +1308,11 @@ defmodule Ch.RowBinary do
     },
     date: %{
       pattern: quote(do: <<d::16-little>>),
-      value: quote(do: Date.add(@epoch_date, d))
+      value: quote(do: Date.from_gregorian_days(d + @epoch_gregorian_days))
     },
     date32: %{
       pattern: quote(do: <<d::32-little-signed>>),
-      value: quote(do: Date.add(@epoch_date, d))
+      value: quote(do: Date.from_gregorian_days(d + @epoch_gregorian_days))
     },
     time: %{
       pattern: quote(do: <<s::32-little-signed>>),
