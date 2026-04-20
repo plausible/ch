@@ -59,7 +59,7 @@ defmodule Ch.MixProject do
       {:benchee, "~> 1.0", only: [:bench]},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
-      {:tz, "~> 0.28.1", only: [:test]},
+      {:tz, "~> 0.28.1", only: [:dev, :test, :bench]},
       {:excoveralls, "~> 0.18.5", only: :test}
     ]
   end
