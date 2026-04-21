@@ -168,6 +168,8 @@ defmodule Ch do
       def cast(value, unquote(:"f#{size}")), do: Ecto.Type.cast(:float, value)
     end
 
+    def cast(value, :bf16), do: Ecto.Type.cast(:float, value)
+
     def cast(value, {:decimal = type, _p, _s}), do: Ecto.Type.cast(type, value)
 
     for size <- [32, 64, 128, 256] do

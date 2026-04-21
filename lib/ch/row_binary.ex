@@ -103,7 +103,8 @@ defmodule Ch.RowBinary do
               :ipv4,
               :ipv6,
               :point,
-              :nothing
+              :nothing,
+              :bf16
             ],
        do: t
 
@@ -252,11 +253,17 @@ defmodule Ch.RowBinary do
     type = :"f#{size}"
 
     def encode(unquote(type), f) when is_number(f) do
-      <<f::unquote(size)-little-signed-float>>
+      <<f::unquote(size)-little-float>>
     end
 
     def encode(unquote(type), nil), do: <<0::unquote(size)>>
   end
+
+  def encode(:bf16, f) when is_number(f) do
+    <<f::16-little-float>>
+  end
+
+  def encode(:bf16, nil), do: <<0::16>>
 
   def encode({:decimal, precision, scale}, decimal) do
     type =
@@ -722,7 +729,8 @@ defmodule Ch.RowBinary do
               :ipv4,
               :ipv6,
               :point,
-              :nothing
+              :nothing,
+              :bf16
             ],
        do: t
 
@@ -1004,7 +1012,8 @@ defmodule Ch.RowBinary do
     uuid: 0x1D,
     ipv4: 0x28,
     ipv6: 0x29,
-    boolean: 0x2D
+    boolean: 0x2D,
+    bf16: 0x31
   ]
 
   # TODO compile inline?
@@ -1195,7 +1204,6 @@ defmodule Ch.RowBinary do
   other_dynamic_types = [
     datetime: 0x11,
     set: 0x21,
-    bfloat16: 0x31,
     time: 0x32
   ]
 
@@ -1302,6 +1310,10 @@ defmodule Ch.RowBinary do
       %{pattern: quote(do: <<f::64-little-float>>), value: quote(do: f)},
       %{pattern: quote(do: <<_nan_or_inf::64>>), value: quote(do: nil)}
     ],
+    bf16: [
+      %{pattern: quote(do: <<f::16-little-float>>), value: quote(do: f)},
+      %{pattern: quote(do: <<_nan_or_inf::16>>), value: quote(do: nil)}
+    ],
     uuid: %{
       pattern: quote(do: <<u1::64-little, u2::64-little>>),
       value: quote(do: <<u1::64, u2::64>>)
@@ -1395,6 +1407,9 @@ defmodule Ch.RowBinary do
 
       :f64 ->
         decode_f64_decode_rows(bin, types_rest, row, rows, types)
+
+      :bf16 ->
+        decode_bf16_decode_rows(bin, types_rest, row, rows, types)
 
       :string ->
         decode_string_decode_rows(bin, types_rest, row, rows, types)

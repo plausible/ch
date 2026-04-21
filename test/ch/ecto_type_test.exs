@@ -257,6 +257,24 @@ defmodule Ch.EctoTypeTest do
     end
   end
 
+  test "BFloat16" do
+    assert {:parameterized, {Ch, :bf16}} =
+             type = Ecto.ParameterizedType.init(Ch, type: unquote("BFloat16"))
+
+    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.format(type) == "#Ch<BFloat16>"
+
+    assert {:ok, 1.0} = Ecto.Type.cast(type, 1.0)
+    assert {:ok, 1.0} = Ecto.Type.cast(type, 1)
+    assert {:ok, 1.0} = Ecto.Type.cast(type, "1.0")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, "asdf")
+
+    assert {:ok, 1.0} = Ecto.Type.dump(type, 1.0)
+    assert {:ok, 1.0} = Ecto.Type.load(type, 1.0)
+  end
+
   test "Date" do
     assert {:parameterized, {Ch, :date}} = type = Ecto.ParameterizedType.init(Ch, type: "Date")
 

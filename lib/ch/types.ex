@@ -16,6 +16,7 @@ defmodule Ch.Types do
       for size <- [32, 64] do
         {"Float#{size}", :"f#{size}", []}
       end,
+      {"BFloat16", :bf16, []},
       {"Array", :array, [:type]},
       {"Tuple", :tuple, [:maybe_named_column]},
       {"Variant", :variant, [:type]},
