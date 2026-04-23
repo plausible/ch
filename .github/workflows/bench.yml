@@ -16,12 +16,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  encode:
+  rowbinary:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - script: bench/encode.exs
+            suite_name: Encode
+            artifact_name: encode-benchmark
+            output_path: bench/output/encode-github-action-benchmark.json
+          - script: bench/decode.exs
+            suite_name: Decode
+            artifact_name: decode-benchmark
+            output_path: bench/output/decode-github-action-benchmark.json
 
     env:
       MIX_ENV: bench
-      BENCHMARK_OUTPUT_PATH: bench/output/encode-github-action-benchmark.json
+      BENCHMARK_OUTPUT_PATH: ${{ matrix.output_path }}
 
     steps:
       - uses: actions/checkout@v6
@@ -44,19 +56,19 @@ jobs:
       - run: mix deps.get --only $MIX_ENV
       - run: mix compile --warnings-as-errors
 
-      - run: mix run bench/encode.exs
+      - run: mix run ${{ matrix.script }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: encode-benchmark
-          path: bench/output/encode-github-action-benchmark.json
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.output_path }}
 
       - name: Publish benchmark history
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: Ch RowBinary Encode
+          name: ${{ matrix.suite_name }}
           tool: customBiggerIsBetter
-          output-file-path: bench/output/encode-github-action-benchmark.json
+          output-file-path: ${{ matrix.output_path }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: ${{ github.event_name != 'pull_request' }}
           comment-always: ${{ github.event_name == 'pull_request' }}
