@@ -24,6 +24,7 @@ ch-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+/bench/output/
 
 # Dialyzer PLTs
 /plts/

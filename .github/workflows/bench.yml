@@ -2,29 +2,26 @@ name: bench
 
 on:
   workflow_dispatch:
+  pull_request:
+  push:
+    branches: [master]
   schedule:
     - cron: "42 9 * * *"
 
+permissions:
+  contents: write
+
+concurrency:
+  group: bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  benchee:
+  encode:
     runs-on: ubuntu-latest
 
     env:
       MIX_ENV: bench
-
-    services:
-      clickhouse:
-        image: clickhouse/clickhouse-server:latest
-        ports:
-          - 8123:8123
-        env:
-          # https://github.com/ClickHouse/ClickHouse/issues/75494
-          CLICKHOUSE_SKIP_USER_SETUP: 1
-          options: >-
-            --health-cmd nc -zw3 localhost 8124
-            --health-interval 10s
-            --health-timeout 5s
-            --health-retries 5
+      BENCHMARK_OUTPUT_PATH: bench/output/encode-github-action-benchmark.json
 
     steps:
       - uses: actions/checkout@v6
@@ -32,7 +29,7 @@ jobs:
       - id: beam
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: 1.18
+          elixir-version: 1.19
           otp-version: 28
 
       - uses: actions/cache@v5
@@ -40,15 +37,32 @@ jobs:
           path: |
             deps
             _build
-          key: bench-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ github.head_ref || github.ref }}-${{ hashFiles('**/mix.lock') }}
+          key: bench-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            bench-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-${{ github.head_ref || github.ref }}-
-            bench-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-refs/heads/master-
+            bench-${{ steps.beam.outputs.elixir-version }}-${{ steps.beam.outputs.otp-version }}-
 
       - run: mix deps.get --only $MIX_ENV
       - run: mix compile --warnings-as-errors
 
-      # - run: mix run bench/cast.exs
       - run: mix run bench/encode.exs
-      - run: mix run bench/insert.exs
-      - run: mix run bench/stream.exs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: encode-benchmark
+          path: bench/output/encode-github-action-benchmark.json
+
+      - name: Publish benchmark history
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Ch RowBinary Encode
+          tool: customBiggerIsBetter
+          output-file-path: bench/output/encode-github-action-benchmark.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.event_name != 'pull_request' }}
+          comment-always: ${{ github.event_name == 'pull_request' }}
+          comment-on-alert: ${{ github.event_name == 'pull_request' }}
+          save-data-file: ${{ github.event_name != 'pull_request' }}
+          fail-on-alert: false
+          alert-threshold: "120%"
+          benchmark-data-dir-path: dev/bench
+          max-items-in-chart: 60
