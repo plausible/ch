@@ -1,11 +1,6 @@
 defmodule Ch.JSONTest do
   use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
 
-  import Ch.Test,
-    only: [
-      parameterize_query: 4
-    ]
-
   @moduletag :json
 
   setup ctx do
@@ -426,51 +421,5 @@ defmodule Ch.JSONTest do
     assert Ch.query!(conn, "SELECT value FROM json_test").rows == [
              [%{"json_obj" => 42}]
            ]
-  end
-
-  test "insert with settings, type hints and skip directives", %{
-    conn: conn,
-    query_options: query_options
-  } do
-    Ch.query!(
-      conn,
-      "CREATE TABLE json_test
-      (
-        `json` JSON(
-                max_dynamic_types=254,
-                max_dynamic_paths=10000,
-                name String,
-                age UInt8,
-                SKIP pass.body_part,
-                SKIP REGEXP 't.*'
-              )
-      ) ENGINE = Memory",
-      [],
-      query_options
-    )
-
-    stmt = "INSERT INTO json_test FORMAT RowBinaryWithNamesAndTypes"
-    rows = [[%{name: "John", age: 30, pass: %{body_part: "none"}, t: %{foo: "bar"}}]]
-    names = ["json"]
-
-    opts = [
-      names: names,
-      types: [
-        Ch.Types.decode("""
-        JSON(
-          max_dynamic_types=254,
-          max_dynamic_paths=10000,
-          age UInt8, name String,
-          SKIP `pass.body_part`,
-          SKIP REGEXP 't.*'
-        )
-        """)
-      ]
-    ]
-
-    assert {:ok, %Ch.Result{}} = parameterize_query(%{conn: conn}, stmt, rows, opts)
-
-    [[value]] = Ch.query!(conn, "select * from json_test", [], query_options).rows
-    assert value == %{"age" => 30, "name" => "John"}
   end
 end

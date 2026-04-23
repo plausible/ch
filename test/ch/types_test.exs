@@ -1,6 +1,6 @@
 defmodule Ch.TypesTest do
   use ExUnit.Case, async: true
-  import Ch.Types, only: [decode: 1, encode: 1, json: 1]
+  import Ch.Types, only: [decode: 1]
   doctest Ch.Types, import: true
 
   describe "decode/1" do
@@ -108,30 +108,7 @@ defmodule Ch.TypesTest do
       assert decode("JSON") == :json
       assert decode(" JSON ") == :json
 
-      assert decode("JSON(max_dynamic_types=10)") ==
-               {:json, [settings: ["max_dynamic_types=10"], type_hints: [], skips: []]}
-
-      assert decode("JSON(age UInt8, name String)") ==
-               {:json, [settings: [], type_hints: ["age UInt8", "name String"], skips: []]}
-
-      assert decode("JSON(name String, age UInt8)") ==
-               {:json, [settings: [], type_hints: ["age UInt8", "name String"], skips: []]}
-
-      assert decode("JSON(SKIP a.e)") ==
-               {:json, [settings: [], type_hints: [], skips: ["SKIP a.e"]]}
-
-      assert decode("JSON(max_dynamic_types=10, name String, age UInt8, SKIP a.e)") ==
-               {:json,
-                [
-                  settings: ["max_dynamic_types=10"],
-                  type_hints: ["age UInt8", "name String"],
-                  skips: ["SKIP a.e"]
-                ]}
-
-      opts = [settings: ["max_dynamic_types=10"], type_hints: ["age UInt8"], skips: []]
-      assert json(opts) == {:json, opts}
-
-      assert to_string(encode(json(opts))) == "JSON(max_dynamic_types=10, age UInt8)"
+      # TODO JSON(...)
     end
 
     test "datetime" do

@@ -173,7 +173,6 @@ defmodule Ch.RowBinary do
   defp encoding_type(:ring), do: {:array, :point}
   defp encoding_type(:polygon), do: {:array, {:array, :point}}
   defp encoding_type(:multipolygon), do: {:array, {:array, {:array, :point}}}
-  defp encoding_type({:json, opts}), do: {:json, opts}
 
   defp encoding_type(type) do
     raise ArgumentError, "unsupported type for encoding: #{inspect(type)}"
@@ -194,13 +193,6 @@ defmodule Ch.RowBinary do
   end
 
   def encode(:json, json) do
-    # assuming it can be sent as text and not "native" binary JSON
-    # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
-    # TODO
-    encode(:string, Jason.encode_to_iodata!(json))
-  end
-
-  def encode({:json, _opts}, json) do
     # assuming it can be sent as text and not "native" binary JSON
     # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
     # TODO
@@ -777,7 +769,6 @@ defmodule Ch.RowBinary do
   defp decoding_type(:ring), do: {:array, :point}
   defp decoding_type(:polygon), do: {:array, {:array, :point}}
   defp decoding_type(:multipolygon), do: {:array, {:array, {:array, :point}}}
-  defp decoding_type({:json, _opts}), do: :json
 
   defp decoding_type(type) do
     raise ArgumentError, "unsupported type for decoding: #{inspect(type)}"

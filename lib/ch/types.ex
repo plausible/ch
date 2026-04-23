@@ -68,8 +68,6 @@ defmodule Ch.Types do
     def unquote(name)(), do: unquote(name)
   end
 
-  def json(opts), do: {:json, opts}
-
   @doc """
   Helper for `DateTime` ClickHouse type:
 
@@ -361,21 +359,7 @@ defmodule Ch.Types do
 
   def decode("DateTime"), do: :datetime
   def decode("Dynamic"), do: :dynamic
-
-  def decode("JSON" <> options) do
-    opts =
-      options
-      |> String.trim()
-      |> String.trim_leading("(")
-      |> String.trim_trailing(")")
-      |> String.split(",")
-      |> Enum.map(&String.trim/1)
-
-    {settings, rest} = Enum.split_with(opts, &String.contains?(&1, "="))
-    {skips, type_hints} = Enum.split_with(rest, &String.match?(&1, ~r/^SKIP\s+/i))
-
-    {:json, [settings: settings, type_hints: Enum.sort(type_hints), skips: skips]}
-  end
+  def decode("JSON" <> _options), do: :json
 
   def decode(type) do
     try do
@@ -592,19 +576,6 @@ defmodule Ch.Types do
 
   for {encoded, decoded, []} <- types do
     def encode(unquote(decoded)), do: unquote(encoded)
-  end
-
-  def encode({:json, opts}) do
-    opts =
-      [
-        opts[:settings],
-        Enum.sort(opts[:type_hints] || []),
-        opts[:skips] || []
-      ]
-      |> List.flatten()
-      |> Enum.intersperse(", ")
-
-    ["JSON(", opts, ?)]
   end
 
   def encode(:datetime), do: "DateTime"
