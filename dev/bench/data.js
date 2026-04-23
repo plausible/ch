@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776980013653,
+  "lastUpdate": 1776982806232,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
@@ -152,6 +152,44 @@ window.BENCHMARK_DATA = {
             "range": "stddev 19.7%",
             "unit": "ips",
             "extra": "average: 967.25 ms\nmedian: 1005.85 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ruslandoga+gh@icloud.com",
+            "name": "ruslandoga",
+            "username": "ruslandoga"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5df16637c4413668e37ea28267924c6af1dd3d89",
+          "message": "Revert \"Add support for JSON type options (#309)\" (#327)\n\nThis reverts commit a1f1ead6ab24821ee824833ee1152a0e36f1ff96.",
+          "timestamp": "2026-04-24T01:19:23+03:00",
+          "tree_id": "729a4584ad612411d8ec2da5837c7865d9b9ba3e",
+          "url": "https://github.com/plausible/ch/commit/5df16637c4413668e37ea28267924c6af1dd3d89"
+        },
+        "date": 1776982805903,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 1.0177,
+            "range": "stddev 17.53%",
+            "unit": "ips",
+            "extra": "average: 982.64 ms\nmedian: 1071.97 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 1.0087,
+            "range": "stddev 1.99%",
+            "unit": "ips",
+            "extra": "average: 991.37 ms\nmedian: 982.06 ms"
           }
         ]
       }
