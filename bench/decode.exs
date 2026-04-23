@@ -6,10 +6,18 @@ alias Ch.Bench.RowBinaryBenchmarkData
 alias Ch.RowBinary
 
 types = RowBinaryBenchmarkData.types()
-decoded_types = RowBinary.decoding_types(types)
 
-benchmark_output_path =
-  System.get_env("BENCHMARK_OUTPUT_PATH", "bench/output/decode-github-action-benchmark.json")
+formatters =
+  Enum.reject(
+    [
+      Benchee.Formatters.Console,
+      if System.get_env("CI") do
+        {GitHubActionBenchmarkFormatter,
+         file: System.fetch_env!("BENCHMARK_OUTPUT_PATH"), suite_name: "Ch RowBinary Decode"}
+      end
+    ],
+    &is_nil/1
+  )
 
 Benchee.run(
   %{
@@ -19,11 +27,13 @@ Benchee.run(
   },
   inputs: %{
     "1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows" =>
-      RowBinaryBenchmarkData.encoded_rows(1_000_000)
+      RowBinaryBenchmarkData.encoded_rows(1_000_000),
+    "100_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows" =>
+      RowBinaryBenchmarkData.encoded_rows(100_000),
+    "10_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows" =>
+      RowBinaryBenchmarkData.encoded_rows(10_000),
+    "1000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows" =>
+      RowBinaryBenchmarkData.encoded_rows(1000)
   },
-  formatters: [
-    Benchee.Formatters.Console,
-    {GitHubActionBenchmarkFormatter,
-     file: benchmark_output_path, suite_name: "Ch RowBinary Decode"}
-  ]
+  formatters: formatters
 )

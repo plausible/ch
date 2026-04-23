@@ -7,8 +7,17 @@ alias Ch.RowBinary
 
 types = RowBinaryBenchmarkData.types()
 
-benchmark_output_path =
-  System.get_env("BENCHMARK_OUTPUT_PATH", "bench/output/encode-github-action-benchmark.json")
+formatters =
+  Enum.reject(
+    [
+      Benchee.Formatters.Console,
+      if System.get_env("CI") do
+        {GitHubActionBenchmarkFormatter,
+         file: System.fetch_env!("BENCHMARK_OUTPUT_PATH"), suite_name: "Ch RowBinary Encode"}
+      end
+    ],
+    &is_nil/1
+  )
 
 Benchee.run(
   %{
@@ -25,9 +34,5 @@ Benchee.run(
     "1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows" =>
       RowBinaryBenchmarkData.rows(1_000_000)
   },
-  formatters: [
-    Benchee.Formatters.Console,
-    {GitHubActionBenchmarkFormatter,
-     file: benchmark_output_path, suite_name: "Ch RowBinary Encode"}
-  ]
+  formatters: formatters
 )
