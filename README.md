@@ -183,6 +183,11 @@ settings = [async_insert: 1]
   Ch.query!(pid, "SHOW SETTINGS LIKE 'async_insert'", [], settings: settings)
 ```
 
+#### Multipart requests
+
+SELECT queries will be automatically sent as multipart requests.
+INSERT queries and streams are treated normally.
+
 ## Caveats
 
 #### NULL in RowBinary
