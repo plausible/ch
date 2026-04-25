@@ -64,7 +64,7 @@ defmodule Ch.Pool do
   If the format is `RowBinaryWithNamesAndTypes`, it returns `%{names: [name], rows: [[value]]}`.
   Otherwise, it returns the raw response body binary.
   """
-  @type query_result :: %{names: [String.t()], rows: [[term]]} | binary
+  @type query_result :: Ch.Result.t()
 
   @typedoc """
   A query execution error.
@@ -95,6 +95,30 @@ defmodule Ch.Pool do
       type: :string,
       doc: "The ClickHouse endpoint URL.",
       default: "http://localhost:8123"
+    ],
+    scheme: [
+      type: :string,
+      doc: "HTTP scheme. Kept for compatibility; prefer :url."
+    ],
+    hostname: [
+      type: :string,
+      doc: "ClickHouse host. Kept for compatibility; prefer :url."
+    ],
+    port: [
+      type: :pos_integer,
+      doc: "ClickHouse HTTP port. Kept for compatibility; prefer :url."
+    ],
+    database: [
+      type: :string,
+      doc: "Default database query parameter."
+    ],
+    username: [
+      type: :string,
+      doc: "ClickHouse username."
+    ],
+    password: [
+      type: :string,
+      doc: "ClickHouse password."
     ]
   ]
 
@@ -116,7 +140,9 @@ defmodule Ch.Pool do
     name = Keyword.get(options, :name)
     pool_size = Keyword.fetch!(options, :pool_size)
     worker_idle_timeout = Keyword.fetch!(options, :worker_idle_timeout)
-    url = Keyword.fetch!(options, :url)
+    url = build_url(options)
+    auth_headers = auth_headers(options)
+    default_query = default_query(options)
 
     %URI{scheme: scheme, host: host, port: port} = URI.parse(url)
 
@@ -128,7 +154,9 @@ defmodule Ch.Pool do
       end
 
     initial_pool_state = %{
-      template: {scheme, host, port}
+      template: {scheme, host, port},
+      auth_headers: auth_headers,
+      default_query: default_query
     }
 
     NimblePool.start_link(
@@ -177,10 +205,11 @@ defmodule Ch.Pool do
     {settings, options} = Keyword.pop(options, :settings, [])
     {query, options} = Keyword.pop(options, :query, [])
     {headers, options} = Keyword.pop(options, :headers, [])
+    {format, options} = Keyword.pop(options, :format, @default_format)
 
     deadline = Ch.HTTP.to_deadline(timeout)
     path = Ch.HTTP.path(params, query_options(settings, query))
-    headers = merge_headers(@query_headers, headers)
+    headers = query_headers(format, headers)
 
     client.conn
     |> request_raw("POST", path, headers, statement, deadline)
@@ -192,17 +221,22 @@ defmodule Ch.Pool do
     {settings, options} = Keyword.pop(options, :settings, [])
     {query, options} = Keyword.pop(options, :query, [])
     {headers, options} = Keyword.pop(options, :headers, [])
+    {format, options} = Keyword.pop(options, :format, @default_format)
 
     deadline = Ch.HTTP.to_deadline(timeout)
-    path = Ch.HTTP.path(params, query_options(settings, query))
-    headers = merge_headers(@query_headers, headers)
+    command = command(statement)
 
     result =
-      run(pool, timeout, fn conn ->
+      run(pool, timeout, fn conn, pool_query, pool_headers ->
+        path = Ch.HTTP.path(params, query_options(pool_query, settings, query))
+
+        headers =
+          pool_headers |> merge_headers(query_headers(format, [])) |> merge_headers(headers)
+
         request_raw(conn, "POST", path, headers, statement, deadline)
       end)
 
-    decode_query_result(result, options)
+    decode_query_result(result, Keyword.put(options, :command, command))
   end
 
   def query!(pool, statement, params \\ %{}, options \\ []) do
@@ -221,7 +255,7 @@ defmodule Ch.Pool do
   def checkout(pool, fun, options \\ []) when is_function(fun, 1) do
     {timeout, _options} = Keyword.pop(options, :timeout, @query_timeout)
 
-    run(pool, timeout, fun)
+    run(pool, timeout, fn conn, _pool_query, _pool_headers -> fun.(conn) end)
   end
 
   defp run(pool, timeout, fun) do
@@ -231,8 +265,9 @@ defmodule Ch.Pool do
       pool,
       :request,
       fn {pid, _ref}, conn_or_template ->
-        with {:ok, conn, pool_pid} <- connect(conn_or_template, pid, deadline) do
-          result = fun.(%Connection{conn: conn, pool: pool_pid})
+        with {:ok, conn, pool_pid, pool_query, pool_headers} <-
+               connect(conn_or_template, pid, deadline) do
+          result = fun.(%Connection{conn: conn, pool: pool_pid}, pool_query, pool_headers)
           {result, checkin(conn, pool_pid)}
         else
           {:error, reason} = error -> {error, {:remove, reason}}
@@ -254,7 +289,13 @@ defmodule Ch.Pool do
   end
 
   defp decode_query_result({:ok, status, headers, data}, options) do
-    data = data |> maybe_decompress(headers) |> IO.iodata_to_binary()
+    data =
+      if Keyword.get(options, :decode, true) == false do
+        IO.iodata_to_binary(data)
+      else
+        data |> maybe_decompress(headers) |> IO.iodata_to_binary()
+      end
+
     decode_query_response(status, headers, data, options)
   end
 
@@ -273,11 +314,12 @@ defmodule Ch.Pool do
 
   @impl NimblePool
   def handle_checkout(:request, _from, :template = template, config) do
-    {:ok, {:template, config.template, self()}, template, config}
+    {:ok, {:template, config.template, self(), config.default_query, config.auth_headers},
+     template, config}
   end
 
   def handle_checkout(:request, _from, %Mint.HTTP1{} = conn, config) do
-    {:ok, {:conn, conn, self()}, conn, config}
+    {:ok, {:conn, conn, self(), config.default_query, config.auth_headers}, conn, config}
   end
 
   @impl NimblePool
@@ -300,14 +342,18 @@ defmodule Ch.Pool do
     {:ok, config}
   end
 
-  defp connect({:template, {scheme, host, port}, pool_pid}, owner, deadline) do
+  defp connect(
+         {:template, {scheme, host, port}, pool_pid, pool_query, pool_headers},
+         owner,
+         deadline
+       ) do
     timeout = Ch.HTTP.to_timeout(deadline)
 
     case Mint.HTTP1.connect(scheme, host, port, mode: :passive, timeout: timeout) do
       {:ok, conn} ->
         case Mint.HTTP1.controlling_process(conn, owner) do
           {:ok, conn} ->
-            {:ok, conn, pool_pid}
+            {:ok, conn, pool_pid, pool_query, pool_headers}
 
           {:error, _reason} = error ->
             Mint.HTTP1.close(conn)
@@ -319,9 +365,9 @@ defmodule Ch.Pool do
     end
   end
 
-  defp connect({:conn, conn, pool_pid}, owner, _deadline) do
+  defp connect({:conn, conn, pool_pid, pool_query, pool_headers}, owner, _deadline) do
     case Mint.HTTP1.controlling_process(conn, owner) do
-      {:ok, conn} -> {:ok, conn, pool_pid}
+      {:ok, conn} -> {:ok, conn, pool_pid, pool_query, pool_headers}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -392,7 +438,17 @@ defmodule Ch.Pool do
   end
 
   defp query_options(settings, query) do
-    Enum.to_list(settings) ++ Enum.to_list(query)
+    query_options([], settings, query)
+  end
+
+  defp query_options(default_query, settings, query) do
+    Enum.to_list(default_query) ++ Enum.to_list(settings) ++ Enum.to_list(query)
+  end
+
+  defp query_headers(format, headers) do
+    @query_headers
+    |> merge_headers([{"x-clickhouse-format", format}])
+    |> merge_headers(headers)
   end
 
   defp merge_headers(defaults, overrides) do
@@ -412,24 +468,59 @@ defmodule Ch.Pool do
     end
   end
 
-  defp decode_query_response(200, _headers, _no_body = "", _options) do
-    :ok
+  defp decode_query_response(200, headers, _no_body = "", options) do
+    {:ok,
+     %Ch.Result{
+       command: Keyword.get(options, :command),
+       columns: [],
+       rows: [],
+       num_rows: 0,
+       headers: headers,
+       data: ""
+     }}
   end
 
   defp decode_query_response(200, headers, body, options) do
     if Keyword.get(options, :decode, true) == false do
-      {:ok, body}
+      {:ok,
+       %Ch.Result{
+         command: Keyword.get(options, :command),
+         rows: body,
+         data: body,
+         headers: headers
+       }}
     else
       case List.keyfind(headers, "x-clickhouse-format", 0) do
         {_, "RowBinaryWithNamesAndTypes"} ->
-          [name | rows] = Ch.RowBinary.decode_names_and_rows(body)
-          {:ok, %{names: name, rows: rows}}
+          [columns | rows] = Ch.RowBinary.decode_names_and_rows(body)
+
+          {:ok,
+           %Ch.Result{
+             command: Keyword.get(options, :command),
+             columns: columns,
+             rows: rows,
+             num_rows: length(rows),
+             headers: headers,
+             data: body
+           }}
 
         {_, _format} ->
-          {:ok, body}
+          {:ok,
+           %Ch.Result{
+             command: Keyword.get(options, :command),
+             rows: body,
+             data: body,
+             headers: headers
+           }}
 
         nil ->
-          {:ok, body}
+          {:ok,
+           %Ch.Result{
+             command: Keyword.get(options, :command),
+             rows: body,
+             data: body,
+             headers: headers
+           }}
       end
     end
   end
@@ -443,5 +534,56 @@ defmodule Ch.Pool do
       end
 
     {:error, %Ch.Error{code: code, message: body}}
+  end
+
+  defp build_url(options) do
+    url = Keyword.fetch!(options, :url)
+
+    if options[:scheme] || options[:hostname] || options[:port] do
+      uri = URI.parse(url)
+
+      %{
+        uri
+        | scheme: options[:scheme] || uri.scheme,
+          host: options[:hostname] || uri.host,
+          port: options[:port] || uri.port
+      }
+      |> URI.to_string()
+    else
+      url
+    end
+  end
+
+  defp default_query(options) do
+    case Keyword.get(options, :database) do
+      nil -> []
+      database -> [database: database]
+    end
+  end
+
+  defp auth_headers(options) do
+    []
+    |> maybe_header("x-clickhouse-user", Keyword.get(options, :username))
+    |> maybe_header("x-clickhouse-key", Keyword.get(options, :password))
+  end
+
+  defp maybe_header(headers, _key, nil), do: headers
+  defp maybe_header(headers, key, value), do: [{key, value} | headers]
+
+  defp command(statement) do
+    try do
+      statement
+      |> IO.iodata_to_binary()
+      |> String.trim_leading()
+      |> String.split(~r/\s+/, parts: 2)
+      |> List.first()
+      |> case do
+        nil -> nil
+        "" -> nil
+        command -> command |> String.downcase() |> String.to_atom()
+      end
+    rescue
+      ArgumentError -> nil
+    end
   end
 end

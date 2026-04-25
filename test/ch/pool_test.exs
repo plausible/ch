@@ -102,6 +102,7 @@ defmodule Ch.PoolTest do
   end
 
   test "decode false returns the raw response body", ctx do
-    assert is_binary(Help.query!(ctx, "select 1", %{}, decode: false))
+    assert %Ch.Result{data: data, rows: data} = Help.query!(ctx, "select 1", %{}, decode: false)
+    assert is_binary(data)
   end
 end
