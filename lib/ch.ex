@@ -1,133 +1,49 @@
 defmodule Ch do
   @moduledoc "Minimal HTTP ClickHouse client."
-  alias Ch.{Connection, Query, Result}
 
-  @typedoc """
-  Options shared by both connection startup and query execution.
-
-  * `:database` - Database, defaults to `"default"`
-  * `:username` - Username
-  * `:password` - User password
-  * `:settings` - Keyword list of ClickHouse settings
-  * `:timeout` - HTTP request/receive timeout in milliseconds
-  """
-  @type common_option ::
-          {:database, String.t()}
-          | {:username, String.t()}
-          | {:password, String.t()}
-          | {:settings, Keyword.t()}
-          | {:timeout, timeout}
-
-  @typedoc """
-  Options for starting the connection pool.
-
-  Includes all keys from `t:common_option/0` and `t:DBConnection.start_option/0` plus:
-
-  * `:scheme` - HTTP scheme, defaults to `"http"`
-  * `:hostname` - server hostname, defaults to `"localhost"`
-  * `:port` - HTTP port, defaults to `8123`
-  * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
-  """
-  @type start_option ::
-          common_option
-          | {:scheme, String.t()}
-          | {:hostname, String.t()}
-          | {:port, :inet.port_number()}
-          | {:transport_opts, [:gen_tcp.connect_option() | :ssl.tls_client_option()]}
-          | DBConnection.start_option()
+  @type client :: NimblePool.pool() | Ch.Pool.Connection.t()
 
   @doc """
-  Start the connection pool process.
-
-  See `t:start_option/0` for available options.
+  Starts a lazy HTTP connection pool.
   """
-  @spec start_link([start_option]) :: GenServer.on_start()
-  def start_link(opts \\ []) do
-    DBConnection.start_link(Connection, opts)
-  end
+  @spec start_link([Ch.Pool.start_option()]) :: GenServer.on_start()
+  defdelegate start_link(options \\ []), to: Ch.Pool
 
   @doc """
-  Returns a supervisor child specification for a connection pool.
-
-  See `t:start_option/0` for supported options.
+  Returns a child spec for a lazy HTTP connection pool.
   """
-  @spec child_spec([start_option]) :: :supervisor.child_spec()
-  def child_spec(opts) do
-    DBConnection.child_spec(Connection, opts)
-  end
-
-  @typedoc """
-  Options for executing a query.
-
-  Includes all keys from `t:common_option/0` and `t:DBConnection.connection_option/0` plus:
-
-  * `:command` - Command tag for the query
-  * `:headers` - Custom HTTP headers for the request
-  * `:format` - Custom response format for the request
-  * `:decode` - Whether to automatically decode the response
-  * `:multipart` - Whether to send the query as multipart/form-data
-  """
-  @type query_option ::
-          common_option
-          | {:command, Ch.Query.command()}
-          | {:headers, [{String.t(), String.t()}]}
-          | {:format, String.t()}
-          | {:types, [String.t() | atom | tuple]}
-          # TODO remove
-          | {:encode, boolean}
-          | {:decode, boolean}
-          | {:multipart, boolean}
-          | DBConnection.connection_option()
+  @spec child_spec([Ch.Pool.start_option()]) :: Supervisor.child_spec()
+  defdelegate child_spec(options), to: Ch.Pool
 
   @doc """
-  Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
-  `{:error, Exception.t()}` if there was a database error.
-
-  See `t:query_option/0` for available options.
+  Executes a ClickHouse HTTP query.
   """
-  @spec query(DBConnection.conn(), iodata, params, [query_option]) ::
-          {:ok, Result.t()} | {:error, Exception.t()}
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
-  def query(conn, statement, params \\ [], opts \\ []) do
-    query = Query.build(statement, opts)
-
-    with {:ok, _query, result} <- DBConnection.execute(conn, query, params, opts) do
-      {:ok, result}
-    end
-  end
+  @spec query(client, Ch.Pool.query_statement(), Ch.Pool.query_params(), [Ch.Pool.query_option()]) ::
+          {:ok, Ch.Pool.query_result()} | {:error, Ch.Pool.query_error()} | :ok
+  defdelegate query(client, statement, params \\ %{}, options \\ []), to: Ch.Pool
 
   @doc """
-  Runs a query and returns the result or raises `Ch.Error` if
-  there was an error. See `query/4`.
+  Executes a ClickHouse HTTP query and raises on errors.
   """
-  @spec query!(DBConnection.conn(), iodata, params, [query_option]) :: Result.t()
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
-  def query!(conn, statement, params \\ [], opts \\ []) do
-    query = Query.build(statement, opts)
-    DBConnection.execute!(conn, query, params, opts)
-  end
+  @spec query!(client, Ch.Pool.query_statement(), Ch.Pool.query_params(), [Ch.Pool.query_option()]) ::
+          Ch.Pool.query_result() | :ok
+  defdelegate query!(client, statement, params \\ %{}, options \\ []), to: Ch.Pool
 
-  @doc false
-  @spec stream(DBConnection.t(), iodata, map | [term], [query_option]) :: Ch.Stream.t()
-  def stream(conn, statement, params \\ [], opts \\ []) do
-    query = Query.build(statement, opts)
-    %Ch.Stream{conn: conn, query: query, params: params, opts: opts}
-  end
-
-  # TODO drop
-  @doc false
-  @spec run(DBConnection.conn(), (DBConnection.t() -> any), Keyword.t()) :: any
-  def run(conn, f, opts \\ []) when is_function(f, 1) do
-    DBConnection.run(conn, f, opts)
-  end
+  @doc """
+  Checks out a single HTTP connection for the duration of `fun`.
+  """
+  @spec checkout(NimblePool.pool(), (Ch.Pool.Connection.t() -> result), [Ch.Pool.query_option()]) ::
+          result
+        when result: var
+  defdelegate checkout(pool, fun, options \\ []), to: Ch.Pool
 
   if Code.ensure_loaded?(Ecto.ParameterizedType) do
     @behaviour Ecto.ParameterizedType
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def type(params), do: {:parameterized, {Ch, params}}
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def init(opts) do
       clickhouse_type =
         opts[:raw] || opts[:type] ||
@@ -136,13 +52,13 @@ defmodule Ch do
       Ch.Types.decode(clickhouse_type)
     end
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def load(value, _loader, _params), do: {:ok, value}
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def dump(value, _dumper, _params), do: {:ok, value}
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def cast(value, :string = type), do: Ecto.Type.cast(type, value)
     def cast(value, :boolean = type), do: Ecto.Type.cast(type, value)
     def cast(value, :uuid), do: Ecto.Type.cast(Ecto.UUID, value)
@@ -206,7 +122,10 @@ defmodule Ch do
           {:ok, value}
 
         _ when is_binary(value) ->
-          with {:error = e, _reason} <- :inet.parse_ipv4_address(to_charlist(value)), do: e
+          with {:error = e, _reason} <-
+                 value |> String.to_charlist() |> :inet.parse_ipv4_address() do
+            e
+          end
 
         _ when is_list(value) ->
           with {:error = e, _reason} <- :inet.parse_ipv4_address(value), do: e
@@ -224,7 +143,10 @@ defmodule Ch do
           {:ok, value}
 
         _ when is_binary(value) ->
-          with {:error = e, _reason} <- :inet.parse_ipv6_address(to_charlist(value)), do: e
+          with {:error = e, _reason} <-
+                 value |> String.to_charlist() |> :inet.parse_ipv6_address() do
+            e
+          end
 
         _ when is_list(value) ->
           with {:error = e, _reason} <- :inet.parse_ipv6_address(value), do: e
@@ -262,7 +184,7 @@ defmodule Ch do
       end
     end
 
-    defp cast_tuple([], [], acc), do: {:ok, List.to_tuple(:lists.reverse(acc))}
+    defp cast_tuple([], [], acc), do: {:ok, acc |> :lists.reverse() |> List.to_tuple()}
     defp cast_tuple(_types, _values, _acc), do: :error
 
     defp cast_map(value, key_type, value_type) when is_map(value) do
@@ -294,13 +216,13 @@ defmodule Ch do
 
     defp cast_variant([], _value), do: :error
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def embed_as(_, _), do: :self
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def equal?(a, b, _), do: a == b
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def format(params) do
       "#Ch<#{Ch.Types.encode(params)}>"
     end
