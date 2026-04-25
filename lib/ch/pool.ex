@@ -182,7 +182,9 @@ defmodule Ch.Pool do
     path = Ch.HTTP.path(params, query_options(settings, query))
     headers = merge_headers(@query_headers, headers)
 
-    request_and_decode(client.conn, "POST", path, headers, statement, deadline, options)
+    client.conn
+    |> request_raw("POST", path, headers, statement, deadline)
+    |> decode_query_result(options)
   end
 
   def query(pool, statement, params, options) do
@@ -195,9 +197,12 @@ defmodule Ch.Pool do
     path = Ch.HTTP.path(params, query_options(settings, query))
     headers = merge_headers(@query_headers, headers)
 
-    run(pool, timeout, fn conn ->
-      request_and_decode(conn, "POST", path, headers, statement, deadline, options)
-    end)
+    result =
+      run(pool, timeout, fn conn ->
+        request_raw(conn, "POST", path, headers, statement, deadline)
+      end)
+
+    decode_query_result(result, options)
   end
 
   def query!(pool, statement, params \\ %{}, options \\ []) do
@@ -237,20 +242,24 @@ defmodule Ch.Pool do
     )
   end
 
-  defp request_and_decode(%Connection{} = client, method, path, headers, body, deadline, options) do
-    request_and_decode(client.conn, method, path, headers, body, deadline, options)
+  defp request_raw(%Connection{} = client, method, path, headers, body, deadline) do
+    request_raw(client.conn, method, path, headers, body, deadline)
   end
 
-  defp request_and_decode(conn, method, path, headers, body, deadline, options) do
-    result =
-      with {:ok, _conn, status, headers, data} <-
-             request(conn, method, path, headers, body, deadline) do
-        data = data |> maybe_decompress(headers) |> IO.iodata_to_binary()
-        decode_query_response(status, headers, data, options)
-      end
-
-    result
+  defp request_raw(conn, method, path, headers, body, deadline) do
+    with {:ok, _conn, status, headers, data} <-
+           request(conn, method, path, headers, body, deadline) do
+      {:ok, status, headers, data}
+    end
   end
+
+  defp decode_query_result({:ok, status, headers, data}, options) do
+    data = data |> maybe_decompress(headers) |> IO.iodata_to_binary()
+    decode_query_response(status, headers, data, options)
+  end
+
+  defp decode_query_result({:error, _reason} = error, _options), do: error
+  defp decode_query_result(:ok, _options), do: :ok
 
   @impl NimblePool
   def init_pool(config) do
