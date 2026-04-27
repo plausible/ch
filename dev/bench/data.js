@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777199228292,
+  "lastUpdate": 1777289086716,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
@@ -336,6 +336,42 @@ window.BENCHMARK_DATA = {
             "range": "stddev 18.9%",
             "unit": "ips",
             "extra": "average: 1004.37 ms\nmedian: 1084.63 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "ruslandoga",
+            "username": "ruslandoga",
+            "email": "ruslandoga+gh@icloud.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "b421389a003c9be36cff46c9a84a0f78b339b501",
+          "message": "Update CHANGELOG to remove JSON support entries\n\nRemoved support for JSON type options and dynamic JSON encoding in RowBinary.",
+          "timestamp": "2026-04-23T22:27:39Z",
+          "url": "https://github.com/plausible/ch/commit/b421389a003c9be36cff46c9a84a0f78b339b501"
+        },
+        "date": 1777289085973,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 1.0939,
+            "range": "stddev 3.37%",
+            "unit": "ips",
+            "extra": "average: 914.18 ms\nmedian: 903.01 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 1.0916,
+            "range": "stddev 18.86%",
+            "unit": "ips",
+            "extra": "average: 916.12 ms\nmedian: 885.52 ms"
           }
         ]
       }
