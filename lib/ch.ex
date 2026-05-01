@@ -124,10 +124,10 @@ defmodule Ch do
   if Code.ensure_loaded?(Ecto.ParameterizedType) do
     @behaviour Ecto.ParameterizedType
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def type(params), do: {:parameterized, {Ch, params}}
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def init(opts) do
       clickhouse_type =
         opts[:raw] || opts[:type] ||
@@ -136,13 +136,13 @@ defmodule Ch do
       Ch.Types.decode(clickhouse_type)
     end
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def load(value, _loader, _params), do: {:ok, value}
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def dump(value, _dumper, _params), do: {:ok, value}
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def cast(value, :string = type), do: Ecto.Type.cast(type, value)
     def cast(value, :boolean = type), do: Ecto.Type.cast(type, value)
     def cast(value, :uuid), do: Ecto.Type.cast(Ecto.UUID, value)
@@ -294,13 +294,13 @@ defmodule Ch do
 
     defp cast_variant([], _value), do: :error
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def embed_as(_, _), do: :self
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def equal?(a, b, _), do: a == b
 
-    @impl true
+    @impl Ecto.ParameterizedType
     def format(params) do
       "#Ch<#{Ch.Types.encode(params)}>"
     end
