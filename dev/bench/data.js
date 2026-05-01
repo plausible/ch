@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777632914351,
+  "lastUpdate": 1777640257089,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
@@ -516,6 +516,44 @@ window.BENCHMARK_DATA = {
             "range": "stddev 19.22%",
             "unit": "ips",
             "extra": "average: 999.29 ms\nmedian: 1092.48 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ruslandoga+gh@icloud.com",
+            "name": "ruslandoga",
+            "username": "ruslandoga"
+          },
+          "committer": {
+            "email": "ruslandoga+gh@icloud.com",
+            "name": "ruslandoga",
+            "username": "ruslandoga"
+          },
+          "distinct": true,
+          "id": "c3e3e4abe36d54eef0135eed4f56b2d3a309f1ec",
+          "message": "use Integer.pow/2",
+          "timestamp": "2026-05-01T15:56:44+03:00",
+          "tree_id": "25badc3be451ba9448c624e8bcc56555d5dc1187",
+          "url": "https://github.com/plausible/ch/commit/c3e3e4abe36d54eef0135eed4f56b2d3a309f1ec"
+        },
+        "date": 1777640256346,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 1.0067,
+            "range": "stddev 1.98%",
+            "unit": "ips",
+            "extra": "average: 993.3 ms\nmedian: 987.77 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 1.0036,
+            "range": "stddev 17.64%",
+            "unit": "ips",
+            "extra": "average: 996.41 ms\nmedian: 1077.52 ms"
           }
         ]
       }
