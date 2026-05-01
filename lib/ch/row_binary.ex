@@ -272,7 +272,7 @@ defmodule Ch.RowBinary do
           <<i::unquote(size)-little>>
 
         exp >= 0 ->
-          i = sign * coef * round(:math.pow(10, exp + scale))
+          i = sign * coef * Integer.pow(10, exp + scale)
           <<i::unquote(size)-little>>
 
         true ->

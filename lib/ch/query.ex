@@ -342,7 +342,7 @@ defimpl DBConnection.Query, for: Ch.Query do
 
     case microsecond do
       {val, precision} when val > 0 and precision > 0 ->
-        size = round(:math.pow(10, precision))
+        size = Integer.pow(10, precision)
         unix = DateTime.to_unix(dt, size)
         seconds = div(unix, size)
         fractional = rem(unix, size)
