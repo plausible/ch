@@ -7,7 +7,7 @@
 - use `DateTime.to_unix/2` + `DateTime.to_naive/1` for naive datetime decoding in RowBinary https://github.com/plausible/ch/pull/313
 - allow non-UTC timezones for DateTime64 RowBinary encoding https://github.com/plausible/ch/pull/315
 - use gregorian days in RowBinary dates https://github.com/plausible/ch/pull/318
-- fix `Ch.type/1` callback
+- fix `Ch.type/1` callback https://github.com/plausible/ch/pull/331
 
 ## 0.7.1 (2026-01-15)
 
