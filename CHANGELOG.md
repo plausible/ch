@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-05-03)
 
 - RowBinary: truncate NaiveDateTime resulting from DateTime64 https://github.com/plausible/ch/pull/297
 - use gregorian seconds for naive datetime encoding in RowBinary (it's faster this way) https://github.com/plausible/ch/pull/311
