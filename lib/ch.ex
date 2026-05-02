@@ -125,7 +125,52 @@ defmodule Ch do
     @behaviour Ecto.ParameterizedType
 
     @impl Ecto.ParameterizedType
-    def type(params), do: {:parameterized, {Ch, params}}
+    def type(:string), do: :string
+    def type(:boolean), do: :boolean
+    def type(:uuid), do: Ecto.UUID
+    def type(:date), do: :date
+    def type(:date32), do: :date
+    def type(:time), do: :time
+    def type({:time64, _p}), do: :time
+    def type(:datetime), do: :naive_datetime
+    def type({:datetime, _tz}), do: :utc_datetime
+    def type({:datetime64, _p}), do: :naive_datetime_usec
+    def type({:datetime64, _p, _tz}), do: :utc_datetime_usec
+    def type({:fixed_string, _s}), do: :string
+    def type(:json), do: :map
+    def type(:dynamic), do: :any
+
+    for size <- [8, 16, 32, 64, 128, 256] do
+      def type(unquote(:"i#{size}")), do: :integer
+      def type(unquote(:"u#{size}")), do: :integer
+    end
+
+    for size <- [32, 64] do
+      def type(unquote(:"f#{size}")), do: :float
+    end
+
+    def type({:decimal, _p, _s}), do: :decimal
+
+    for size <- [32, 64, 128, 256] do
+      def type({unquote(:"decimal#{size}"), _s}) do
+        :decimal
+      end
+    end
+
+    def type({:array, type}), do: {:array, type(type)}
+    def type({:nullable, type}), do: type(type)
+    def type({:low_cardinality, type}), do: type(type)
+    def type({:simple_aggregate_function, _name, type}), do: type(type)
+    def type(:ring), do: {:array, type(:point)}
+    def type(:polygon), do: {:array, type(:ring)}
+    def type(:multipolygon), do: {:array, type(:polygon)}
+    def type({enum, _mappings}) when enum in [:enum8, :enum16], do: :any
+    def type(:ipv4), do: :any
+    def type(:ipv6), do: :any
+    def type(:point), do: :any
+    def type({:tuple, _types}), do: :any
+    def type({:map, _key_type, _value_type}), do: :map
+    def type({:variant, _types}), do: :any
 
     @impl Ecto.ParameterizedType
     def init(opts) do
@@ -151,9 +196,9 @@ defmodule Ch do
     def cast(value, :time = type), do: Ecto.Type.cast(type, value)
     def cast(value, {:time64, _p}), do: Ecto.Type.cast(:time, value)
     def cast(value, :datetime), do: Ecto.Type.cast(:naive_datetime, value)
-    def cast(value, {:datetime, "UTC"}), do: Ecto.Type.cast(:utc_datetime, value)
+    def cast(value, {:datetime, _tz}), do: Ecto.Type.cast(:utc_datetime, value)
     def cast(value, {:datetime64, _p}), do: Ecto.Type.cast(:naive_datetime_usec, value)
-    def cast(value, {:datetime64, _p, "UTC"}), do: Ecto.Type.cast(:utc_datetime_usec, value)
+    def cast(value, {:datetime64, _p, _tz}), do: Ecto.Type.cast(:utc_datetime_usec, value)
     def cast(value, {:fixed_string, _s}), do: Ecto.Type.cast(:string, value)
     def cast(value, :json), do: Ecto.Type.cast(:map, value)
     def cast(value, :dynamic), do: {:ok, value}
