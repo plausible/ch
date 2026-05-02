@@ -133,9 +133,9 @@ defmodule Ch do
     def type(:time), do: :time
     def type({:time64, _p}), do: :time
     def type(:datetime), do: :naive_datetime
-    def type({:datetime, "UTC"}), do: :utc_datetime
+    def type({:datetime, _tz}), do: :utc_datetime
     def type({:datetime64, _p}), do: :naive_datetime_usec
-    def type({:datetime64, _p, "UTC"}), do: :utc_datetime_usec
+    def type({:datetime64, _p, _tz}), do: :utc_datetime_usec
     def type({:fixed_string, _s}), do: :string
     def type(:json), do: :map
     def type(:dynamic), do: :any
@@ -196,9 +196,9 @@ defmodule Ch do
     def cast(value, :time = type), do: Ecto.Type.cast(type, value)
     def cast(value, {:time64, _p}), do: Ecto.Type.cast(:time, value)
     def cast(value, :datetime), do: Ecto.Type.cast(:naive_datetime, value)
-    def cast(value, {:datetime, "UTC"}), do: Ecto.Type.cast(:utc_datetime, value)
+    def cast(value, {:datetime, _tz}), do: Ecto.Type.cast(:utc_datetime, value)
     def cast(value, {:datetime64, _p}), do: Ecto.Type.cast(:naive_datetime_usec, value)
-    def cast(value, {:datetime64, _p, "UTC"}), do: Ecto.Type.cast(:utc_datetime_usec, value)
+    def cast(value, {:datetime64, _p, _tz}), do: Ecto.Type.cast(:utc_datetime_usec, value)
     def cast(value, {:fixed_string, _s}), do: Ecto.Type.cast(:string, value)
     def cast(value, :json), do: Ecto.Type.cast(:map, value)
     def cast(value, :dynamic), do: {:ok, value}

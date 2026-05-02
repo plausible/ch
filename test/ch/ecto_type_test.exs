@@ -373,6 +373,23 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, ~U[2001-01-01 12:00:00Z]} = Ecto.Type.load(type, ~U[2001-01-01 12:00:00Z])
   end
 
+  test "DateTime('Europe/Vienna')" do
+    assert {:parameterized, {Ch, {:datetime, "Europe/Vienna"}}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "DateTime('Europe/Vienna')")
+
+    assert Ecto.Type.type(type) == :utc_datetime
+    assert Ecto.Type.format(type) == "#Ch<DateTime('Europe/Vienna')>"
+
+    assert {:ok, ~U[2001-01-01 12:00:00Z]} = Ecto.Type.cast(type, ~U[2001-01-01 12:00:00Z])
+    assert {:ok, ~U[2001-01-01 12:00:00Z]} = Ecto.Type.cast(type, "2001-01-01 12:00:00Z")
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, "asdf")
+
+    assert {:ok, ~U[2001-01-01 12:00:00Z]} = Ecto.Type.dump(type, ~U[2001-01-01 12:00:00Z])
+    assert {:ok, ~U[2001-01-01 12:00:00Z]} = Ecto.Type.load(type, ~U[2001-01-01 12:00:00Z])
+  end
+
   # TODO truncate?
   test "DateTime64(3)" do
     assert {:parameterized, {Ch, {:datetime64, 3}}} =
@@ -405,6 +422,30 @@ defmodule Ch.EctoTypeTest do
 
     assert Ecto.Type.type(type) == :utc_datetime_usec
     assert Ecto.Type.format(type) == "#Ch<DateTime64(3, 'UTC')>"
+
+    assert {:ok, ~U[2001-01-01 12:00:00.123456Z]} =
+             Ecto.Type.cast(type, ~U[2001-01-01 12:00:00.123456Z])
+
+    assert {:ok, ~U[2001-01-01 12:00:00.123456Z]} =
+             Ecto.Type.cast(type, "2001-01-01 12:00:00.123456Z")
+
+    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+
+    assert :error = Ecto.Type.cast(type, "asdf")
+
+    assert {:ok, ~U[2001-01-01 12:00:00.123456Z]} =
+             Ecto.Type.dump(type, ~U[2001-01-01 12:00:00.123456Z])
+
+    assert {:ok, ~U[2001-01-01 12:00:00.123456Z]} =
+             Ecto.Type.load(type, ~U[2001-01-01 12:00:00.123456Z])
+  end
+
+  test "DateTime64(3, 'Asia/Taipei')" do
+    assert {:parameterized, {Ch, {:datetime64, 3, "Asia/Taipei"}}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "DateTime64(3, 'Asia/Taipei')")
+
+    assert Ecto.Type.type(type) == :utc_datetime_usec
+    assert Ecto.Type.format(type) == "#Ch<DateTime64(3, 'Asia/Taipei')>"
 
     assert {:ok, ~U[2001-01-01 12:00:00.123456Z]} =
              Ecto.Type.cast(type, ~U[2001-01-01 12:00:00.123456Z])
