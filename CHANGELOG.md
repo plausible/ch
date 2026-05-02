@@ -8,6 +8,10 @@
 - allow non-UTC timezones for DateTime64 RowBinary encoding https://github.com/plausible/ch/pull/315
 - use gregorian days in RowBinary dates https://github.com/plausible/ch/pull/318
 
+## 0.8.0 (2026-05-03)
+
+- fix `Ch.type/1` callback
+
 ## 0.7.1 (2026-01-15)
 
 > [!WARNING]
