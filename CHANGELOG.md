@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-- relax Decimal version requirement
+- relax Decimal version requirement https://github.com/plausible/ch/pull/332
 
 ## 0.8.0 (2026-05-03)
 
