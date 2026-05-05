@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2 (2026-05-05)
+
+- relax Decimal version requirement https://github.com/plausible/ch/pull/332
+
 ## 0.7.1 (2026-01-15)
 
 - fix negative integer parsing in Enum8 and Enum16 types https://github.com/plausible/ch/pull/295
