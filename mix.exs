@@ -55,7 +55,7 @@ defmodule Ch.MixProject do
       {:mint, "~> 1.0"},
       {:db_connection, "~> 2.9.0"},
       {:jason, "~> 1.0"},
-      {:decimal, "~> 2.0"},
+      {:decimal, "~> 2.0 or ~> 3.0"},
       {:ecto, "~> 3.13.0", optional: true},
       {:benchee, "~> 1.0", only: [:bench]},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
