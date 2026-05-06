@@ -31,4 +31,20 @@ defmodule Ch.QueryStringTest do
            ).rows ==
              [[["abc", "123"]]]
   end
+
+  test "decimal params are bounded", %{query_options: query_options} do
+    query = Ch.Query.build("select {d:Decimal(76, 0)}", query_options)
+
+    {query_params, _headers, body} =
+      DBConnection.Query.encode(query, %{"d" => Decimal.new("1e1000000")}, [])
+
+    encoded =
+      case query_params do
+        [{"param_d", value}] -> value
+        [] -> IO.iodata_to_binary(body)
+      end
+
+    assert encoded =~ "1E+1000000"
+    assert byte_size(encoded) < 300
+  end
 end
