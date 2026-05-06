@@ -229,7 +229,7 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   defp encode_param(b) when is_boolean(b), do: Atom.to_string(b)
-  defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
+  defp encode_param(%Decimal{} = d), do: decimal_to_string(d)
   defp encode_param(%Date{} = date), do: Date.to_iso8601(date)
   defp encode_param(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
 
@@ -295,6 +295,8 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp encode_map_param({k, v}) do
     [encode_array_param(k), ?:, encode_array_param(v)]
   end
+
+  defp decimal_to_string(decimal), do: Decimal.to_string(decimal)
 
   defp escape_param([{pattern, replacement} | escapes], param) do
     param = String.replace(param, pattern, replacement)

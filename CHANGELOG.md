@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6 (2026-05-06)
+
+- Bound Decimal query parameter rendering
+
 ## 0.3.5 (2026-05-06)
 
 - relax Decimal version requirement https://github.com/plausible/ch/pull/332
