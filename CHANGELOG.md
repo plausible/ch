@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5 (2026-05-06)
+
+- relax Decimal version requirement https://github.com/plausible/ch/pull/332
+
 ## 0.3.4 (2025-07-07)
 
 - fix column decoding when count exceeds 127 https://github.com/plausible/ch/pull/257

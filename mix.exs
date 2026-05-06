@@ -2,7 +2,7 @@ defmodule Ch.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/plausible/ch"
-  @version "0.3.4"
+  @version "0.3.5"
 
   def project do
     [
@@ -40,7 +40,7 @@ defmodule Ch.MixProject do
       {:mint, "~> 1.0"},
       {:db_connection, "~> 2.0"},
       {:jason, "~> 1.0"},
-      {:decimal, "~> 2.0"},
+      {:decimal, "~> 2.0 or ~> 3.0"},
       {:ecto, "~> 3.12.0", optional: true},
       {:benchee, "~> 1.0", only: [:bench]},
       {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
