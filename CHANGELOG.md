@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- use scientific decimals rendering in params
+- use scientific decimals rendering in params https://github.com/plausible/ch/pull/333
 
 ## 0.8.1 (2026-05-05)
 
