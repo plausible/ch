@@ -1665,22 +1665,90 @@ defmodule Ch.ConnectionTest do
     end
   end
 
-  describe "transactions" do
-    test "commit", ctx do
-      DBConnection.transaction(ctx.conn, fn conn ->
-        ctx = Map.put(ctx, :conn, conn)
-        parameterize_query!(ctx, "select 1 + 1")
-      end)
+  describe "transactions when supported" do
+    setup %{conn: conn} do
+      if transactions_supported?(conn) do
+        table = "transaction_t_#{System.unique_integer([:positive])}"
+        Ch.query!(conn, "create table #{table}(id UInt8) engine = MergeTree order by tuple()")
+        {:ok, table: table, transactions_supported?: true}
+      else
+        {:ok, table: nil, transactions_supported?: false}
+      end
     end
 
-    test "rollback", ctx do
-      DBConnection.transaction(ctx.conn, fn conn ->
-        DBConnection.rollback(conn, :some_reason)
-      end)
+    test "commit persists rows and resets status", %{
+      conn: conn,
+      table: table,
+      transactions_supported?: transactions_supported?
+    } do
+      if transactions_supported? do
+        assert DBConnection.status(conn) == :idle
+
+        assert {:ok, :committed} =
+                 DBConnection.transaction(conn, fn conn ->
+                   assert DBConnection.status(conn) == :transaction
+
+                   assert {:ok, %{num_rows: 1}} =
+                            Ch.query(conn, "insert into #{table} values (1)")
+
+                   assert Ch.query!(conn, "select count() from #{table}").rows == [[1]]
+                   :committed
+                 end)
+
+        assert DBConnection.status(conn) == :idle
+        assert Ch.query!(conn, "select count() from #{table}").rows == [[1]]
+      end
     end
 
-    test "status", ctx do
-      assert DBConnection.status(ctx.conn) == :idle
+    test "rollback discards rows and resets status", %{
+      conn: conn,
+      table: table,
+      transactions_supported?: transactions_supported?
+    } do
+      if transactions_supported? do
+        assert DBConnection.status(conn) == :idle
+
+        assert {:error, :rolled_back} =
+                 DBConnection.transaction(conn, fn conn ->
+                   assert DBConnection.status(conn) == :transaction
+
+                   assert {:ok, %{num_rows: 1}} =
+                            Ch.query(conn, "insert into #{table} values (1)")
+
+                   assert Ch.query!(conn, "select count() from #{table}").rows == [[1]]
+                   DBConnection.rollback(conn, :rolled_back)
+                 end)
+
+        assert DBConnection.status(conn) == :idle
+        assert Ch.query!(conn, "select count() from #{table}").rows == [[0]]
+      end
+    end
+
+    test "query errors mark the transaction as failed", %{
+      conn: conn,
+      transactions_supported?: transactions_supported?
+    } do
+      if transactions_supported? do
+        assert_raise Ch.Error, "cannot commit a failed transaction; rollback is required", fn ->
+          DBConnection.transaction(conn, fn conn ->
+            assert DBConnection.status(conn) == :transaction
+
+            assert {:error, %Ch.Error{}} =
+                     Ch.query(conn, "select missing_transaction_column")
+
+            assert DBConnection.status(conn) == :error
+            :ok
+          end)
+        end
+
+        assert DBConnection.status(conn) == :idle
+      end
+    end
+  end
+
+  describe "transaction status" do
+    test "is idle outside of a transaction", %{conn: conn} do
+      assert DBConnection.status(conn) == :idle
     end
   end
 
@@ -1825,6 +1893,20 @@ defmodule Ch.ConnectionTest do
       assert length(row) == 1000
       assert List.first(row) == 1
       assert List.last(row) == 1000
+    end
+  end
+
+  defp transactions_supported?(conn) do
+    case Ch.query(conn, "BEGIN TRANSACTION") do
+      {:ok, _result} ->
+        Ch.query!(conn, "ROLLBACK")
+        true
+
+      {:error, %Ch.Error{code: 48}} ->
+        false
+
+      {:error, error} ->
+        raise error
     end
   end
 end

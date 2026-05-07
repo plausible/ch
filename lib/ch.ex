@@ -16,6 +16,8 @@ defmodule Ch do
           | {:username, String.t()}
           | {:password, String.t()}
           | {:settings, Keyword.t()}
+          | {:session_id, String.t()}
+          | {:session_timeout, pos_integer()}
           | {:timeout, timeout}
 
   @typedoc """
