@@ -332,7 +332,7 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   defp encode_param(b) when is_boolean(b), do: Atom.to_string(b)
   defp encode_param(nil), do: "\\N"
-  defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
+  defp encode_param(%Decimal{} = d), do: decimal_to_string!(d)
   defp encode_param(%Date{} = date), do: Date.to_iso8601(date)
   defp encode_param(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
   defp encode_param(%Time{} = time), do: Time.to_iso8601(time)
@@ -408,6 +408,13 @@ defimpl DBConnection.Query, for: Ch.Query do
   end
 
   defp escape_param([], param), do: param
+
+  @compile inline: [decimal_to_string!: 1]
+  defp decimal_to_string!(%Decimal{coef: coef}) when coef in [:NaN, :inf] do
+    raise ArgumentError, "ClickHouse Decimal values must be finite"
+  end
+
+  defp decimal_to_string!(d), do: Decimal.to_string(d, :scientific)
 
   @spec headers(Keyword.t()) :: Mint.Types.headers()
   defp headers(opts), do: Keyword.get(opts, :headers, [])
