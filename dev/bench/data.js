@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778160643605,
+  "lastUpdate": 1778160702696,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
@@ -1150,6 +1150,44 @@ window.BENCHMARK_DATA = {
             "range": "stddev 2.67%",
             "unit": "ips",
             "extra": "average: 992.48 ms\nmedian: 981.15 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ruslandoga+gh@icloud.com",
+            "name": "ruslandoga",
+            "username": "ruslandoga"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dccbd27fd12417f8fc9f66cfb3efee671981c485",
+          "message": "use scientific decimals rendering in params (#333)\n\n* use scientific decimals rendering in params\n\n* continue\n\n* continue\n\n* raise client side on non-finite decimals\n\n* format\n\n* eh",
+          "timestamp": "2026-05-07T16:29:51+03:00",
+          "tree_id": "dce4ad52c3d82dbe248ffca7156c6668baa60799",
+          "url": "https://github.com/plausible/ch/commit/dccbd27fd12417f8fc9f66cfb3efee671981c485"
+        },
+        "date": 1778160702301,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 1.001,
+            "range": "stddev 17.4%",
+            "unit": "ips",
+            "extra": "average: 999.03 ms\nmedian: 1083.23 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.9774,
+            "range": "stddev 2.19%",
+            "unit": "ips",
+            "extra": "average: 1023.1 ms\nmedian: 1025.66 ms"
           }
         ]
       }
