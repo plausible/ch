@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- use scientific decimals rendering in params
+
 ## 0.8.1 (2026-05-05)
 
 - relax Decimal version requirement https://github.com/plausible/ch/pull/332

@@ -332,7 +332,7 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   defp encode_param(b) when is_boolean(b), do: Atom.to_string(b)
   defp encode_param(nil), do: "\\N"
-  defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :normal)
+  defp encode_param(%Decimal{} = d), do: Decimal.to_string(d, :scientific)
   defp encode_param(%Date{} = date), do: Date.to_iso8601(date)
   defp encode_param(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
   defp encode_param(%Time{} = time), do: Time.to_iso8601(time)
