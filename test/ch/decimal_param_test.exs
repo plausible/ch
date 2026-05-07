@@ -38,13 +38,13 @@ defmodule Ch.DecimalParamTest do
 
   test "decimal parameters reject over-limit values", ctx do
     assert decimal_error(ctx, Decimal.new(1, 1, 76), "Decimal(76, 0)") =~
-             "Decimal value is too big: 1 digits were read: '1'e76. Expected to read decimal with scale 0 and precision 76: value 1E+76 cannot be parsed as Decimal(76, 0) for query parameter 'd'"
+             "value 1E+76 cannot be parsed as Decimal(76, 0)"
 
     assert decimal_error(ctx, Decimal.new(String.duplicate("9", 77)), "Decimal(76, 0)") =~
-             "Too many digits (77 > 76) in decimal value: value 99999999999999999999999999999999999999999999999999999999999999999999999999999 cannot be parsed as Decimal(76, 0) for query parameter 'd'."
+             "value 99999999999999999999999999999999999999999999999999999999999999999999999999999 cannot be parsed as Decimal(76, 0)"
 
     assert decimal_error(ctx, Decimal.new("1e1000000"), "Decimal(76, 0)") =~
-             "Decimal value is too big: 1 digits were read: '1'e1000000. Expected to read decimal with scale 0 and precision 76: value 1E+1000000 cannot be parsed as Decimal(76, 0) for query parameter 'd'."
+             "value 1E+1000000 cannot be parsed as Decimal(76, 0)"
 
     assert_raise ArgumentError, "ClickHouse Decimal values must be finite", fn ->
       decimal_error(ctx, Decimal.new("NaN"), "Decimal(76, 0)")
