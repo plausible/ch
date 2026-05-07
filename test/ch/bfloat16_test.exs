@@ -69,36 +69,41 @@ defmodule Ch.BFloat16Test do
     conn: conn,
     query_options: query_options
   } do
-    table = "bf16_#{System.unique_integer([:positive])}"
+    table = "bf16_edges"
+    insert = "insert into bf16_edges (idx, bf16) format RowBinary"
 
-    Ch.query!(conn, "create table #{table} (idx UInt8, bf16 BFloat16) engine Memory")
-    on_exit(fn -> Ch.Test.query("drop table if exists #{table}") end)
+    create_table(conn, table)
+
+    on_exit(fn ->
+      Ch.Test.query("drop table if exists {table:Identifier}", %{"table" => table})
+    end)
 
     values = Enum.map(@bf16_edges, &bfloat16_to_float/1)
 
-    assert_rowbinary_round_trip(conn, table, query_options, values)
+    assert_rowbinary_round_trip(conn, table, insert, query_options, values)
   end
 
   property "finite RowBinary values round-trip through ClickHouse", %{
     conn: conn,
     query_options: query_options
   } do
-    table = "bf16_#{System.unique_integer([:positive])}"
+    table = "bf16_finite"
+    insert = "insert into bf16_finite (idx, bf16) format RowBinary"
 
-    Ch.query!(conn, "create table #{table} (idx UInt8, bf16 BFloat16) engine Memory")
-    on_exit(fn -> Ch.Test.query("drop table if exists #{table}") end)
+    create_table(conn, table)
+
+    on_exit(fn ->
+      Ch.Test.query("drop table if exists {table:Identifier}", %{"table" => table})
+    end)
 
     query_options = Keyword.merge(query_options, types: ["UInt8", "BFloat16"])
 
     check all bits <- list_of(finite_bfloat16_bits(), length: 20) do
-      Ch.query!(
-        conn,
-        "create table if not exists #{table} (idx UInt8, bf16 BFloat16) engine Memory"
-      )
+      create_table(conn, table, if_not_exists: true)
 
       values = Enum.map(bits, &bfloat16_to_float/1)
 
-      assert_rowbinary_round_trip(conn, table, query_options, values)
+      assert_rowbinary_round_trip(conn, table, insert, query_options, values)
     end
   end
 
@@ -135,8 +140,18 @@ defmodule Ch.BFloat16Test do
     float
   end
 
-  defp assert_rowbinary_round_trip(conn, table, query_options, values) do
-    Ch.query!(conn, "truncate table #{table}")
+  defp create_table(conn, table, opts \\ []) do
+    exists = if opts[:if_not_exists], do: " if not exists", else: ""
+
+    Ch.query!(
+      conn,
+      "create table#{exists} {table:Identifier} (idx UInt8, bf16 BFloat16) engine Memory",
+      %{"table" => table}
+    )
+  end
+
+  defp assert_rowbinary_round_trip(conn, table, insert, query_options, values) do
+    Ch.query!(conn, "truncate table {table:Identifier}", %{"table" => table})
 
     query_options = Keyword.merge(query_options, types: ["UInt8", "BFloat16"])
 
@@ -148,14 +163,14 @@ defmodule Ch.BFloat16Test do
     assert %{num_rows: count} =
              Ch.query!(
                conn,
-               "insert into #{table} (idx, bf16) format RowBinary",
+               insert,
                rows,
                query_options
              )
 
     assert count == length(values)
 
-    assert Ch.query!(conn, "select bf16 from #{table} order by idx").rows ==
+    assert Ch.query!(conn, "select bf16 from {table:Identifier} order by idx", %{"table" => table}).rows ==
              Enum.map(values, &[&1])
   end
 end
