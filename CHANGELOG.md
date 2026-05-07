@@ -2,7 +2,7 @@
 
 ## 0.7.3 (2026-05-06)
 
-- Bound Decimal query parameter rendering
+- use scientific decimals rendering in params https://github.com/plausible/ch/pull/333
 
 ## 0.7.2 (2026-05-05)
 
