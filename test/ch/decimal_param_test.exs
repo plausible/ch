@@ -38,14 +38,24 @@ defmodule Ch.DecimalParamTest do
     encoded = encoded_decimal_param(ctx.query_options, Decimal.new("1e1000000"))
 
     assert encoded =~ "1E+1000000"
-    assert byte_size(encoded) < 600
+    assert byte_size(encoded) < 300
   end
 
   test "decimal parameters reject over-limit values", ctx do
-    assert_decimal_error(ctx, Decimal.new(1, 1, 76), "Decimal(76, 0)")
-    assert_decimal_error(ctx, Decimal.new(String.duplicate("9", 77)), "Decimal(76, 0)")
-    assert_decimal_error(ctx, Decimal.new("NaN"), "Decimal(76, 0)")
-    assert_decimal_error(ctx, Decimal.new("Infinity"), "Decimal(76, 0)")
+    assert decimal_error(ctx, Decimal.new(1, 1, 76), "Decimal(76, 0)") =~
+             "Decimal value is too big: 1 digits were read: '1'e76. Expected to read decimal with scale 0 and precision 76: value 1E+76 cannot be parsed as Decimal(76, 0) for query parameter 'd'"
+
+    assert decimal_error(ctx, Decimal.new(String.duplicate("9", 77)), "Decimal(76, 0)") =~
+             "Too many digits (77 > 76) in decimal value: value 99999999999999999999999999999999999999999999999999999999999999999999999999999 cannot be parsed as Decimal(76, 0) for query parameter 'd'."
+
+    assert decimal_error(ctx, Decimal.new("1e1000000"), "Decimal(76, 0)") =~
+             "Decimal value is too big: 1 digits were read: '1'e1000000. Expected to read decimal with scale 0 and precision 76: value 1E+1000000 cannot be parsed as Decimal(76, 0) for query parameter 'd'."
+
+    assert decimal_error(ctx, Decimal.new("NaN"), "Decimal(76, 0)") =~
+             "Value NaN cannot be parsed as Decimal(76, 0) for query parameter 'd' because it isn't parsed completely"
+
+    assert decimal_error(ctx, Decimal.new("Infinity"), "Decimal(76, 0)") =~
+             "Value Infinity cannot be parsed as Decimal(76, 0) for query parameter 'd' because it isn't parsed completely"
   end
 
   test "decimal parameters below declared scale round to zero", ctx do
@@ -58,13 +68,13 @@ defmodule Ch.DecimalParamTest do
   end
 
   property "compact exponent Decimal integer params round-trip", ctx do
-    check all(decimal <- compact_decimal_integer(), max_runs: 25) do
+    check all(decimal <- compact_decimal_integer()) do
       assert_decimal_param(ctx, decimal, "Decimal(76, 0)", decimal)
     end
   end
 
   property "Decimal params with scale round-trip", ctx do
-    check all(decimal <- decimal_with_scale(), max_runs: 25) do
+    check all(decimal <- decimal_with_scale()) do
       assert_decimal_param(ctx, decimal, "Decimal(76, 12)", decimal)
     end
   end
@@ -81,7 +91,7 @@ defmodule Ch.DecimalParamTest do
     assert Decimal.compare(actual, expected) == :eq
   end
 
-  defp assert_decimal_error(ctx, decimal, type) do
+  defp decimal_error(ctx, decimal, type) do
     assert {:error, error} =
              parameterize_query(
                ctx,
@@ -90,7 +100,7 @@ defmodule Ch.DecimalParamTest do
                ctx.query_options
              )
 
-    assert Exception.message(error) =~ "Decimal"
+    Exception.message(error)
   end
 
   defp compact_decimal_integer do
