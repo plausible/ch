@@ -26,12 +26,7 @@ defmodule Ch.DecimalParamTest do
       Decimal.new(max_integer)
     )
 
-    assert_decimal_param(
-      ctx,
-      Decimal.new(1, 1, -76),
-      "Decimal(76, 76)",
-      Decimal.new(max_scale)
-    )
+    assert_decimal_param(ctx, Decimal.new(1, 1, -76), "Decimal(76, 76)", Decimal.new(max_scale))
   end
 
   test "compact exponent Decimal params are not expanded before request", ctx do
@@ -61,22 +56,17 @@ defmodule Ch.DecimalParamTest do
   end
 
   test "decimal parameters below declared scale round to zero", ctx do
-    assert_decimal_param(
-      ctx,
-      Decimal.new(1, 1, -77),
-      "Decimal(76, 76)",
-      Decimal.new("0E-76")
-    )
+    assert_decimal_param(ctx, Decimal.new(1, 1, -77), "Decimal(76, 76)", Decimal.new("0E-76"))
   end
 
   property "compact exponent Decimal integer params round-trip", ctx do
-    check all(decimal <- compact_decimal_integer()) do
+    check all decimal <- compact_decimal_integer() do
       assert_decimal_param(ctx, decimal, "Decimal(76, 0)", decimal)
     end
   end
 
   property "Decimal params with scale round-trip", ctx do
-    check all(decimal <- decimal_with_scale()) do
+    check all decimal <- decimal_with_scale() do
       assert_decimal_param(ctx, decimal, "Decimal(76, 12)", decimal)
     end
   end
@@ -85,7 +75,7 @@ defmodule Ch.DecimalParamTest do
     assert %Ch.Result{rows: [[actual, ^type]]} =
              parameterize_query!(
                ctx,
-               "select {d:#{type}}, toTypeName({d:#{type}})",
+               "select {d:#{type}} as x, toTypeName(x)",
                %{"d" => decimal},
                ctx.query_options
              )
@@ -106,21 +96,17 @@ defmodule Ch.DecimalParamTest do
   end
 
   defp compact_decimal_integer do
-    gen all(
-          sign <- member_of([1, -1]),
-          coef <- integer(1..9_999_999_999_999_999),
-          exp <- integer(0..50)
-        ) do
+    gen all sign <- member_of([1, -1]),
+            coef <- integer(1..9_999_999_999_999_999),
+            exp <- integer(0..50) do
       Decimal.new(sign, coef, exp)
     end
   end
 
   defp decimal_with_scale do
-    gen all(
-          sign <- member_of([1, -1]),
-          coef <- integer(1..9_999_999_999_999),
-          exp <- integer(-12..20)
-        ) do
+    gen all sign <- member_of([1, -1]),
+            coef <- integer(1..9_999_999_999_999),
+            exp <- integer(-12..20) do
       Decimal.new(sign, coef, exp)
     end
   end
