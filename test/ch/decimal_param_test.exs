@@ -51,11 +51,13 @@ defmodule Ch.DecimalParamTest do
     assert decimal_error(ctx, Decimal.new("1e1000000"), "Decimal(76, 0)") =~
              "Decimal value is too big: 1 digits were read: '1'e1000000. Expected to read decimal with scale 0 and precision 76: value 1E+1000000 cannot be parsed as Decimal(76, 0) for query parameter 'd'."
 
-    assert decimal_error(ctx, Decimal.new("NaN"), "Decimal(76, 0)") =~
-             "Value NaN cannot be parsed as Decimal(76, 0) for query parameter 'd' because it isn't parsed completely"
+    assert_raise ArgumentError, "ClickHouse Decimal values must be finite", fn ->
+      decimal_error(ctx, Decimal.new("NaN"), "Decimal(76, 0)")
+    end
 
-    assert decimal_error(ctx, Decimal.new("Infinity"), "Decimal(76, 0)") =~
-             "Value Infinity cannot be parsed as Decimal(76, 0) for query parameter 'd' because it isn't parsed completely"
+    assert_raise ArgumentError, "ClickHouse Decimal values must be finite", fn ->
+      decimal_error(ctx, Decimal.new("Infinity"), "Decimal(76, 0)")
+    end
   end
 
   test "decimal parameters below declared scale round to zero", ctx do
