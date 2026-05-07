@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.6 (2026-05-06)
+## 0.3.6 (2026-05-07)
 
 - use scientific decimals rendering in params https://github.com/plausible/ch/pull/333
 
