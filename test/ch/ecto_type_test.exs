@@ -261,7 +261,7 @@ defmodule Ch.EctoTypeTest do
     assert {:parameterized, {Ch, :bf16}} =
              type = Ecto.ParameterizedType.init(Ch, type: unquote("BFloat16"))
 
-    assert Ecto.Type.type(type) == type
+    assert Ecto.Type.type(type) == :float
     assert Ecto.Type.format(type) == "#Ch<BFloat16>"
 
     assert {:ok, 1.0} = Ecto.Type.cast(type, 1.0)

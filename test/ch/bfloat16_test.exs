@@ -12,15 +12,28 @@ defmodule Ch.BFloat16Test do
      conn: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
-  test "plain", %{conn: conn, query_options: query_options} do
-    assert Ch.query!(conn, "select 1.75::BFloat16", _no_params = %{}, query_options).rows == [
-             [1.75]
-           ]
+  property "plain", %{conn: conn, query_options: query_options} do
+    check all value <- bfloat16() do
+      assert Ch.query!(
+               conn,
+               "select #{Float.to_string(value)}::BFloat16",
+               _no_params = %{},
+               query_options
+             ).rows ==
+               [[value]]
+    end
   end
 
-  test "send and read back via params", %{conn: conn, query_options: query_options} do
-    assert Ch.query!(conn, "select {value:BFloat16} as value", %{"value" => 1.75}, query_options).rows ==
-             [[1.75]]
+  property "send and read back via params", %{conn: conn, query_options: query_options} do
+    check all value <- bfloat16() do
+      assert Ch.query!(
+               conn,
+               "select {value:BFloat16} as value",
+               %{"value" => value},
+               query_options
+             ).rows ==
+               [[value]]
+    end
   end
 
   property "send and read back via rowbinary", %{conn: conn, query_options: query_options} do
@@ -31,7 +44,7 @@ defmodule Ch.BFloat16Test do
 
     query_options = Keyword.merge(query_options, types: ["UInt8", "BFloat16"])
 
-    check all values <- list_of(bfloat16(), length: 20), max_runs: 10 do
+    check all values <- list_of(bfloat16(), length: 20) do
       Ch.query!(conn, "truncate table #{table}")
 
       rows =
@@ -53,9 +66,23 @@ defmodule Ch.BFloat16Test do
   end
 
   defp bfloat16 do
-    integer(0..0xFFFF)
-    |> filter(fn bits -> (bits &&& 0x7F80) != 0x7F80 end)
+    integer(-1_000_000..1_000_000)
+    |> map(&(&1 / 16))
+    |> map(&float_to_bfloat16/1)
     |> map(&bfloat16_to_float/1)
+  end
+
+  defp float_to_bfloat16(float) do
+    <<bits::32>> = <<float::32-float>>
+
+    upper = bits >>> 16
+    lower = bits &&& 0xFFFF
+
+    if lower > 0x8000 or (lower == 0x8000 and (upper &&& 1) == 1) do
+      upper + 1
+    else
+      upper
+    end
   end
 
   defp bfloat16_to_float(bits) do

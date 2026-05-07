@@ -149,7 +149,7 @@ defmodule Ch do
       def type(unquote(:"f#{size}")), do: :float
     end
 
-    def type(:bf16), do: {:parameterized, {Ch, :bf16}}
+    def type(:bf16), do: :float
 
     def type({:decimal, _p, _s}), do: :decimal
 
