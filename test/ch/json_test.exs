@@ -1,11 +1,6 @@
 defmodule Ch.JSONTest do
   use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
 
-  import Ch.Test,
-    only: [
-      parameterize_query: 4
-    ]
-
   @moduletag :json
 
   setup ctx do
@@ -350,127 +345,18 @@ defmodule Ch.JSONTest do
              ]
            ]
 
-    assert Ch.query!(conn, "SELECT json.a.b FROM json_test;", [], query_options).rows == [
-             [
-               [
-                 %{"c" => 42, "d" => "Hello", "f" => [[%{"g" => 42.42}]], "k" => %{"j" => 1000}},
-                 %{"c" => 43},
-                 %{
-                   "d" => "My",
-                   "e" => [1, 2, 3],
-                   "f" => [[%{"g" => 43.43, "h" => "2020-01-01"}]],
-                   "k" => %{"j" => 2000}
-                 }
-               ]
-             ],
-             [[1, 2, 3]],
-             [
-               [
-                 %{"c" => 44, "f" => [[%{"h" => "2020-01-02"}]]},
-                 %{
-                   "d" => "World",
-                   "e" => [4, 5, 6],
-                   "f" => [[%{"g" => 44.44}]],
-                   "k" => %{"j" => 3000}
-                 }
-               ]
-             ]
-           ]
+    # TODO
+    assert_raise ArgumentError, "unsupported dynamic type JSON", fn ->
+      Ch.query!(conn, "SELECT json.a.b, dynamicType(json.a.b) FROM json_test;", [], query_options)
+    end
 
-    assert Ch.query!(
-             conn,
-             "SELECT json.a.b[].c, json.a.b[].f, json.a.b[].d FROM json_test;",
-             [],
-             query_options
-           ).rows == [
-             [
-               [42, 43, nil],
-               [[[%{"g" => 42.42}]], nil, [[%{"g" => 43.43, "h" => "2020-01-01"}]]],
-               ["Hello", nil, "My"]
-             ],
-             [[], [], []],
-             [[44, nil], [[[%{"h" => "2020-01-02"}]], [[%{"g" => 44.44}]]], [nil, "World"]]
-           ]
-
-    enable_time_time64_type = [enable_time_time64_type: 1]
-
-    query_options =
-      Keyword.update(query_options, :settings, enable_time_time64_type, fn prev ->
-        Keyword.merge(prev, enable_time_time64_type)
-      end)
-
-    assert_raise ArgumentError,
-                 "Unsupported type definition (starting with 0x34) while decoding dynamic JSON. Only single-byte type identifiers are currently supported.",
-                 fn ->
-                   Ch.query!(
-                     conn,
-                     ~s|SELECT '{"a": "10:00:00.050"}'::JSON(a Time64)::Dynamic;|,
-                     [],
-                     query_options
-                   )
-                 end
-  end
-
-  test "encode JSON in dynamic column", %{conn: conn, query_options: query_options} do
-    Ch.query!(conn, "CREATE TABLE json_test (value Dynamic) ENGINE = Memory;", [], query_options)
-
-    query_options = Keyword.put(query_options, :types, [:dynamic])
-
-    Ch.query!(
-      conn,
-      "INSERT INTO json_test (value) FORMAT RowBinary",
-      [[%{"json_obj" => 42}]],
-      query_options
-    )
-
-    assert Ch.query!(conn, "SELECT value FROM json_test").rows == [
-             [%{"json_obj" => 42}]
-           ]
-  end
-
-  test "insert with settings, type hints and skip directives", %{
-    conn: conn,
-    query_options: query_options
-  } do
-    Ch.query!(
-      conn,
-      "CREATE TABLE json_test
-      (
-        `json` JSON(
-                max_dynamic_types=254,
-                max_dynamic_paths=10000,
-                name String,
-                age UInt8,
-                SKIP pass.body_part,
-                SKIP REGEXP 't.*'
-              )
-      ) ENGINE = Memory",
-      [],
-      query_options
-    )
-
-    stmt = "INSERT INTO json_test FORMAT RowBinaryWithNamesAndTypes"
-    rows = [[%{name: "John", age: 30, pass: %{body_part: "none"}, t: %{foo: "bar"}}]]
-    names = ["json"]
-
-    opts = [
-      names: names,
-      types: [
-        Ch.Types.decode("""
-        JSON(
-          max_dynamic_types=254,
-          max_dynamic_paths=10000,
-          age UInt8, name String,
-          SKIP `pass.body_part`,
-          SKIP REGEXP 't.*'
-        )
-        """)
-      ]
-    ]
-
-    assert {:ok, %Ch.Result{}} = parameterize_query(%{conn: conn}, stmt, rows, opts)
-
-    [[value]] = Ch.query!(conn, "select * from json_test", [], query_options).rows
-    assert value == %{"age" => 30, "name" => "John"}
+    assert_raise ArgumentError, "unsupported dynamic type JSON", fn ->
+      Ch.query!(
+        conn,
+        "SELECT json.a.b.:`Array(JSON)`.c, json.a.b.:`Array(JSON)`.f, json.a.b.:`Array(JSON)`.d FROM json_test;",
+        [],
+        query_options
+      )
+    end
   end
 end

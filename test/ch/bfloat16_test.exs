@@ -1,5 +1,8 @@
 defmodule Ch.BFloat16Test do
   use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnitProperties
+
+  import Bitwise
 
   @moduletag :bf16
 
@@ -20,27 +23,43 @@ defmodule Ch.BFloat16Test do
              [[1.75]]
   end
 
-  test "send and read back via rowbinary", %{conn: conn, query_options: query_options} do
+  property "send and read back via rowbinary", %{conn: conn, query_options: query_options} do
     table = "bf16_#{System.unique_integer([:positive])}"
 
-    Ch.query!(conn, "create table #{table} (bf16 BFloat16) engine Memory")
+    Ch.query!(conn, "create table #{table} (idx UInt8, bf16 BFloat16) engine Memory")
     on_exit(fn -> Ch.Test.query("drop table if exists #{table}") end)
 
-    rows = [
-      [1.75],
-      [-1.75],
-      [0]
-    ]
+    query_options = Keyword.merge(query_options, types: ["UInt8", "BFloat16"])
 
-    query_options = Keyword.merge(query_options, types: ["BFloat16"])
+    check all values <- list_of(bfloat16(), length: 20), max_runs: 10 do
+      Ch.query!(conn, "truncate table #{table}")
 
-    assert %{num_rows: 3} =
-             Ch.query!(conn, "insert into #{table} (bf16) format RowBinary", rows, query_options)
+      rows =
+        values
+        |> Enum.with_index()
+        |> Enum.map(fn {value, idx} -> [idx, value] end)
 
-    assert Ch.query!(conn, "select bf16 from #{table} order by bf16").rows == [
-             [-1.75],
-             [0.0],
-             [1.75]
-           ]
+      assert %{num_rows: 20} =
+               Ch.query!(
+                 conn,
+                 "insert into #{table} (idx, bf16) format RowBinary",
+                 rows,
+                 query_options
+               )
+
+      assert Ch.query!(conn, "select bf16 from #{table} order by idx").rows ==
+               Enum.map(values, &[&1])
+    end
+  end
+
+  defp bfloat16 do
+    integer(0..0xFFFF)
+    |> filter(fn bits -> (bits &&& 0x7F80) != 0x7F80 end)
+    |> map(&bfloat16_to_float/1)
+  end
+
+  defp bfloat16_to_float(bits) do
+    <<float::32-float>> = <<bits::16, 0::16>>
+    float
   end
 end

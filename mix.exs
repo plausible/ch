@@ -2,7 +2,7 @@ defmodule Ch.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/plausible/ch"
-  @version "0.7.1"
+  @version "0.8.2"
 
   def project do
     [
@@ -16,7 +16,7 @@ defmodule Ch.MixProject do
       docs: docs(),
       package: package(),
       source_url: @source_url,
-      dialyzer: [plt_local_path: "plts", plt_core_path: "plts"],
+      dialyzer: [plt_local_path: "plts", plt_core_path: "plts", plt_ignore_apps: [:xmerl]],
       test_coverage: [tool: ExCoveralls, ignore_modules: [Ch.Test]]
     ]
   end
@@ -42,6 +42,7 @@ defmodule Ch.MixProject do
 
   # Specifies which paths to compile per environment.
   defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(:bench), do: ["lib", "bench/support"]
   defp elixirc_paths(_env), do: ["lib"]
 
   defp extra_applications(:test), do: [:inets, :tools]
@@ -54,13 +55,14 @@ defmodule Ch.MixProject do
       {:mint, "~> 1.0"},
       {:db_connection, "~> 2.9.0"},
       {:jason, "~> 1.0"},
-      {:decimal, "~> 2.0"},
+      {:decimal, "~> 2.0 or ~> 3.0"},
       {:ecto, "~> 3.13.0", optional: true},
       {:benchee, "~> 1.0", only: [:bench]},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
       {:tz, "~> 0.28.1", only: [:dev, :test, :bench]},
-      {:excoveralls, "~> 0.18.5", only: :test}
+      {:excoveralls, "~> 0.18.5", only: :test},
+      {:stream_data, "~> 1.3", only: :test}
     ]
   end
 

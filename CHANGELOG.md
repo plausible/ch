@@ -1,15 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.8.2 (2026-05-07)
+
+- use scientific decimals rendering in params https://github.com/plausible/ch/pull/333
+
+## 0.8.1 (2026-05-05)
+
+- relax Decimal version requirement https://github.com/plausible/ch/pull/332
+
+## 0.8.0 (2026-05-03)
 
 - RowBinary: truncate NaiveDateTime resulting from DateTime64 https://github.com/plausible/ch/pull/297
-- Add support for `JSON(...)` (JSON with options) type https://github.com/plausible/ch/pull/309
-- RowBinary: de- and encode dynamic JSON https://github.com/plausible/ch/pull/296
 - use gregorian seconds for naive datetime encoding in RowBinary (it's faster this way) https://github.com/plausible/ch/pull/311
 - use `DateTime.to_unix/2` + `DateTime.to_naive/1` for naive datetime decoding in RowBinary https://github.com/plausible/ch/pull/313
 - allow non-UTC timezones for DateTime64 RowBinary encoding https://github.com/plausible/ch/pull/315
 - use gregorian days in RowBinary dates https://github.com/plausible/ch/pull/318
 - support `BFloat16` https://github.com/plausible/ch/pull/321
+- fix `Ch.type/1` callback https://github.com/plausible/ch/pull/331
 
 ## 0.7.1 (2026-01-15)
 
