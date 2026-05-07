@@ -2,7 +2,6 @@ defmodule Ch.BFloat16Test do
   use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
   use ExUnitProperties
 
-  import Ch.RowBinary
   import Bitwise
 
   @moduletag :bf16
@@ -66,33 +65,18 @@ defmodule Ch.BFloat16Test do
              [[nil, nil, nil]]
   end
 
-  property "RowBinary encodes finite values as their BFloat16 bits" do
-    check all bits <- finite_bfloat16_bits() do
-      value = bfloat16_to_float(bits)
+  test "RowBinary edge values round-trip through ClickHouse", %{
+    conn: conn,
+    query_options: query_options
+  } do
+    table = "bf16_#{System.unique_integer([:positive])}"
 
-      assert encode(:bf16, value) == <<bits::16-little>>
-    end
-  end
+    Ch.query!(conn, "create table #{table} (idx UInt8, bf16 BFloat16) engine Memory")
+    on_exit(fn -> Ch.Test.query("drop table if exists #{table}") end)
 
-  property "RowBinary decodes finite BFloat16 bit patterns" do
-    check all bits <- finite_bfloat16_bits() do
-      assert decode_rows(<<bits::16-little>>, [:bf16]) == [[bfloat16_to_float(bits)]]
-    end
-  end
+    values = Enum.map(@bf16_edges, &bfloat16_to_float/1)
 
-  property "RowBinary decodes non-finite BFloat16 bit patterns as nil" do
-    check all bits <- non_finite_bfloat16_bits() do
-      assert decode_rows(<<bits::16-little>>, [:bf16]) == [[nil]]
-    end
-  end
-
-  test "RowBinary covers BFloat16 edge bit patterns" do
-    for bits <- @bf16_edges do
-      value = bfloat16_to_float(bits)
-
-      assert encode(:bf16, value) == <<bits::16-little>>
-      assert decode_rows(<<bits::16-little>>, [:bf16]) == [[value]]
-    end
+    assert_rowbinary_round_trip(conn, table, query_options, values)
   end
 
   property "finite RowBinary values round-trip through ClickHouse", %{
@@ -112,25 +96,9 @@ defmodule Ch.BFloat16Test do
         "create table if not exists #{table} (idx UInt8, bf16 BFloat16) engine Memory"
       )
 
-      Ch.query!(conn, "truncate table #{table}")
-
       values = Enum.map(bits, &bfloat16_to_float/1)
 
-      rows =
-        values
-        |> Enum.with_index()
-        |> Enum.map(fn {value, idx} -> [idx, value] end)
-
-      assert %{num_rows: 20} =
-               Ch.query!(
-                 conn,
-                 "insert into #{table} (idx, bf16) format RowBinary",
-                 rows,
-                 query_options
-               )
-
-      assert Ch.query!(conn, "select bf16 from #{table} order by idx").rows ==
-               Enum.map(values, &[&1])
+      assert_rowbinary_round_trip(conn, table, query_options, values)
     end
   end
 
@@ -146,13 +114,6 @@ defmodule Ch.BFloat16Test do
             exponent <- integer(0..0xFE),
             fraction <- integer(0..0x7F) do
       sign <<< 15 ||| exponent <<< 7 ||| fraction
-    end
-  end
-
-  defp non_finite_bfloat16_bits do
-    gen all sign <- integer(0..1),
-            fraction <- integer(0..0x7F) do
-      sign <<< 15 ||| 0x7F80 ||| fraction
     end
   end
 
@@ -172,5 +133,29 @@ defmodule Ch.BFloat16Test do
   defp bfloat16_to_float(bits) do
     <<float::32-float>> = <<bits::16, 0::16>>
     float
+  end
+
+  defp assert_rowbinary_round_trip(conn, table, query_options, values) do
+    Ch.query!(conn, "truncate table #{table}")
+
+    query_options = Keyword.merge(query_options, types: ["UInt8", "BFloat16"])
+
+    rows =
+      values
+      |> Enum.with_index()
+      |> Enum.map(fn {value, idx} -> [idx, value] end)
+
+    assert %{num_rows: count} =
+             Ch.query!(
+               conn,
+               "insert into #{table} (idx, bf16) format RowBinary",
+               rows,
+               query_options
+             )
+
+    assert count == length(values)
+
+    assert Ch.query!(conn, "select bf16 from #{table} order by idx").rows ==
+             Enum.map(values, &[&1])
   end
 end
