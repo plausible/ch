@@ -260,7 +260,7 @@ defmodule Ch.RowBinary do
   end
 
   def encode(:bf16, f) when is_number(f) do
-    <<f::16-little-float>>
+    <<float_to_bf16(f)::16-little>>
   end
 
   def encode(:bf16, nil), do: <<0::16>>
@@ -475,6 +475,26 @@ defmodule Ch.RowBinary do
       e when is_list(e) or is_binary(e) -> [0 | e]
       e -> [0, e]
     end
+  end
+
+  defp float_to_bf16(f) do
+    <<bits::32>> = <<f::32-float>>
+
+    upper = bits >>> 16
+    lower = bits &&& 0xFFFF
+
+    if lower > 0x8000 or (lower == 0x8000 and (upper &&& 1) == 1) do
+      upper + 1
+    else
+      upper
+    end
+  end
+
+  defp bfloat16_to_float(bits) when (bits &&& 0x7F80) == 0x7F80, do: nil
+
+  defp bfloat16_to_float(bits) do
+    <<f::32-float>> = <<bits::16, 0::16>>
+    f
   end
 
   defp encode_varint_cont(i) when i < 128, do: <<i>>
@@ -1311,8 +1331,7 @@ defmodule Ch.RowBinary do
       %{pattern: quote(do: <<_nan_or_inf::64>>), value: quote(do: nil)}
     ],
     bf16: [
-      %{pattern: quote(do: <<f::16-little-float>>), value: quote(do: f)},
-      %{pattern: quote(do: <<_nan_or_inf::16>>), value: quote(do: nil)}
+      %{pattern: quote(do: <<bits::16-little>>), value: quote(do: bfloat16_to_float(bits))}
     ],
     uuid: %{
       pattern: quote(do: <<u1::64-little, u2::64-little>>),

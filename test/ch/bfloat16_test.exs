@@ -21,6 +21,11 @@ defmodule Ch.BFloat16Test do
   end
 
   test "send and read back via rowbinary", %{conn: conn, query_options: query_options} do
+    table = "bf16_#{System.unique_integer([:positive])}"
+
+    Ch.query!(conn, "create table #{table} (bf16 BFloat16) engine Memory")
+    on_exit(fn -> Ch.Test.query("drop table if exists #{table}") end)
+
     rows = [
       [1.75],
       [-1.75],
@@ -29,11 +34,13 @@ defmodule Ch.BFloat16Test do
 
     query_options = Keyword.merge(query_options, types: ["BFloat16"])
 
-    assert Ch.query!(
-             conn,
-             "select bf16 from input('bf16 BFloat16') format RowBinary",
-             rows,
-             query_options
-           ).rows == rows
+    assert %{num_rows: 3} =
+             Ch.query!(conn, "insert into #{table} (bf16) format RowBinary", rows, query_options)
+
+    assert Ch.query!(conn, "select bf16 from #{table} order by bf16").rows == [
+             [-1.75],
+             [0.0],
+             [1.75]
+           ]
   end
 end
