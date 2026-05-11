@@ -70,14 +70,10 @@ defmodule Ch.HTTP do
     params |> Map.to_list() |> encode_params()
   end
 
+  defp encode_params([]), do: []
+
   defp encode_params([{_key, _value} | _] = params) do
     Enum.map(params, fn {k, v} -> {"param_#{k}", encode_param(v)} end)
-  end
-
-  defp encode_params(params) when is_list(params) do
-    params
-    |> Enum.with_index()
-    |> Enum.map(fn {v, k} -> {"param_$#{k}", encode_param(v)} end)
   end
 
   defp encode_options(options) when is_map(options) do

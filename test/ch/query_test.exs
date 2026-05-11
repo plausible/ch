@@ -24,11 +24,14 @@ defmodule Ch.QueryTest do
     assert Ch.query!(conn, "SELECT 'ẽric'::varchar").rows == [["ẽric"]]
   end
 
-  test "encode positional params", %{conn: conn} do
-    assert Ch.query!(conn, "SELECT {$0:String}", ["hello"]).rows == [["hello"]]
-    assert Ch.query!(conn, "SELECT {$0:Bool}, {$1:Bool}", [true, false]).rows == [[true, false]]
-    assert Ch.query!(conn, "SELECT {$0:Int64}", [42]).rows == [[42]]
-    assert Ch.query!(conn, "SELECT {$0:Array(String)}", [["a", "b"]]).rows == [[["a", "b"]]]
+  test "encode named params", %{conn: conn} do
+    assert Ch.query!(conn, "SELECT {hello:String}", hello: "hello").rows == [["hello"]]
+    assert Ch.query!(conn, "SELECT {a:Bool}, {b:Bool}", a: true, b: false).rows == [[true, false]]
+    assert Ch.query!(conn, "SELECT {n:Int64}", n: 42).rows == [[42]]
+
+    assert Ch.query!(conn, "SELECT {strings:Array(String)}", strings: ["a", "b"]).rows == [
+             [["a", "b"]]
+           ]
   end
 
   test "result struct", %{conn: conn} do
