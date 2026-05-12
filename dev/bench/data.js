@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778585520814,
+  "lastUpdate": 1778585572361,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
@@ -1408,6 +1408,42 @@ window.BENCHMARK_DATA = {
             "range": "stddev 2.58%",
             "unit": "ips",
             "extra": "average: 1026.55 ms\nmedian: 1013.86 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Adam Rutkowski",
+            "username": "aerosol",
+            "email": "hq@mtod.org"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "29d0e7556baa57fe7aa1acdf60d4497d9b1d5176",
+          "message": "Update deps (#339)",
+          "timestamp": "2026-05-12T11:30:43Z",
+          "url": "https://github.com/plausible/ch/commit/29d0e7556baa57fe7aa1acdf60d4497d9b1d5176"
+        },
+        "date": 1778585571982,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 1.0291,
+            "range": "stddev 2.19%",
+            "unit": "ips",
+            "extra": "average: 971.7 ms\nmedian: 963.75 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 1.0039,
+            "range": "stddev 19.15%",
+            "unit": "ips",
+            "extra": "average: 996.07 ms\nmedian: 1076.05 ms"
           }
         ]
       }
