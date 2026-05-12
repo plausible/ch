@@ -21,16 +21,25 @@ defmodule Ch.DecimalParamTest do
 
     assert_decimal_param(
       ctx,
-      Decimal.new(max_integer),
+      Decimal.new(max_integer, max_digits: :infinity, max_exponent: :infinity),
       "Decimal(76, 0)",
-      Decimal.new(max_integer)
+      Decimal.new(max_integer, max_digits: :infinity, max_exponent: :infinity)
     )
 
-    assert_decimal_param(ctx, Decimal.new(1, 1, -76), "Decimal(76, 76)", Decimal.new(max_scale))
+    assert_decimal_param(
+      ctx,
+      Decimal.new(1, 1, -76),
+      "Decimal(76, 76)",
+      Decimal.new(max_scale, max_digits: :infinity, max_exponent: :infinity)
+    )
   end
 
   test "compact exponent Decimal params are not expanded before request", ctx do
-    encoded = encoded_decimal_param(ctx.query_options, Decimal.new("1e1000000"))
+    encoded =
+      encoded_decimal_param(
+        ctx.query_options,
+        Decimal.new("1e1000000", max_digits: :infinity, max_exponent: :infinity)
+      )
 
     assert encoded =~ "1E+1000000"
     assert byte_size(encoded) < 300
@@ -40,10 +49,21 @@ defmodule Ch.DecimalParamTest do
     assert decimal_error(ctx, Decimal.new(1, 1, 76), "Decimal(76, 0)") =~
              "value 1E+76 cannot be parsed as Decimal(76, 0)"
 
-    assert decimal_error(ctx, Decimal.new(String.duplicate("9", 77)), "Decimal(76, 0)") =~
+    assert decimal_error(
+             ctx,
+             Decimal.new(String.duplicate("9", 77),
+               max_digits: :infinity,
+               max_exponent: :infinity
+             ),
+             "Decimal(76, 0)"
+           ) =~
              "value 99999999999999999999999999999999999999999999999999999999999999999999999999999 cannot be parsed as Decimal(76, 0)"
 
-    assert decimal_error(ctx, Decimal.new("1e1000000"), "Decimal(76, 0)") =~
+    assert decimal_error(
+             ctx,
+             Decimal.new("1e1000000", max_digits: :infinity, max_exponent: :infinity),
+             "Decimal(76, 0)"
+           ) =~
              "value 1E+1000000 cannot be parsed as Decimal(76, 0)"
 
     assert_raise ArgumentError, "ClickHouse Decimal values must be finite", fn ->
