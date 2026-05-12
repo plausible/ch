@@ -374,7 +374,7 @@ defmodule Ch.QueryTest do
       ]
 
       Enum.each(nums, fn {num, type} ->
-        dec = Decimal.new(num)
+        dec = Decimal.new(num, max_digits: :infinity, max_exponent: :infinity)
         assert [[dec]] == Ch.query!(conn, "SELECT {$0:#{type}}", [dec], query_options).rows
       end)
     end
