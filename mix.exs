@@ -53,7 +53,7 @@ defmodule Ch.MixProject do
   defp deps do
     [
       {:mint, "~> 1.0"},
-      {:db_connection, "~> 2.9.0"},
+      {:db_connection, "~> 2.10.1"},
       {:jason, "~> 1.0"},
       {:decimal, "~> 2.0 or ~> 3.0"},
       {:ecto, "~> 3.13.0", optional: true},
