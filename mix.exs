@@ -60,7 +60,7 @@ defmodule Ch.MixProject do
       {:telemetry, "~> 1.4"},
       {:decimal, "~> 2.0 or ~> 3.0"},
       {:ecto, "~> 3.13.0", optional: true},
-      {:benchee, "~> 1.0", only: :dev, runtime: false},
+      {:benchee, "~> 1.0", only: :dev},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev},
       {:tz, "~> 0.28.1", only: [:dev, :test]},

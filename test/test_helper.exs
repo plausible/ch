@@ -5,7 +5,11 @@ case Help.http("http://localhost:8123/ping") do
 
   other ->
     Mix.shell().error("""
-    ClickHouse is not detected at localhost:8123. Please start the local container with the following command:
+    ClickHouse is not detected at localhost:8123:
+
+    #{inspect(other)}
+
+    Please start the container with the following command:
 
         docker compose up -d clickhouse
     """)
@@ -23,4 +27,15 @@ exclude =
     [:time, :variant, :json, :dynamic]
   end
 
-ExUnit.start(exclude: exclude)
+assert_receive_timeout =
+  if System.get_env("CI") do
+    to_timeout(second: 5)
+  else
+    to_timeout(second: 1)
+  end
+
+if System.get_env("CI") do
+  Application.put_env(:stream_data, :max_runs, 1000)
+end
+
+ExUnit.start(exclude: exclude, assert_receive_timeout: assert_receive_timeout)
