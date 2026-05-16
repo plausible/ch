@@ -1,6 +1,5 @@
 defmodule Ch.ConnectionTest do
   use ExUnit.Case, async: true
-  alias Ch.RowBinary
 
   setup do
     {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}

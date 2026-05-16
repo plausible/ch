@@ -2,10 +2,6 @@ defmodule Ch.QueryTest do
   use ExUnit.Case, async: true
   alias Ch.Query
 
-  setup ctx do
-    {:ok, query_options: ctx[:query_options] || []}
-  end
-
   test "to_string" do
     query = Query.build(["select ", 1 + ?0, ?+, 2 + ?0])
     assert to_string(query) == "select 1+2"
@@ -50,7 +46,7 @@ defmodule Ch.QueryTest do
   # adapted from https://github.com/elixir-ecto/postgrex/blob/master/test/query_test.exs
   describe "query" do
     setup do
-      {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
+      {:ok, pool: start_supervised!(Ch)}
     end
 
     test "iodata", %{conn: conn, query_options: query_options} do

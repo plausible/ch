@@ -3,18 +3,20 @@ defmodule Ch.JSONTest do
 
   @moduletag :json
 
-  setup ctx do
-    {:ok, query_options: ctx[:query_options] || []}
-  end
-
   setup do
-    on_exit(fn -> Ch.Test.query("DROP TABLE IF EXISTS json_test") end)
-    {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
+    {:ok, pool: start_supervised!(Ch)}
   end
 
-  test "simple json", %{conn: conn, query_options: query_options} do
+  test "simple json", %{pool: pool} do
     select = fn literal ->
-      [[value]] = Ch.query!(conn, "select '#{literal}'::json", [], query_options).rows
+      %{rows: [[value]]} =
+        Ch.query!(
+          pool,
+          "select '#{literal}'::json",
+          _params = %{},
+          settings: %{"" => ""}
+        )
+
       value
     end
 

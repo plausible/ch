@@ -1,4 +1,4 @@
-defmodule Ch.HeadersTest do
+defmodule Ch.CompressionTest do
   use ExUnit.Case, async: true
 
   setup do
