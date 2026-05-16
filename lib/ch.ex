@@ -87,7 +87,7 @@ defmodule Ch do
   If the format is `RowBinaryWithNamesAndTypes`, it returns `%{names: [name], rows: [[value]]}`.
   Otherwise, it returns the raw response body binary.
   """
-  @type query_result :: %{names: [String.t()], rows: [[term]]} | binary
+  @type query_result :: %{names: [String.t()], rows: [[term]]} | iodata | nil
 
   @typedoc """
   A query execution error.

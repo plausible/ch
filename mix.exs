@@ -19,7 +19,7 @@ defmodule Ch.MixProject do
       package: package(),
       source_url: @source_url,
       dialyzer: [plt_local_path: "plts", plt_core_path: "plts", plt_ignore_apps: [:xmerl]],
-      test_coverage: [tool: ExCoveralls, ignore_modules: [Ch.Test]]
+      test_coverage: [tool: ExCoveralls, ignore_modules: [Help]]
     ]
   end
 
