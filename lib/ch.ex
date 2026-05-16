@@ -15,6 +15,8 @@ defmodule Ch do
   """
   @behaviour NimblePool
 
+  @dialyzer :no_improper_lists
+
   @query_timeout to_timeout(second: 30)
   @user_agent "ch/#{Ch.MixProject.version()}"
 
@@ -247,8 +249,12 @@ defmodule Ch do
   end
 
   @impl NimblePool
-  def terminate_worker(_reason, conn, config) do
-    with %Mint.HTTP1{} <- conn, do: Mint.HTTP1.close(conn)
+  def terminate_worker(_reason, conn_or_template, config) do
+    case conn_or_template do
+      :template -> :ok
+      conn -> Mint.HTTP1.close(conn)
+    end
+
     {:ok, config}
   end
 
