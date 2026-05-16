@@ -26,8 +26,8 @@ jobs:
             clickhouse: "24.5.4.49"
 
           # the latest versions with all static checks
-          - elixir: "> 0"
-            otp: "> 0"
+          - elixir: ">0"
+            otp: ">0"
             clickhouse: "latest"
             dialyzer: true
             lint: true
