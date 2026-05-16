@@ -9,7 +9,7 @@ defmodule Ch.MixProject do
   def project do
     [
       app: :ch,
-      version: @version,
+      version: version(),
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
