@@ -4,6 +4,8 @@ defmodule Ch.MixProject do
   @source_url "https://github.com/plausible/ch"
   @version "0.9.0"
 
+  def version, do: @version
+
   def project do
     [
       app: :ch,
