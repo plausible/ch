@@ -1,7 +1,11 @@
 defmodule Ch.AggregationTest do
   use ExUnit.Case, async: true
 
-  test "select SimpleAggregateFunction types" do
+  setup do
+    {:ok, pool: start_supervised!(Ch)}
+  end
+
+  test "select SimpleAggregateFunction types", %{pool: pool} do
     Help.query!("""
     CREATE TABLE candle_fragments (
       ticker LowCardinality(String),
@@ -42,8 +46,6 @@ defmodule Ch.AggregationTest do
 
     on_exit(fn -> Help.query!("drop view candles_one_hour_amt") end)
 
-    pool = start_supervised!(Ch)
-
     Ch.query!(pool, """
     INSERT INTO candle_fragments(ticker, time, high, open, close, low) VALUES
     ('INTC', '2023-04-13 20:33:00', 32, 32, 32, 32),
@@ -82,7 +84,7 @@ defmodule Ch.AggregationTest do
   end
 
   # based on https://github.com/ClickHouse/clickhouse-java/issues/1232
-  test "insert AggregateFunction via input()" do
+  test "insert AggregateFunction via input()", %{pool: pool} do
     Help.query!("""
     CREATE TABLE test_insert_aggregate_function (
       uid Int16,
@@ -92,8 +94,6 @@ defmodule Ch.AggregationTest do
     """)
 
     on_exit(fn -> Help.query!("drop table test_insert_aggregate_function") end)
-
-    pool = start_supervised!(Ch)
 
     rows = [
       [1, ~N[2020-01-02 00:00:00], "b"],
@@ -111,20 +111,28 @@ defmodule Ch.AggregationTest do
 
     Ch.query!(pool, [insert | rowbinary])
 
-    assert pool
-           |> Ch.query!("""
+    assert Ch.query!(pool, """
            SELECT uid, max(updated) AS updated, argMaxMerge(name)
            FROM test_insert_aggregate_function
            GROUP BY uid
-           """)
-           |> Help.to_maps() == [
-             %{"uid" => 1, "updated" => ~N[2020-01-02 00:00:00], "argMaxMerge(name)" => "b"}
+           """).rows == [
+             [1, ~N[2020-01-02 00:00:00], "b"]
            ]
   end
 
   # https://kb.altinity.com/altinity-kb-schema-design/ingestion-aggregate-function/
   describe "altinity examples" do
-    test "ephemeral column" do
+    setup do
+      rows = [
+        [1231, ~N[2020-01-02 00:00:00], "Jane"],
+        [1231, ~N[2020-01-01 00:00:00], "John"]
+      ]
+
+      rowbinary = Ch.RowBinary.encode_rows(rows, ["Int16", "DateTime", "String"])
+      {:ok, rowbinary: rowbinary}
+    end
+
+    test "ephemeral column", %{pool: pool, rowbinary: rowbinary} do
       Help.query!("""
       CREATE TABLE test_users_ephemeral_column (
         uid Int16,
@@ -136,147 +144,85 @@ defmodule Ch.AggregationTest do
 
       on_exit(fn -> Help.query!("drop table test_users_ephemeral_column") end)
 
-      pool = start_supervised!(Ch)
-
-      rows = [
-        [1231, ~N[2020-01-02 00:00:00], "Jane"],
-        [1231, ~N[2020-01-01 00:00:00], "John"]
-      ]
-
-      rowbinary = Ch.RowBinary.encode_rows(rows, ["Int16", "DateTime", "String"])
-
-      insert =
+      Ch.query!(pool, [
         "INSERT INTO test_users_ephemeral_column(uid, updated, name_stub) FORMAT RowBinary\n"
+        | rowbinary
+      ])
 
-      Ch.query!(pool, [insert | rowbinary])
-
-      assert pool
-             |> Ch.query!("""
+      assert Ch.query!(pool, """
              SELECT uid, max(updated) AS updated, argMaxMerge(name)
              FROM test_users_ephemeral_column
              GROUP BY uid
-             """)
-             |> Help.to_maps() == [
-               %{
-                 "uid" => 1231,
-                 "updated" => ~N[2020-01-02 00:00:00],
-                 "argMaxMerge(name)" => "Jane"
-               }
-             ]
-    end
-
-    test "input function" do
-      Ch.query!(
-        pool,
-        """
-        CREATE TEMPORARY TABLE test_users_input_function (
-          uid Int16,
-          updated SimpleAggregateFunction(max, DateTime),
-          name AggregateFunction(argMax, String, DateTime)
-        ) ENGINE AggregatingMergeTree ORDER BY uid
-        """,
-        _params = %{},
-        settings: %{"session_id" => session_id}
-      )
-
-      Ch.query!(
-        pool,
-        [
-          """
-          INSERT INTO test_users_input_function
-            SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
-            FROM input('uid Int16, updated DateTime, name String') FORMAT RowBinary
-          """
-          | Ch.RowBinary.encode_rows(
-              [
-                [1231, ~N[2020-01-02 00:00:00], "Jane"],
-                [1231, ~N[2020-01-01 00:00:00], "John"]
-              ],
-              _types = ["Int16", "DateTime", "String"]
-            )
-        ],
-        _params = %{},
-        settings: %{"session_id" => session_id}
-      )
-
-      assert Ch.query!(
-               pool,
-               """
-               SELECT uid, max(updated) AS updated, argMaxMerge(name)
-               FROM test_users_input_function
-               GROUP BY uid
-               """,
-               _params = %{},
-               settings: %{"session_id" => session_id}
-             ).rows == [
+             """).rows == [
                [1231, ~N[2020-01-02 00:00:00], "Jane"]
              ]
     end
 
-    test "materialized view and null engine" do
-      Ch.query!(
-        pool,
+    test "input function", %{pool: pool, rowbinary: rowbinary} do
+      Help.query!("""
+      CREATE TABLE test_users_input_function (
+        uid Int16,
+        updated SimpleAggregateFunction(max, DateTime),
+        name AggregateFunction(argMax, String, DateTime)
+      ) ENGINE AggregatingMergeTree ORDER BY uid
+      """)
+
+      on_exit(fn -> Help.query!("drop table test_users_input_function") end)
+
+      Ch.query!(pool, [
         """
-        CREATE TEMPORARY TABLE test_users_mv_ne (
-          uid Int16,
-          updated SimpleAggregateFunction(max, DateTime),
-          name AggregateFunction(argMax, String, DateTime)
-        ) ENGINE AggregatingMergeTree ORDER BY uid
-        """,
-        _params = %{},
-        settings: %{"session_id" => session_id}
-      )
-
-      Ch.query!(
-        pool,
+        INSERT INTO test_users_input_function
+          SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
+          FROM input('uid Int16, updated DateTime, name String') FORMAT RowBinary
         """
-        CREATE TEMPORARY TABLE test_users_ne (
-          uid Int16,
-          updated DateTime,
-          name String
-        ) ENGINE Null
-        """,
-        _params = %{},
-        settings: %{"session_id" => session_id}
-      )
+        | rowbinary
+      ])
 
-      Ch.query!(
-        pool,
-        """
-        CREATE TEMPORARY MATERIALIZED VIEW test_users_mv TO test_users_mv_ne AS
-          SELECT uid, updated, arrayReduce('argMaxState', [name], [updated]) name
-          FROM test_users_ne
-        """,
-        _params = %{},
-        settings: %{"session_id" => session_id}
-      )
+      assert Ch.query!(pool, """
+             SELECT uid, max(updated) AS updated, argMaxMerge(name)
+             FROM test_users_input_function
+             GROUP BY uid
+             """).rows == [
+               [1231, ~N[2020-01-02 00:00:00], "Jane"]
+             ]
+    end
 
-      Ch.query!(
-        pool,
-        [
-          "INSERT INTO test_users_ne FORMAT RowBinary\n"
-          | Ch.RowBinary.encode_rows(
-              [
-                [1231, ~N[2020-01-02 00:00:00], "Jane"],
-                [1231, ~N[2020-01-01 00:00:00], "John"]
-              ],
-              _types = ["Int16", "DateTime", "String"]
-            )
-        ],
-        _params = %{},
-        settings: %{"session_id" => session_id}
-      )
+    test "materialized view and null engine", %{pool: pool, rowbinary: rowbinary} do
+      Help.query!("""
+      CREATE TABLE test_users_mv_ne (
+        uid Int16,
+        updated SimpleAggregateFunction(max, DateTime),
+        name AggregateFunction(argMax, String, DateTime)
+      ) ENGINE AggregatingMergeTree ORDER BY uid
+      """)
 
-      assert Ch.query!(
-               pool,
-               """
-               SELECT uid, max(updated) AS updated, argMaxMerge(name)
-               FROM test_users_mv_ne
-               GROUP BY uid
-               """,
-               _params = %{},
-               settings: %{"session_id" => session_id}
-             ).rows == [
+      on_exit(fn -> Help.query!("drop table test_users_mv_ne") end)
+
+      Help.query!("""
+      CREATE TABLE test_users_ne (
+        uid Int16,
+        updated DateTime,
+        name String
+      ) ENGINE Null
+      """)
+
+      on_exit(fn -> Help.query!("drop table test_users_ne") end)
+
+      Help.query!("""
+      CREATE MATERIALIZED VIEW test_users_mv TO test_users_mv_ne AS
+        SELECT uid, updated, arrayReduce('argMaxState', [name], [updated]) name
+        FROM test_users_ne
+      """)
+
+      on_exit(fn -> Help.query!("drop view test_users_mv") end)
+
+      Ch.query!(pool, ["INSERT INTO test_users_ne FORMAT RowBinary\n" | rowbinary])
+
+      assert Ch.query!(pool, """
+             SELECT uid, max(updated) AS updated, argMaxMerge(name)
+             FROM test_users_mv_ne
+             GROUP BY uid
+             """).rows == [
                [1231, ~N[2020-01-02 00:00:00], "Jane"]
              ]
     end
