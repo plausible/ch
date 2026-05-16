@@ -6,7 +6,6 @@ defmodule Ch.CompressionTest do
   end
 
   test "can request GZIP response through headers", %{pool: pool} do
-    # https://en.wikipedia.org/wiki/Gzip
     assert <<0x1F, 0x8B, _rest::bytes>> =
              data =
              pool
@@ -21,7 +20,6 @@ defmodule Ch.CompressionTest do
   end
 
   test "can request LZ4 response through headers", %{pool: pool} do
-    # https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)
     assert <<0x04, 0x22, 0x4D, 0x18, _rest::bytes>> =
              data =
              pool
