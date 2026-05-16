@@ -173,8 +173,8 @@ defmodule Ch do
     headers =
       options
       |> Keyword.get(:headers, [])
-      |> Keyword.put_new("user-agent", @user_agent)
-      |> Keyword.put_new("x-clickhouse-format", "RowBinaryWithNamesAndTypes")
+      |> put_new_header("user-agent", @user_agent)
+      |> put_new_header("x-clickhouse-format", "RowBinaryWithNamesAndTypes")
 
     deadline = Ch.HTTP.to_deadline(timeout)
     path = Ch.HTTP.path(params, settings)
@@ -276,7 +276,7 @@ defmodule Ch do
   defp request(conn, method, path, headers, body, deadline) do
     result =
       with {:ok, conn, _ref} <- Mint.HTTP1.request(conn, method, path, headers, body) do
-        recv_all(conn, nil, [], [], deadline)
+        recv_all(conn, nil, [], nil, deadline)
       end
 
     with {:error, conn, reason} <- result do
@@ -310,7 +310,13 @@ defmodule Ch do
   end
 
   defp handle_responses([{:data, _ref, new_data} | rest], status, headers, prev_data) do
-    handle_responses(rest, status, headers, [prev_data | new_data])
+    next_data =
+      case prev_data do
+        nil -> new_data
+        _ -> [prev_data | new_data]
+      end
+
+    handle_responses(rest, status, headers, next_data)
   end
 
   defp handle_responses([{:done, _ref}], status, headers, data) do
@@ -364,12 +370,22 @@ defmodule Ch do
         String.to_integer(code)
       end
 
-    {:error, %Ch.Error{code: code, message: body}}
+    message = IO.iodata_to_binary(body)
+    {:error, %Ch.Error{code: code, message: message}}
   end
 
   @compile inline: [get_header: 2]
   defp get_header(headers, name) do
     with {_, value} <- List.keyfind(headers, name, 0, nil), do: value
+  end
+
+  @compile inline: [put_new_header: 3]
+  defp put_new_header(headers, name, value) do
+    if List.keymember?(headers, name, 0) do
+      headers
+    else
+      [{name, value} | headers]
+    end
   end
 
   if Code.ensure_loaded?(Ecto.ParameterizedType) do

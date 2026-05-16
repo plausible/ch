@@ -1,10 +1,10 @@
 url = "http://localhost:8123"
 
-{:ok, _pid} = Ch.start_link(name: Ch.TestPool, url: url, pool_size: 100)
+{:ok, _pid} = Help.start_link_pool(url)
 
 version =
-  case Ch.query(Ch.TestPool, "select version()") do
-    {:ok, %{names: ["version"], rows: [[version]]}} ->
+  case Help.query("select version()") do
+    {:ok, %{rows: [[version]]}} ->
       version
 
     {:error, reason} ->
