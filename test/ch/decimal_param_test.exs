@@ -2,9 +2,8 @@ defmodule Ch.DecimalParamTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  setup ctx do
-    {:ok, conn} = Ch.start_link()
-    {:ok, conn: conn, query_options: ctx[:query_options] || []}
+  setup do
+    {:ok, pool: start_supervised!(Ch)}
   end
 
   test "decimal parameter boundaries", ctx do
