@@ -1,11 +1,10 @@
 defmodule Ch.DynamicTest do
-  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
-  import Ch.Test, only: [parameterize_query!: 2, parameterize_query!: 3, parameterize_query!: 4]
+  use ExUnit.Case, async: true
 
   @moduletag :dynamic
 
   setup do
-    {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
+    {:ok, pool: Help.setup_pool()}
   end
 
   test "it works", ctx do

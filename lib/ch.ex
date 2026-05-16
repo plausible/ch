@@ -1,124 +1,351 @@
 defmodule Ch do
   @moduledoc "Minimal HTTP ClickHouse client."
-  alias Ch.{Connection, Query, Result}
+  @behaviour NimblePool
 
-  @typedoc """
-  Options shared by both connection startup and query execution.
+  @query_timeout to_timeout(second: 30)
 
-  * `:database` - Database, defaults to `"default"`
-  * `:username` - Username
-  * `:password` - User password
-  * `:settings` - Keyword list of ClickHouse settings
-  * `:timeout` - HTTP request/receive timeout in milliseconds
-  """
-  @type common_option ::
-          {:database, String.t()}
-          | {:username, String.t()}
-          | {:password, String.t()}
-          | {:settings, Keyword.t()}
-          | {:timeout, timeout}
+  @query_headers [
+    {"x-clickhouse-format", "RowBinaryWithNamesAndTypes"},
+    {"user-agent", "ch/#{Ch.MixProject.version()}"}
+  ]
 
-  @typedoc """
-  Options for starting the connection pool.
+  @start_options_schema [
+    name: [
+      type: {:custom, __MODULE__, :validate_name, []},
+      doc: """
+      The name of the Ch pool instance, used to identify and interact with it.
+      """
+    ],
+    pool_size: [
+      type: :pos_integer,
+      doc: "Maximum number of concurrent connections.",
+      default: 20
+    ],
+    worker_idle_timeout: [
+      type: :timeout,
+      doc: """
+      Time a connection can stay idle before the pool closes it.
+      Should be lower than ClickHouse's `keep_alive_timeout`.
+      """,
+      default: to_timeout(second: 5)
+    ],
+    url: [
+      type: :string,
+      doc: "The ClickHouse endpoint URL.",
+      default: "http://localhost:8123"
+    ]
+  ]
 
-  Includes all keys from `t:common_option/0` and `t:DBConnection.start_option/0` plus:
+  @doc false
+  def validate_name(name) when is_atom(name), do: {:ok, name}
+  def validate_name({:via, module, _term} = via) when is_atom(module), do: {:ok, via}
 
-  * `:scheme` - HTTP scheme, defaults to `"http"`
-  * `:hostname` - server hostname, defaults to `"localhost"`
-  * `:port` - HTTP port, defaults to `8123`
-  * `:transport_opts` - options to be given to the transport being used. See `Mint.HTTP1.connect/4` for more info
-  """
-  @type start_option ::
-          common_option
-          | {:scheme, String.t()}
-          | {:hostname, String.t()}
-          | {:port, :inet.port_number()}
-          | {:transport_opts, [:gen_tcp.connect_option() | :ssl.tls_client_option()]}
-          | DBConnection.start_option()
-
-  @doc """
-  Start the connection pool process.
-
-  See `t:start_option/0` for available options.
-  """
-  @spec start_link([start_option]) :: GenServer.on_start()
-  def start_link(opts \\ []) do
-    DBConnection.start_link(Connection, opts)
-  end
-
-  @doc """
-  Returns a supervisor child specification for a connection pool.
-
-  See `t:start_option/0` for supported options.
-  """
-  @spec child_spec([start_option]) :: :supervisor.child_spec()
-  def child_spec(opts) do
-    DBConnection.child_spec(Connection, opts)
+  def validate_name(name) do
+    {:error,
+     "expected :name to be an atom or a {:via, module, term} tuple, got: #{inspect(name)}"}
   end
 
   @typedoc """
-  Options for executing a query.
+  The query payload.
 
-  Includes all keys from `t:common_option/0` and `t:DBConnection.connection_option/0` plus:
+  This can be a standard SQL string or SQL appended with data (`[sql, ?\n, rowbinary]`).
+  If providing compressed payloads, don't forget to pass the appropriate `content-encoding` header.
+  """
+  @type query_statement :: iodata
 
-  * `:command` - Command tag for the query
-  * `:headers` - Custom HTTP headers for the request
-  * `:format` - Custom response format for the request
-  * `:decode` - Whether to automatically decode the response
-  * `:multipart` - Whether to send the query as multipart/form-data
+  @typedoc """
+  Query execution options.
+
+  * `:timeout` - Request timeout, defaults to 30 seconds.
+  * `:settings` - An enumerable (usually a map or a keyword list) added to the URL query string.
+  * `:headers` - Headers passed directly to Mint. Defaults to "x-clickhouse-format" set to "RowBinaryWithNamesAndTypes" and "user-agent" set to "ch/VERSION".
   """
   @type query_option ::
-          common_option
-          | {:command, Ch.Query.command()}
-          | {:headers, [{String.t(), String.t()}]}
-          | {:format, String.t()}
-          | {:types, [String.t() | atom | tuple]}
-          # TODO remove
-          | {:encode, boolean}
-          | {:decode, boolean}
-          | {:multipart, boolean}
-          | DBConnection.connection_option()
+          {:timeout, timeout}
+          | {:settings, Enumerable.t()}
+          | {:headers, Mint.Types.headers()}
+
+  @typedoc """
+  The parsed query response.
+
+  If the format is `RowBinaryWithNamesAndTypes`, it returns `%{names: [name], rows: [[value]]}`.
+  Otherwise, it returns the raw response body binary.
+  """
+  @type query_result :: %{names: [String.t()], rows: [[term]]} | binary
+
+  @typedoc """
+  A query execution error.
+
+  Returns `Ch.Error` for ClickHouse errors or Mint errors for network/HTTP failures.
+  """
+  @type query_error :: Ch.Error.t() | Mint.Types.error()
+
+  @typedoc """
+  The options supported by `start_link/1`.
+  """
+  @type start_option :: unquote(NimbleOptions.option_typespec(@start_options_schema))
 
   @doc """
-  Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
-  `{:error, Exception.t()}` if there was a database error.
+  Starts a new Ch pool process.
 
-  See `t:query_option/0` for available options.
+  Supported options:
+  #{NimbleOptions.docs(@start_options_schema)}
   """
-  @spec query(DBConnection.conn(), iodata, params, [query_option]) ::
-          {:ok, Result.t()} | {:error, Exception.t()}
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
-  def query(conn, statement, params \\ [], opts \\ []) do
-    query = Query.build(statement, opts)
+  @spec start_link([start_option]) :: GenServer.on_start()
+  def start_link(options \\ []) do
+    options = NimbleOptions.validate!(options, @start_options_schema)
 
-    with {:ok, _query, result} <- DBConnection.execute(conn, query, params, opts) do
-      {:ok, result}
+    name = Keyword.get(options, :name)
+    pool_size = Keyword.fetch!(options, :pool_size)
+    worker_idle_timeout = Keyword.fetch!(options, :worker_idle_timeout)
+    url = Keyword.fetch!(options, :url)
+
+    %URI{scheme: scheme, host: host, port: port} = URI.parse(url)
+
+    scheme =
+      case scheme do
+        "http" -> :http
+        "https" -> :https
+        _other -> raise ArgumentError, "unexpected HTTP scheme: #{inspect(scheme)}"
+      end
+
+    initial_pool_state = %{
+      template: {:template, scheme, host, port}
+    }
+
+    NimblePool.start_link(
+      worker: {__MODULE__, initial_pool_state},
+      pool_size: pool_size,
+      worker_idle_timeout: worker_idle_timeout,
+      lazy: true,
+      name: name
+    )
+  end
+
+  @doc """
+  Returns a child spec to allow Ch pool to be started under a supervisor.
+
+  ## Options
+
+  The options are exactly the same as for `start_link/1`.
+  """
+  @spec child_spec([start_option]) :: Supervisor.child_spec()
+  def child_spec(options) do
+    %{id: __MODULE__, start: {__MODULE__, :start_link, [options]}}
+  end
+
+  @doc """
+  Stops the given `pool`.
+
+  The pool exits with the given `reason`. The pool has `timeout` milliseconds to stop
+  before it's unilaterally killed by the runtime.
+  """
+  @spec stop(NimblePool.pool(), reason :: term, timeout) :: :ok
+  def stop(pool, reason \\ :normal, timeout \\ :infinity) do
+    NimblePool.stop(pool, reason, timeout)
+  end
+
+  @spec query(NimblePool.pool(), query_statement, query_params, [query_option]) ::
+          {:ok, query_result} | {:error, query_error}
+  def query(pool, statement, params \\ %{}, options \\ []) do
+    timeout = Keyword.get(options, :timeout, @query_timeout)
+    settings = Keyword.get(options, :settings, [])
+    headers = Keyword.get(options, :headers, @query_headers)
+
+    deadline = Ch.HTTP.to_deadline(timeout)
+    path = Ch.HTTP.path(params, query)
+
+    result =
+      NimblePool.checkout!(
+        pool,
+        :request,
+        fn {pid, _ref}, conn_or_template ->
+          with {:ok, conn} <- connect(conn_or_template, pid, deadline),
+               {:ok, conn, status, headers, data} <-
+                 request(conn, "POST", path, headers, statement, deadline) do
+            {{:ok, status, headers, data}, checkin(conn)}
+          else
+            {:error, reason} = error -> {error, {:remove, reason}}
+          end
+        end,
+        timeout
+      )
+
+    with {:ok, status, headers, data} <- result do
+      decode_query_response(status, headers, data, options)
     end
   end
 
   @doc """
-  Runs a query and returns the result or raises `Ch.Error` if
-  there was an error. See `query/4`.
+  Executes a query on the given pool, raising on error.
+
+  Returns the `query_result` directly. Raises an exception if the query fails.
   """
-  @spec query!(DBConnection.conn(), iodata, params, [query_option]) :: Result.t()
-        when params: map | [term] | [row :: [term]] | iodata | Enumerable.t()
-  def query!(conn, statement, params \\ [], opts \\ []) do
-    query = Query.build(statement, opts)
-    DBConnection.execute!(conn, query, params, opts)
+  @spec query!(NimblePool.pool(), query_statement, query_params, [query_option]) :: query_result
+  def query!(pool, statement, params \\ %{}, options \\ []) do
+    case query(pool, statement, params, options) do
+      {:ok, result} -> result
+      {:error, error} -> raise error
+    end
   end
 
-  @doc false
-  @spec stream(DBConnection.t(), iodata, map | [term], [query_option]) :: Ch.Stream.t()
-  def stream(conn, statement, params \\ [], opts \\ []) do
-    query = Query.build(statement, opts)
-    %Ch.Stream{conn: conn, query: query, params: params, opts: opts}
+  @impl NimblePool
+  def init_pool(config) do
+    {:ok, config}
   end
 
-  # TODO drop
-  @doc false
-  @spec run(DBConnection.conn(), (DBConnection.t() -> any), Keyword.t()) :: any
-  def run(conn, f, opts \\ []) when is_function(f, 1) do
-    DBConnection.run(conn, f, opts)
+  @impl NimblePool
+  def init_worker(config) do
+    {:ok, :template, config}
+  end
+
+  @impl NimblePool
+  def handle_checkout(:request, _from, :template = template, config) do
+    {:ok, config.template, template, config}
+  end
+
+  def handle_checkout(:request, _from, %Mint.HTTP1{} = conn, config) do
+    {:ok, {:ok, conn}, conn, config}
+  end
+
+  @impl NimblePool
+  def handle_checkin({:ok, conn}, _from, _prev, config) do
+    {:ok, conn, config}
+  end
+
+  def handle_checkin({:remove, reason}, _from, _prev, config) do
+    {:remove, reason, config}
+  end
+
+  @impl NimblePool
+  def handle_ping(_conn, _config) do
+    {:remove, :worker_idle_timeout}
+  end
+
+  @impl NimblePool
+  def terminate_worker(_reason, conn, config) do
+    with %Mint.HTTP1{} <- conn, do: Mint.HTTP1.close(conn)
+    {:ok, config}
+  end
+
+  defp connect({:template, scheme, host, port}, owner, deadline) do
+    timeout = Ch.HTTP.to_timeout(deadline)
+
+    case Mint.HTTP1.connect(scheme, host, port, mode: :passive, timeout: timeout) do
+      {:ok, conn} ->
+        case Mint.HTTP1.controlling_process(conn, owner) do
+          {:ok, _conn} = ok ->
+            ok
+
+          {:error, _reason} = error ->
+            Mint.HTTP1.close(conn)
+            error
+        end
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp connect({:ok, _conn} = ok, _owner, _deadline), do: ok
+
+  defp request(conn, method, path, headers, body, deadline) do
+    result =
+      with {:ok, conn, _ref} <- Mint.HTTP1.request(conn, method, path, headers, body) do
+        recv_all(conn, nil, [], [], deadline)
+      end
+
+    with {:error, conn, reason} <- result do
+      Mint.HTTP1.close(conn)
+      {:error, reason}
+    end
+  end
+
+  defp recv_all(conn, status, headers, data, deadline) do
+    timeout = Ch.HTTP.to_timeout(deadline)
+
+    case Mint.HTTP1.recv(conn, 0, timeout) do
+      {:ok, conn, responses} ->
+        case handle_responses(responses, status, headers, data) do
+          {:ok, status, headers, data} -> {:ok, conn, status, headers, data}
+          {:more, status, headers, data} -> recv_all(conn, status, headers, data, deadline)
+          {:error, reason} -> {:error, conn, reason}
+        end
+
+      {:error, conn, reason, _responses} ->
+        {:error, conn, reason}
+    end
+  end
+
+  defp handle_responses([{:status, _ref, status} | rest], _prev_status = nil, headers, data) do
+    handle_responses(rest, status, headers, data)
+  end
+
+  defp handle_responses([{:headers, _ref, new_headers} | rest], status, prev_headers, data) do
+    handle_responses(rest, status, prev_headers ++ new_headers, data)
+  end
+
+  defp handle_responses([{:data, _ref, new_data} | rest], status, headers, prev_data) do
+    handle_responses(rest, status, headers, [prev_data | new_data])
+  end
+
+  defp handle_responses([{:done, _ref}], status, headers, data) do
+    {:ok, status, headers, data}
+  end
+
+  defp handle_responses([{:error, _ref, reason} | _rest], _status, _headers, _data) do
+    {:error, reason}
+  end
+
+  defp handle_responses([], status, headers, data) do
+    {:more, status, headers, data}
+  end
+
+  defp checkin(conn) do
+    if Mint.HTTP1.open?(conn) do
+      {:ok, conn}
+    else
+      {:remove, Mint.TransportError.exception(reason: :closed)}
+    end
+  end
+
+  defp maybe_decompress(data, headers) do
+    case get_header(headers, "content-encoding") do
+      "zstd" -> :zstd.decompress(data)
+      "gzip" -> :zlib.gunzip(data)
+      nil -> data
+      other -> raise "unsupported content encoding: #{inspect(other)}"
+    end
+  end
+
+  defp decode_query_response(200, headers, body) do
+    format = get_header(headers, "x-clickhouse-format")
+
+    if format == "RowBinaryWithNamesAndTypes" do
+      [names | rows] =
+        body
+        |> maybe_decompress(headers)
+        |> IO.iodata_to_binary()
+        |> Ch.RowBinary.decode_names_and_rows()
+
+      {:ok, %{names: names, rows: rows}}
+    else
+      {:ok, body}
+    end
+  end
+
+  defp decode_query_response(_status, headers, body) do
+    code =
+      if code = get_header(headers, "x-clickhouse-error-code") do
+        String.to_integer(code)
+      end
+
+    {:error, %Ch.Error{code: code, message: body}}
+  end
+
+  @compile inline: [get_header: 1]
+  defp get_header(headers, name) do
+    with {_, value} <- List.keyfind(headers, name, 0, nil), do: value
   end
 
   if Code.ensure_loaded?(Ecto.ParameterizedType) do

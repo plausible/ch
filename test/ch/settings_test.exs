@@ -1,5 +1,5 @@
 defmodule Ch.SettingsTest do
-  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnit.Case, async: true
 
   setup ctx do
     {:ok, query_options: ctx[:query_options] || []}

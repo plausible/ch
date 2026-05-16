@@ -2,68 +2,95 @@ defmodule Ch.AggregationTest do
   use ExUnit.Case, async: true
 
   setup do
-    conn = start_supervised!({Ch, database: Ch.Test.database()})
-    {:ok, conn: conn}
+    {:ok, pool: start_supervised!(Ch)}
   end
 
-  test "select SimpleAggregateFunction types", %{conn: conn} do
-    Ch.query!(conn, """
-    CREATE TABLE candle_fragments (
-      ticker LowCardinality(String),
-      time DateTime('UTC') CODEC(Delta, Default),
-      high Float64 CODEC(Delta, Default),
-      open Float64 CODEC(Delta, Default),
-      close Float64 CODEC(Delta, Default),
-      low  Float64 CODEC(Delta, Default),
-    ) ENGINE = MergeTree()
-    ORDER BY (ticker, time)
-    """)
+  test "select SimpleAggregateFunction types", %{pool: pool} do
+    session_id = Help.session_id()
 
-    Ch.query!(conn, """
-    CREATE MATERIALIZED VIEW candles_one_hour_amt
-    (
-      ticker LowCardinality(String),
-      time DateTime('UTC') CODEC(Delta, Default),
-      high SimpleAggregateFunction(max, Float64) CODEC(Delta, Default),
-      open AggregateFunction(argMin, Float64, DateTime('UTC')),
-      close AggregateFunction(argMax , Float64, DateTime('UTC')),
-      low SimpleAggregateFunction(min, Float64) CODEC(Delta, Default)
+    Ch.query!(
+      pool,
+      """
+      CREATE TABLE candle_fragments (
+        ticker LowCardinality(String),
+        time DateTime('UTC') CODEC(Delta, Default),
+        high Float64 CODEC(Delta, Default),
+        open Float64 CODEC(Delta, Default),
+        close Float64 CODEC(Delta, Default),
+        low  Float64 CODEC(Delta, Default),
+      ) ENGINE = MergeTree()
+      ORDER BY (ticker, time)
+      """,
+      _params = %{},
+      settings: %{"session_id" => session_id}
     )
-    ENGINE = AggregatingMergeTree()
-    ORDER BY (ticker, time)
-    AS
-    SELECT
-      t.ticker AS ticker,
-      toStartOfHour(t.time) AS time,
-      max(t.high) AS high,
-      argMinState(t.open, t.time) AS open,
-      argMaxState(t.close, t.time) AS close,
-      min(t.low) AS low
-    FROM candle_fragments t
-    GROUP BY ticker, time
-    """)
 
-    Ch.query!(conn, """
-    INSERT INTO candle_fragments(ticker, time, high, open, close, low) VALUES
-    ('INTC', '2023-04-13 20:33:00', 32, 32, 32, 32),
-    ('INTC', '2023-04-13 20:34:00', 33, 33, 33, 33),
-    ('INTC', '2023-04-13 20:35:00', 32, 32, 31, 26),
-    ('INTC', '2023-04-13 20:36:00', 32, 27, 27, 27)
-    """)
+    Ch.query!(
+      pool,
+      """
+      CREATE MATERIALIZED VIEW candles_one_hour_amt
+      (
+        ticker LowCardinality(String),
+        time DateTime('UTC') CODEC(Delta, Default),
+        high SimpleAggregateFunction(max, Float64) CODEC(Delta, Default),
+        open AggregateFunction(argMin, Float64, DateTime('UTC')),
+        close AggregateFunction(argMax , Float64, DateTime('UTC')),
+        low SimpleAggregateFunction(min, Float64) CODEC(Delta, Default)
+      )
+      ENGINE = AggregatingMergeTree()
+      ORDER BY (ticker, time)
+      AS
+      SELECT
+        t.ticker AS ticker,
+        toStartOfHour(t.time) AS time,
+        max(t.high) AS high,
+        argMinState(t.open, t.time) AS open,
+        argMaxState(t.close, t.time) AS close,
+        min(t.low) AS low
+      FROM candle_fragments t
+      GROUP BY ticker, time
+      """,
+      _params = %{},
+      settings: %{"session_id" => session_id}
+    )
 
-    assert Ch.query!(conn, """
-           SELECT
-             t.ticker AS ticker,
-             toStartOfHour(t.time) AS start_time,
-             toStartOfHour(t.time) + interval 1 hour AS end_time,
-             toStartOfHour(t.time)::DATE AS date,
-             max(t.high) AS high,
-             argMinMerge(t.open) AS open,
-             argMaxMerge(t.close) AS close,
-             min(t.low) AS low
-           FROM candles_one_hour_amt t
-           GROUP BY ticker, time
-           """).rows == [
+    on_exit(fn ->
+      Help.ch("drop materialized view candles_one_hour_amt", _params = %{},
+        settings: %{"session_id" => session_id}
+      )
+    end)
+
+    Ch.query!(
+      pool,
+      """
+      INSERT INTO candle_fragments(ticker, time, high, open, close, low) VALUES
+      ('INTC', '2023-04-13 20:33:00', 32, 32, 32, 32),
+      ('INTC', '2023-04-13 20:34:00', 33, 33, 33, 33),
+      ('INTC', '2023-04-13 20:35:00', 32, 32, 31, 26),
+      ('INTC', '2023-04-13 20:36:00', 32, 27, 27, 27)
+      """,
+      _params = %{},
+      settings: %{"session_id" => session_id}
+    )
+
+    assert Ch.query!(
+             pool,
+             """
+             SELECT
+               t.ticker AS ticker,
+               toStartOfHour(t.time) AS start_time,
+               toStartOfHour(t.time) + interval 1 hour AS end_time,
+               toStartOfHour(t.time)::DATE AS date,
+               max(t.high) AS high,
+               argMinMerge(t.open) AS open,
+               argMaxMerge(t.close) AS close,
+               min(t.low) AS low
+             FROM candles_one_hour_amt t
+             GROUP BY ticker, time
+             """,
+             _params = %{},
+             settings: %{"session_id" => session_id}
+           ).rows == [
              [
                "INTC",
                ~U[2023-04-13 20:00:00Z],

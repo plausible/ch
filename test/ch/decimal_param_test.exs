@@ -1,11 +1,6 @@
 defmodule Ch.DecimalParamTest do
-  use ExUnit.Case,
-    parameterize: [%{query_options: []}, %{query_options: [multipart: true]}],
-    async: true
-
+  use ExUnit.Case, async: true
   use ExUnitProperties
-
-  import Ch.Test, only: [parameterize_query: 4, parameterize_query!: 4]
 
   setup ctx do
     {:ok, conn} = Ch.start_link()

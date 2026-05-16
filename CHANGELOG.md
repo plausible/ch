@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- replace DBConnection with NimblePool
+
 ## 0.8.3 (2026-05-12)
 
 - use DBConnection v2.10 https://github.com/plausible/ch/pull/339

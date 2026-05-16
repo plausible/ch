@@ -1,7 +1,5 @@
 defmodule Ch.HTTPTest do
-  use ExUnit.Case,
-    async: true,
-    parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnit.Case, async: true
 
   @moduletag :slow
 

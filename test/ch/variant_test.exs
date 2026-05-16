@@ -1,6 +1,5 @@
 defmodule Ch.VariantTest do
-  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
-  import Ch.Test, only: [parameterize_query!: 2, parameterize_query!: 4]
+  use ExUnit.Case, async: true
 
   # https://clickhouse.com/docs/sql-reference/data-types/variant
 

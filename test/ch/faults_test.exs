@@ -1,11 +1,5 @@
 defmodule Ch.FaultsTest do
-  alias Ch.Result
-  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
-  import Ch.Test, only: [intercept_packets: 1]
-
-  defp capture_async_log(f) do
-    ExUnit.CaptureLog.capture_log([async: true], f)
-  end
+  use ExUnit.Case, async: true
 
   @socket_opts [:binary, {:active, true}, {:packet, :raw}]
 

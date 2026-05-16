@@ -1,5 +1,5 @@
 defmodule Ch.StreamTest do
-  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnit.Case, async: true
   alias Ch.{Result, RowBinary}
 
   setup ctx do

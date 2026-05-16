@@ -1,7 +1,5 @@
 defmodule Ch.HeadersTest do
-  use ExUnit.Case,
-    async: true,
-    parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnit.Case, async: true
 
   setup do
     {:ok, conn} = Ch.start_link()

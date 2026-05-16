@@ -1,5 +1,5 @@
 defmodule Ch.JSONTest do
-  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnit.Case, async: true
 
   @moduletag :json
 

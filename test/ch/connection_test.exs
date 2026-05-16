@@ -1,16 +1,5 @@
 defmodule Ch.ConnectionTest do
-  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
-
-  import Ch.Test,
-    only: [
-      parameterize_query: 2,
-      parameterize_query: 3,
-      parameterize_query: 4,
-      parameterize_query!: 2,
-      parameterize_query!: 3,
-      parameterize_query!: 4
-    ]
-
+  use ExUnit.Case, async: true
   alias Ch.RowBinary
 
   setup do
