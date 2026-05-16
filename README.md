@@ -6,7 +6,7 @@
 
 HTTP [ClickHouse](https://clickhouse.com) client for Elixir.
 
-Used in [Ecto ClickHouse adapter.](https://github.com/plausible/ecto_ch)
+Used in [Ecto ClickHouse adapter](https://github.com/plausible/ecto_ch).
 
 ### Key features
 

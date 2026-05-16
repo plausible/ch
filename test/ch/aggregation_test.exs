@@ -1,17 +1,17 @@
 defmodule Ch.AggregationTest do
   use ExUnit.Case, async: true
 
-  setup do
-    {:ok, pool: start_supervised!(Ch)}
+  setup ctx do
+    pool = start_supervised!(Ch)
+    session_id = Help.session_id(ctx)
+    {:ok, pool: pool, session_id: session_id}
   end
 
-  test "select SimpleAggregateFunction types", %{pool: pool} do
-    session_id = Help.session_id()
-
+  test "select SimpleAggregateFunction types", %{pool: pool, session_id: session_id} do
     Ch.query!(
       pool,
       """
-      CREATE TABLE candle_fragments (
+      CREATE TEMPORARY TABLE candle_fragments (
         ticker LowCardinality(String),
         time DateTime('UTC') CODEC(Delta, Default),
         high Float64 CODEC(Delta, Default),
@@ -28,7 +28,7 @@ defmodule Ch.AggregationTest do
     Ch.query!(
       pool,
       """
-      CREATE MATERIALIZED VIEW candles_one_hour_amt
+      CREATE TEMPORARY MATERIALIZED VIEW candles_one_hour_amt
       (
         ticker LowCardinality(String),
         time DateTime('UTC') CODEC(Delta, Default),
@@ -53,12 +53,6 @@ defmodule Ch.AggregationTest do
       _params = %{},
       settings: %{"session_id" => session_id}
     )
-
-    on_exit(fn ->
-      Help.ch("drop materialized view candles_one_hour_amt", _params = %{},
-        settings: %{"session_id" => session_id}
-      )
-    end)
 
     Ch.query!(
       pool,
@@ -105,14 +99,19 @@ defmodule Ch.AggregationTest do
   end
 
   # based on https://github.com/ClickHouse/clickhouse-java/issues/1232
-  test "insert AggregateFunction via input()", %{conn: conn} do
-    Ch.query!(conn, """
-    CREATE TABLE test_insert_aggregate_function (
-      uid Int16,
-      updated SimpleAggregateFunction(max, DateTime),
-      name AggregateFunction(argMax, String, DateTime)
-    ) ENGINE AggregatingMergeTree ORDER BY uid
-    """)
+  test "insert AggregateFunction via input()", %{pool: pool, session_id: session_id} do
+    Ch.query!(
+      pool,
+      """
+      CREATE TEMPORARY TABLE test_insert_aggregate_function (
+        uid Int16,
+        updated SimpleAggregateFunction(max, DateTime),
+        name AggregateFunction(argMax, String, DateTime)
+      ) ENGINE AggregatingMergeTree ORDER BY uid
+      """,
+      _params = %{},
+      settings: %{"session_id" => session_id}
+    )
 
     rows = [
       [1, ~N[2020-01-02 00:00:00], "b"],
@@ -121,27 +120,37 @@ defmodule Ch.AggregationTest do
 
     assert %{num_rows: 2} =
              Ch.query!(
-               conn,
-               """
-               INSERT INTO test_insert_aggregate_function
-                 SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
-                 FROM input('uid Int16, updated DateTime, name String')
-                 FORMAT RowBinary\
-               """,
-               rows,
-               types: ["Int16", "DateTime", "String"]
+               pool,
+               [
+                 """
+                 INSERT INTO test_insert_aggregate_function
+                   SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
+                   FROM input('uid Int16, updated DateTime, name String')
+                   FORMAT RowBinary
+                 """
+                 | Ch.RowBinary.encode_rows(rows, _types = ["Int16", "DateTime", "String"])
+               ],
+               _params = %{},
+               settings: %{"session_id" => session_id}
              )
 
-    assert Ch.query!(conn, """
-           SELECT uid, max(updated) AS updated, argMaxMerge(name)
-           FROM test_insert_aggregate_function
-           GROUP BY uid
-           """).rows == [[1, ~N[2020-01-02 00:00:00], "b"]]
+    assert Ch.query!(
+             pool,
+             """
+             SELECT uid, max(updated) AS updated, argMaxMerge(name)
+             FROM test_insert_aggregate_function
+             GROUP BY uid
+             """,
+             _params = %{},
+             settings: %{"session_id" => session_id}
+           ).rows == [
+             [1, ~N[2020-01-02 00:00:00], "b"]
+           ]
   end
 
   # https://kb.altinity.com/altinity-kb-schema-design/ingestion-aggregate-function/
   describe "altinity examples" do
-    test "ephemeral column", %{conn: conn} do
+    test "ephemeral column", %{pool: pool, session_id: session_id} do
       Ch.query!(conn, """
       CREATE TABLE test_users_ephemeral_column (
         uid Int16,

@@ -1,26 +1,26 @@
-# check if clickhouse is available
-case Help.http("http://localhost:8123/ping") do
-  {:ok, 200, _headers, "Ok.\n"} ->
-    :ok
+url = "http://localhost:8123"
 
-  other ->
-    Mix.shell().error("""
-    ClickHouse is not detected at localhost:8123:
+{:ok, _pid} = Ch.start_link(name: Ch.TestPool, url: url, pool_size: 100)
 
-    #{inspect(other)}
+version =
+  case Ch.query(Ch.TestPool, "select version()") do
+    {:ok, %{names: ["version"], rows: [[version]]}} ->
+      version
 
-    Please start the container with the following command:
+    {:error, reason} ->
+      Mix.shell().error("""
+      ClickHouse is not detected at #{url}: #{Exception.message(reason)}
 
-        docker compose up -d clickhouse
-    """)
+      Please start the container with the following command:
 
-    System.halt(1)
-end
+          docker compose up -d clickhouse
+      """)
 
-%{rows: [[ch_version]]} = Help.ch("SELECT version()")
+      System.halt(1)
+  end
 
 exclude =
-  if ch_version >= "25" do
+  if version >= "25" do
     []
   else
     # Time, Variant, JSON, and Dynamic types are not supported in older ClickHouse versions we have in the CI

@@ -1,31 +1,42 @@
 defmodule Ch do
-  @moduledoc "Minimal HTTP ClickHouse client."
+  @moduledoc """
+  Minimal HTTP ClickHouse client.
+
+  TODO: document that the pool is lazy, recommend using zstd-compressed RowBinaryWithNamesAndTypes.
+
+  req_headers = [
+    {"x-clickhouse-format", "RowBinaryWithNamesAndTypes"},
+    {"accept-encoding", "zstd"}
+  ]
+
+  {:ok, pool} = Ch.start_link(pool_size: 50, url: "http://localhost:8123")
+  {:ok, resp_headers, data} = Ch.query(pool, "select number from numbers({count:UInt16})", %{"count" => 50000}, headers: req_headers)
+  Ch.HTTP.decode(resp_headers, data)
+  """
   @behaviour NimblePool
 
   @query_timeout to_timeout(second: 30)
-
-  @query_headers [
-    {"x-clickhouse-format", "RowBinaryWithNamesAndTypes"},
-    {"user-agent", "ch/#{Ch.MixProject.version()}"}
-  ]
+  @user_agent "ch/#{Ch.MixProject.version()}"
 
   @start_options_schema [
     name: [
       type: {:custom, __MODULE__, :validate_name, []},
       doc: """
-      The name of the Ch pool instance, used to identify and interact with it.
+      The name of the Ch pool instance, used to identify and interact with it. Supported values are atoms and via tuples.
       """
     ],
     pool_size: [
       type: :pos_integer,
-      doc: "Maximum number of concurrent connections.",
+      doc:
+        "Maximum number of concurrent connections. Pool is lazy so it starts out without any connections and they are open on demand.",
       default: 20
     ],
     worker_idle_timeout: [
       type: :timeout,
       doc: """
       Time a connection can stay idle before the pool closes it.
-      Should be lower than ClickHouse's `keep_alive_timeout`.
+      Should be lower than ClickHouse's [`keep_alive_timeout`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#keep_alive_timeout)
+      to avoid sending a request over a connection that would be closed by ClickHouse soon-ish.
       """,
       default: to_timeout(second: 5)
     ],
@@ -54,11 +65,16 @@ defmodule Ch do
   @type query_statement :: iodata
 
   @typedoc """
+  TODO
+  """
+  @type query_params :: %{String.t() => term}
+
+  @typedoc """
   Query execution options.
 
   * `:timeout` - Request timeout, defaults to 30 seconds.
   * `:settings` - An enumerable (usually a map or a keyword list) added to the URL query string.
-  * `:headers` - Headers passed directly to Mint. Defaults to "x-clickhouse-format" set to "RowBinaryWithNamesAndTypes" and "user-agent" set to "ch/VERSION".
+  * `:headers` - Headers passed directly to Mint.
   """
   @type query_option ::
           {:timeout, timeout}
@@ -145,15 +161,23 @@ defmodule Ch do
     NimblePool.stop(pool, reason, timeout)
   end
 
+  @doc """
+  TODO
+  """
   @spec query(NimblePool.pool(), query_statement, query_params, [query_option]) ::
           {:ok, query_result} | {:error, query_error}
   def query(pool, statement, params \\ %{}, options \\ []) do
     timeout = Keyword.get(options, :timeout, @query_timeout)
     settings = Keyword.get(options, :settings, [])
-    headers = Keyword.get(options, :headers, @query_headers)
+
+    headers =
+      options
+      |> Keyword.get(:headers, [])
+      |> Keyword.put_new("user-agent", @user_agent)
+      |> Keyword.put_new("x-clickhouse-format", "RowBinaryWithNamesAndTypes")
 
     deadline = Ch.HTTP.to_deadline(timeout)
-    path = Ch.HTTP.path(params, query)
+    path = Ch.HTTP.path(params, settings)
 
     result =
       NimblePool.checkout!(
@@ -172,7 +196,7 @@ defmodule Ch do
       )
 
     with {:ok, status, headers, data} <- result do
-      decode_query_response(status, headers, data, options)
+      decode_query_response(status, headers, data)
     end
   end
 
@@ -343,7 +367,7 @@ defmodule Ch do
     {:error, %Ch.Error{code: code, message: body}}
   end
 
-  @compile inline: [get_header: 1]
+  @compile inline: [get_header: 2]
   defp get_header(headers, name) do
     with {_, value} <- List.keyfind(headers, name, 0, nil), do: value
   end

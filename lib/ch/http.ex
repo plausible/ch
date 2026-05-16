@@ -53,7 +53,7 @@ defmodule Ch.HTTP do
       "/?param_city=Prague&query_id=550e8400"
 
   """
-  @spec path(%{String.t() => term}, Enumerable.t()) :: String.t()
+  @spec path(Ch.query_params(), Enumerable.t()) :: String.t()
   def path(params, options \\ []) do
     case encode_params(params) ++ options do
       [] -> "/"

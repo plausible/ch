@@ -27,7 +27,7 @@ defmodule GitHubActionBenchmarkFormatter do
     |> Path.dirname()
     |> File.mkdir_p!()
 
-    File.write!(path, Jason.encode_to_iodata!(data, pretty: true))
+    File.write!(path, JSON.encode_to_iodata!(data, pretty: true))
   end
 
   defp benchmark_name(suite_name, scenario) do
