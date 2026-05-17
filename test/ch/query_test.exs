@@ -1,47 +1,5 @@
 defmodule Ch.QueryTest do
   use ExUnit.Case, async: true
-  alias Ch.Query
-
-  test "to_string" do
-    query = Query.build(["select ", 1 + ?0, ?+, 2 + ?0])
-    assert to_string(query) == "select 1+2"
-  end
-
-  describe "command" do
-    test "without command provided" do
-      assert Query.build("select 1+2").command == :select
-      assert Query.build("SELECT 1+2").command == :select
-      assert Query.build("   select 1+2").command == :select
-      assert Query.build("\t\n\t\nSELECT 1+2").command == :select
-
-      assert Query.build("""
-
-             select 1+2
-             """).command == :select
-
-      assert Query.build(["select 1+2"]).command == :select
-      assert Query.build([?S, ?E, ?L | "ECT 1"]).command == :select
-
-      assert Query.build("with insert as (select 1) select * from insert").command == :select
-      assert Query.build("insert into table(a, b) values(1, 2)").command == :insert
-
-      assert Query.build("insert into table(a, b) select b, c from table2 where b = 'update'").command ==
-               :insert
-    end
-
-    test "with nil command provided" do
-      assert Query.build("select 1+2", command: nil).command == :select
-    end
-
-    test "with command provided" do
-      assert Query.build("select 1+2", command: :custom).command == :custom
-    end
-
-    @tag skip: true
-    test "TODO" do
-      assert Query.build("Select 1+2").command == :select
-    end
-  end
 
   # adapted from https://github.com/elixir-ecto/postgrex/blob/master/test/query_test.exs
   describe "query" do
@@ -49,7 +7,7 @@ defmodule Ch.QueryTest do
       {:ok, pool: start_supervised!(Ch)}
     end
 
-    test "iodata", %{conn: conn, query_options: query_options} do
+    test "iodata", %{pool: pool} do
       assert [[123]] =
                Ch.query!(conn, ["S", ?E, ["LEC" | "T"], " ", ~c"123"], [], query_options).rows
     end

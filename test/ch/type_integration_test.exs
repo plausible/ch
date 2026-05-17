@@ -45,9 +45,8 @@ defmodule Ch.TypeIntegrationTest do
              }
            ).rows == [[<<0, 0>>, "a" <> <<0>>, "aa"]]
 
-    Help.query!("DROP TABLE IF EXISTS type_integration_fixed_string")
     Help.query!("CREATE TABLE type_integration_fixed_string(a FixedString(3)) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS type_integration_fixed_string") end)
+    on_exit(fn -> Help.query!("DROP TABLE type_integration_fixed_string") end)
 
     rowbinary = RowBinary.encode_rows([[""], ["a"], ["aa"], ["aaa"]], ["FixedString(3)"])
     Ch.query!(pool, ["INSERT INTO type_integration_fixed_string FORMAT RowBinary\n" | rowbinary])
@@ -76,9 +75,8 @@ defmodule Ch.TypeIntegrationTest do
              ]
            ]
 
-    Help.query!("DROP TABLE IF EXISTS type_integration_decimal")
     Help.query!("CREATE TABLE type_integration_decimal(d Decimal32(4)) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS type_integration_decimal") end)
+    on_exit(fn -> Help.query!("DROP TABLE type_integration_decimal") end)
 
     rowbinary =
       RowBinary.encode_rows(
@@ -96,9 +94,8 @@ defmodule Ch.TypeIntegrationTest do
   end
 
   test "booleans", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS type_integration_bool")
     Help.query!("CREATE TABLE type_integration_bool(a Int64, b Bool) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS type_integration_bool") end)
+    on_exit(fn -> Help.query!("DROP TABLE type_integration_bool") end)
 
     Ch.query!(pool, "INSERT INTO type_integration_bool VALUES (1, true), (2, 0), (5, 2)")
 
@@ -121,9 +118,8 @@ defmodule Ch.TypeIntegrationTest do
     assert Ch.query!(pool, "SELECT {uuid:UUID}, toString({uuid:UUID})", %{"uuid" => uuid}).rows ==
              [[uuid_bin, uuid]]
 
-    Help.query!("DROP TABLE IF EXISTS type_integration_uuid")
     Help.query!("CREATE TABLE type_integration_uuid(x UUID, y String) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS type_integration_uuid") end)
+    on_exit(fn -> Help.query!("DROP TABLE type_integration_uuid") end)
 
     Ch.query!(pool, "INSERT INTO type_integration_uuid SELECT generateUUIDv4(), 'Example 1'")
     Ch.query!(pool, "INSERT INTO type_integration_uuid(y) VALUES ('Example 2')")
@@ -141,13 +137,11 @@ defmodule Ch.TypeIntegrationTest do
   end
 
   test "enum8", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS type_integration_enum")
-
     Help.query!(
       "CREATE TABLE type_integration_enum(i UInt8, x Enum('hello' = 1, 'world' = 2)) ENGINE Memory"
     )
 
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS type_integration_enum") end)
+    on_exit(fn -> Help.query!("DROP TABLE type_integration_enum") end)
 
     Ch.query!(
       pool,
@@ -180,9 +174,8 @@ defmodule Ch.TypeIntegrationTest do
              "tuple" => {-1, "abs"}
            }).rows == [[%{"hello" => 100, "pg" => 13}, {-1, "abs"}]]
 
-    Help.query!("DROP TABLE IF EXISTS type_integration_tuple")
     Help.query!("CREATE TABLE type_integration_tuple(a Tuple(String, Int64)) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS type_integration_tuple") end)
+    on_exit(fn -> Help.query!("DROP TABLE type_integration_tuple") end)
 
     Ch.query!(pool, "INSERT INTO type_integration_tuple VALUES (('y', 10)), (('x', -10))")
     rowbinary = RowBinary.encode_rows([[{"a", 20}], [{"b", 30}]], ["Tuple(String, Int64)"])
@@ -197,8 +190,6 @@ defmodule Ch.TypeIntegrationTest do
   end
 
   test "datetime and datetime64 with timezone", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS type_integration_datetime")
-
     Help.query!("""
     CREATE TABLE type_integration_datetime(
       timestamp DateTime('Asia/Istanbul'),
@@ -207,7 +198,7 @@ defmodule Ch.TypeIntegrationTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS type_integration_datetime") end)
+    on_exit(fn -> Help.query!("DROP TABLE type_integration_datetime") end)
 
     Ch.query!(pool, """
     INSERT INTO type_integration_datetime VALUES

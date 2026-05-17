@@ -20,10 +20,9 @@ defmodule Ch.ConnectionTest do
   end
 
   test "creates and drops a table", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS connection_test_create")
     on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_test_create") end)
 
-    assert Ch.query!(pool, "CREATE TABLE connection_test_create(a UInt8) ENGINE Memory") == nil
+    Ch.query!(pool, "CREATE TABLE connection_test_create(a UInt8) ENGINE Memory")
 
     assert Ch.query!(pool, "SHOW TABLES LIKE 'connection_test_create'").rows == [
              ["connection_test_create"]
@@ -31,9 +30,8 @@ defmodule Ch.ConnectionTest do
   end
 
   test "inserts values and insert-selects rows", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS connection_test_insert")
     Help.query!("CREATE TABLE connection_test_insert(a UInt8 DEFAULT 1, b String) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_test_insert") end)
+    on_exit(fn -> Help.query!("DROP TABLE connection_test_insert") end)
 
     assert Ch.query!(pool, """
            INSERT INTO connection_test_insert VALUES

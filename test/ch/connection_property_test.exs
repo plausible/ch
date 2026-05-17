@@ -44,15 +44,13 @@ defmodule Ch.ConnectionPropertyTest do
 
   describe "query params" do
     property "scalar params round-trip through ClickHouse", %{pool: pool} do
-      check all {type, value, expected} <- scalar_param(),
-                max_runs: 75 do
+      check all {type, value, expected} <- scalar_param() do
         assert Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}).rows == [[expected]]
       end
     end
 
     property "array params round-trip through ClickHouse", %{pool: pool} do
-      check all {type, values, expected} <- array_param(),
-                max_runs: 50 do
+      check all {type, values, expected} <- array_param() do
         assert Ch.query!(pool, "SELECT {value:Array(#{type})}", %{"value" => values}).rows == [
                  [expected]
                ]
@@ -60,9 +58,8 @@ defmodule Ch.ConnectionPropertyTest do
     end
 
     test "identifier params can address tables", %{pool: pool} do
-      Help.query!("DROP TABLE IF EXISTS connection_property_identifier_params")
       Help.query!("CREATE TABLE connection_property_identifier_params (a UInt8) ENGINE Memory")
-      on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_property_identifier_params") end)
+      on_exit(fn -> Help.query!("DROP TABLE connection_property_identifier_params") end)
 
       Ch.query!(pool, "INSERT INTO {table:Identifier} VALUES (1), (2)", %{
         "table" => "connection_property_identifier_params"
@@ -76,8 +73,6 @@ defmodule Ch.ConnectionPropertyTest do
 
   describe "RowBinary inserts" do
     property "rows encoded as RowBinary can be inserted and selected", %{pool: pool} do
-      Help.query!("DROP TABLE IF EXISTS connection_property_rowbinary")
-
       Help.query!("""
       CREATE TABLE connection_property_rowbinary (
         id UInt8,
@@ -86,13 +81,12 @@ defmodule Ch.ConnectionPropertyTest do
       ) ENGINE Memory
       """)
 
-      on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_property_rowbinary") end)
+      on_exit(fn -> Help.query!("DROP TABLE connection_property_rowbinary") end)
 
-      check all rows <- rowbinary_rows(),
-                max_runs: 25 do
-        rowbinary = Ch.RowBinary.encode_rows(rows, ["UInt8", "String", "Bool"])
-
+      check all rows <- rowbinary_rows() do
         Ch.query!(pool, "TRUNCATE TABLE connection_property_rowbinary")
+
+        rowbinary = Ch.RowBinary.encode_rows(rows, ["UInt8", "String", "Bool"])
 
         Ch.query!(pool, [
           "INSERT INTO connection_property_rowbinary FORMAT RowBinary\n" | rowbinary
@@ -104,8 +98,6 @@ defmodule Ch.ConnectionPropertyTest do
     end
 
     test "supports RowBinaryWithNamesAndTypes payloads", %{pool: pool} do
-      Help.query!("DROP TABLE IF EXISTS connection_property_rowbinary_names_types")
-
       Help.query!("""
       CREATE TABLE connection_property_rowbinary_names_types (
         country_code FixedString(2),
@@ -115,7 +107,7 @@ defmodule Ch.ConnectionPropertyTest do
       """)
 
       on_exit(fn ->
-        Help.query!("DROP TABLE IF EXISTS connection_property_rowbinary_names_types")
+        Help.query!("DROP TABLE connection_property_rowbinary_names_types")
       end)
 
       names = ["country_code", "rare_string", "maybe_int32"]
