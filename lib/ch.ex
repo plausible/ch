@@ -2,18 +2,31 @@ defmodule Ch do
   @moduledoc """
   Minimal HTTP ClickHouse client.
 
-  TODO: document that the pool is lazy, recommend using zstd-compressed RowBinaryWithNamesAndTypes.
+  `Ch` starts a lazy pool of HTTP/1 connections to ClickHouse. The pool opens
+  connections on demand and reuses them while they remain healthy.
 
-  req_headers = [
-    {"x-clickhouse-format", "RowBinaryWithNamesAndTypes"},
-    {"accept-encoding", "zstd"}
-  ]
+  By default, queries request `RowBinaryWithNamesAndTypes` and return decoded
+  rows:
 
-  {:ok, pool} = Ch.start_link(pool_size: 50, url: "http://localhost:8123")
-  {:ok, resp_headers, data} = Ch.query(pool, "select number from numbers({count:UInt16})", %{"count" => 50000}, headers: req_headers)
-  Ch.HTTP.decode(resp_headers, data)
+      {:ok, pool} = Ch.start_link(url: "http://localhost:8123")
 
-  https://github.com/ClickHouse/ClickHouse/issues/71591#issuecomment-3301331070
+      {:ok, %{names: ["number"], rows: [[1], [2], [3]]}} =
+        Ch.query(pool, "SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{
+          "limit" => 3
+        })
+
+  For large decoded responses, ask ClickHouse for compressed response bodies:
+
+      Ch.query!(
+        pool,
+        "SELECT number FROM system.numbers LIMIT 1_000_000",
+        %{},
+        headers: [{"accept-encoding", "zstd"}]
+      )
+
+  `Ch` automatically decompresses successful responses that it decodes itself
+  (`RowBinaryWithNamesAndTypes`) and error responses. Successful responses in
+  other formats are returned as received, including any `content-encoding`.
   """
   @behaviour NimblePool
 
@@ -69,7 +82,13 @@ defmodule Ch do
   @type query_statement :: iodata
 
   @typedoc """
-  TODO
+  Named query parameters.
+
+  Keys are parameter names without the ClickHouse `param_` prefix. Values are
+  encoded in ClickHouse's escaped parameter format and passed in the URL query
+  string.
+
+      Ch.query(pool, "SELECT {name:String}", %{"name" => "Ada"})
   """
   @type query_params :: %{String.t() => term}
 
@@ -88,8 +107,10 @@ defmodule Ch do
   @typedoc """
   The parsed query response.
 
-  If the format is `RowBinaryWithNamesAndTypes`, it returns `%{names: [name], rows: [[value]]}`.
-  Otherwise, it returns the raw response body binary.
+  If the response format is `RowBinaryWithNamesAndTypes`, `Ch` returns decoded
+  column names and rows. Empty successful responses return `nil`. Other
+  successful formats return the raw response body iodata as received from
+  ClickHouse.
   """
   @type query_result :: %{names: [String.t()], rows: [[term]]} | iodata | nil
 
@@ -166,7 +187,30 @@ defmodule Ch do
   end
 
   @doc """
-  TODO
+  Executes a ClickHouse query.
+
+  `statement` is usually a SQL string. It can also be iodata, which is useful
+  for `INSERT ... FORMAT RowBinary` requests:
+
+      rowbinary = Ch.RowBinary.encode_rows([[1, "Ada"]], ["UInt8", "String"])
+      Ch.query!(pool, ["INSERT INTO users FORMAT RowBinary\n", rowbinary])
+
+  `params` are named ClickHouse query parameters used by placeholders such as
+  `{limit:UInt8}`.
+
+  Options:
+
+    * `:timeout` - request timeout, defaults to 30 seconds.
+    * `:settings` - ClickHouse settings added to the URL query string.
+    * `:headers` - HTTP headers sent with the request.
+
+  By default, `Ch` adds `x-clickhouse-format: RowBinaryWithNamesAndTypes`,
+  decodes that response format, and returns `%{names: names, rows: rows}`.
+  Passing a different `x-clickhouse-format` header disables automatic row
+  decoding and returns the response body as received.
+
+  If an error response is compressed with `gzip` or `zstd`, `Ch` decompresses it
+  before returning `%Ch.Error{}`.
   """
   @spec query(NimblePool.pool(), query_statement, query_params, [query_option]) ::
           {:ok, query_result} | {:error, query_error}
