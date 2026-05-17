@@ -1,7 +1,5 @@
 url = "http://localhost:8123"
 
-Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
-
 {:ok, _pid} = Help.start_link_pool(url)
 
 version =
@@ -39,5 +37,7 @@ assert_receive_timeout =
 if System.get_env("CI") do
   Application.put_env(:stream_data, :max_runs, 1000)
 end
+
+Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
 
 ExUnit.start(exclude: exclude, assert_receive_timeout: assert_receive_timeout)
