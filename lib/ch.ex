@@ -419,15 +419,15 @@ defmodule Ch do
   end
 
   defp decode_query_response(_status, headers, body) do
-    code =
-      if code = get_header(headers, "x-clickhouse-error-code") do
-        String.to_integer(code)
-      end
-
     message =
       body
       |> maybe_decompress(headers)
       |> response_body_to_binary()
+
+    code =
+      if code = get_header(headers, "x-clickhouse-error-code") do
+        String.to_integer(code)
+      end
 
     {:error, %Ch.Error{code: code, message: message}}
   end

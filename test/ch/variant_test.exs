@@ -44,17 +44,17 @@ defmodule Ch.VariantTest do
   test "with a table", %{pool: pool} do
     # https://clickhouse.com/docs/sql-reference/data-types/variant#creating-variant
     Help.query!("""
-    CREATE TABLE variant_test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+    CREATE TABLE variant_test_table (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE variant_test") end)
+    on_exit(fn -> Help.query!("DROP TABLE variant_test_table") end)
 
     Ch.query!(
       pool,
-      "INSERT INTO variant_test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);"
+      "INSERT INTO variant_test_table VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);"
     )
 
-    assert Ch.query!(pool, "SELECT v FROM variant_test").rows == [
+    assert Ch.query!(pool, "SELECT v FROM variant_test_table").rows == [
              [nil],
              [42],
              ["Hello, World!"],
@@ -62,7 +62,10 @@ defmodule Ch.VariantTest do
            ]
 
     # https://clickhouse.com/docs/sql-reference/data-types/variant#reading-variant-nested-types-as-subcolumns
-    assert Ch.query!(pool, "SELECT v, v.String, v.UInt64, v.`Array(UInt64)` FROM variant_test;").rows ==
+    assert Ch.query!(
+             pool,
+             "SELECT v, v.String, v.UInt64, v.`Array(UInt64)` FROM variant_test_table;"
+           ).rows ==
              [
                [nil, nil, nil, []],
                [42, nil, 42, []],
@@ -72,7 +75,7 @@ defmodule Ch.VariantTest do
 
     assert Ch.query!(
              pool,
-             "SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM variant_test;"
+             "SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM variant_test_table;"
            ).rows == [
              [nil, nil, nil, []],
              [42, nil, 42, []],
@@ -83,17 +86,17 @@ defmodule Ch.VariantTest do
 
   test "rowbinary", %{pool: pool} do
     Help.query!("""
-    CREATE TABLE variant_test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+    CREATE TABLE variant_test_rowbinary (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE variant_test") end)
+    on_exit(fn -> Help.query!("DROP TABLE variant_test_rowbinary") end)
 
     rows = [[nil], [42], ["Hello, World!"], [[1, 2, 3]]]
 
     rowbinary = Ch.RowBinary.encode_rows(rows, ["Variant(UInt64, String, Array(UInt64))"])
 
-    Ch.query!(pool, ["INSERT INTO variant_test FORMAT RowBinary\n" | rowbinary])
+    Ch.query!(pool, ["INSERT INTO variant_test_rowbinary FORMAT RowBinary\n" | rowbinary])
 
-    assert Ch.query!(pool, "SELECT v FROM variant_test").rows == rows
+    assert Ch.query!(pool, "SELECT v FROM variant_test_rowbinary").rows == rows
   end
 end

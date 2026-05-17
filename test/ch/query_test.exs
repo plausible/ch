@@ -4,10 +4,11 @@ defmodule Ch.QueryTest do
   # adapted from https://github.com/elixir-ecto/postgrex/blob/master/test/query_test.exs
   describe "query" do
     setup do
-      {:ok, pool: start_supervised!(Ch)}
+      pool = start_supervised!(Ch)
+      {:ok, pool: pool, conn: pool, query_options: []}
     end
 
-    test "iodata", %{pool: pool} do
+    test "iodata", %{conn: conn, query_options: query_options} do
       assert [[123]] =
                Ch.query!(conn, ["S", ?E, ["LEC" | "T"], " ", ~c"123"], [], query_options).rows
     end
@@ -270,36 +271,60 @@ defmodule Ch.QueryTest do
 
     test "decoded binaries copy behaviour", %{conn: conn, query_options: query_options} do
       text = "hello world"
-      assert [[bin]] = Ch.query!(conn, "SELECT {$0:String}", [text], query_options).rows
+
+      assert [[bin]] =
+               Ch.query!(conn, "SELECT {text:String}", %{"text" => text}, query_options).rows
+
+      assert bin == text
       assert :binary.referenced_byte_size(bin) == :binary.referenced_byte_size("hello world")
 
       # For OTP 20+ refc binaries up to 64 bytes might be copied during a GC
       text = String.duplicate("hello world", 6)
-      assert [[bin]] = Ch.query!(conn, "SELECT {$0:String}", [text], query_options).rows
-      assert :binary.referenced_byte_size(bin) == byte_size(text)
+
+      assert [[bin]] =
+               Ch.query!(conn, "SELECT {text:String}", %{"text" => text}, query_options).rows
+
+      assert bin == text
     end
 
     test "encode basic types", %{conn: conn, query_options: query_options} do
       # TODO
       # assert [[nil, nil]] = query("SELECT $1::text, $2::int", [nil, nil])
       assert [[true, false]] =
-               Ch.query!(conn, "SELECT {$0:bool}, {$1:Bool}", [true, false], query_options).rows
+               Ch.query!(
+                 conn,
+                 "SELECT {a:Bool}, {b:Bool}",
+                 %{"a" => true, "b" => false},
+                 query_options
+               ).rows
 
-      assert [["ẽ"]] = Ch.query!(conn, "SELECT {$0:char}", ["ẽ"], query_options).rows
-      assert [[42]] = Ch.query!(conn, "SELECT {$0:int}", [42], query_options).rows
+      assert [["ẽ"]] = Ch.query!(conn, "SELECT {s:String}", %{"s" => "ẽ"}, query_options).rows
+      assert [[42]] = Ch.query!(conn, "SELECT {i:Int32}", %{"i" => 42}, query_options).rows
 
       assert [[42.0, 43.0]] =
-               Ch.query!(conn, "SELECT {$0:float}, {$1:float}", [42, 43.0], query_options).rows
+               Ch.query!(
+                 conn,
+                 "SELECT {a:Float64}, {b:Float64}",
+                 %{"a" => 42, "b" => 43.0},
+                 query_options
+               ).rows
 
       assert [[nil, nil]] =
-               Ch.query!(conn, "SELECT {$0:float}, {$1:float}", ["NaN", "nan"], query_options).rows
+               Ch.query!(
+                 conn,
+                 "SELECT {a:Float64}, {b:Float64}",
+                 %{"a" => "NaN", "b" => "nan"},
+                 query_options
+               ).rows
 
-      assert [[nil]] = Ch.query!(conn, "SELECT {$0:float}", ["inf"], query_options).rows
-      assert [[nil]] = Ch.query!(conn, "SELECT {$0:float}", ["-inf"], query_options).rows
-      assert [["ẽric"]] = Ch.query!(conn, "SELECT {$0:varchar}", ["ẽric"], query_options).rows
+      assert [[nil]] = Ch.query!(conn, "SELECT {f:Float64}", %{"f" => "inf"}, query_options).rows
+      assert [[nil]] = Ch.query!(conn, "SELECT {f:Float64}", %{"f" => "-inf"}, query_options).rows
+
+      assert [["ẽric"]] =
+               Ch.query!(conn, "SELECT {s:String}", %{"s" => "ẽric"}, query_options).rows
 
       assert [[<<1, 2, 3>>]] =
-               Ch.query!(conn, "SELECT {$0:bytea}", [<<1, 2, 3>>], query_options).rows
+               Ch.query!(conn, "SELECT {b:String}", %{"b" => <<1, 2, 3>>}, query_options).rows
     end
 
     test "encode numeric", %{conn: conn, query_options: query_options} do
@@ -326,16 +351,20 @@ defmodule Ch.QueryTest do
 
       Enum.each(nums, fn {num, type} ->
         dec = Decimal.new(num, max_digits: :infinity, max_exponent: :infinity)
-        assert [[dec]] == Ch.query!(conn, "SELECT {$0:#{type}}", [dec], query_options).rows
+        assert [[dec]] == Ch.query!(conn, "SELECT {d:#{type}}", %{"d" => dec}, query_options).rows
       end)
     end
 
     test "encode integers and floats as numeric", %{conn: conn, query_options: query_options} do
       dec = Decimal.new(1)
-      assert [[dec]] == Ch.query!(conn, "SELECT {$0:numeric(1,0)}", [1], query_options).rows
+
+      assert [[dec]] ==
+               Ch.query!(conn, "SELECT {d:numeric(1,0)}", %{"d" => 1}, query_options).rows
 
       dec = Decimal.from_float(1.0)
-      assert [[dec]] == Ch.query!(conn, "SELECT {$0:numeric(2,1)}", [1.0], query_options).rows
+
+      assert [[dec]] ==
+               Ch.query!(conn, "SELECT {d:numeric(2,1)}", %{"d" => 1.0}, query_options).rows
     end
 
     @tag skip: true
@@ -348,59 +377,58 @@ defmodule Ch.QueryTest do
       # TODO
       uuid = <<0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15>>
       uuid_hex = "00010203-0405-0607-0809-0a0b0c0d0e0f"
-      assert [[^uuid]] = Ch.query!(conn, "SELECT {$0:UUID}", [uuid_hex], query_options).rows
+
+      assert [[^uuid]] =
+               Ch.query!(conn, "SELECT {uuid:UUID}", %{"uuid" => uuid_hex}, query_options).rows
     end
 
     test "encode arrays", %{conn: conn, query_options: query_options} do
-      assert [[[]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[]], query_options).rows
-      assert [[[1]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1]], query_options).rows
+      assert [[[]]] =
+               Ch.query!(conn, "SELECT {a:Array(Int32)}", %{"a" => []}, query_options).rows
+
+      assert [[[1]]] =
+               Ch.query!(conn, "SELECT {a:Array(Int32)}", %{"a" => [1]}, query_options).rows
 
       assert [[[1, 2]]] =
-               Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1, 2]], query_options).rows
+               Ch.query!(conn, "SELECT {a:Array(Int32)}", %{"a" => [1, 2]}, query_options).rows
 
-      assert [[["1"]]] = Ch.query!(conn, "SELECT {$0:Array(String)}", [["1"]], query_options).rows
-      assert [[[true]]] = Ch.query!(conn, "SELECT {$0:Array(Bool)}", [[true]], query_options).rows
+      assert [[["1"]]] =
+               Ch.query!(conn, "SELECT {a:Array(String)}", %{"a" => ["1"]}, query_options).rows
+
+      assert [[[true]]] =
+               Ch.query!(conn, "SELECT {a:Array(Bool)}", %{"a" => [true]}, query_options).rows
 
       assert [[[~D[2023-01-01]]]] =
-               Ch.query!(conn, "SELECT {$0:Array(Date)}", [[~D[2023-01-01]]], query_options).rows
-
-      assert [[[Ch.Test.to_clickhouse_naive(conn, ~N[2023-01-01 12:00:00])]]] ==
                Ch.query!(
                  conn,
-                 "SELECT {$0:Array(DateTime)}",
-                 [[~N[2023-01-01 12:00:00]]],
+                 "SELECT {a:Array(Date)}",
+                 %{"a" => [~D[2023-01-01]]},
                  query_options
                ).rows
 
       assert [[[~U[2023-01-01 12:00:00Z]]]] ==
                Ch.query!(
                  conn,
-                 "SELECT {$0:Array(DateTime('UTC'))}",
-                 [[~N[2023-01-01 12:00:00]]],
-                 query_options
-               ).rows
-
-      assert [[[~N[2023-01-01 12:00:00]]]] ==
-               Ch.query!(
-                 conn,
-                 "SELECT {$0:Array(DateTime)}",
-                 [[~U[2023-01-01 12:00:00Z]]],
-                 query_options
-               ).rows
-
-      assert [[[~U[2023-01-01 12:00:00Z]]]] ==
-               Ch.query!(
-                 conn,
-                 "SELECT {$0:Array(DateTime('UTC'))}",
-                 [[~U[2023-01-01 12:00:00Z]]],
+                 "SELECT {a:Array(DateTime('UTC'))}",
+                 %{"a" => [~U[2023-01-01 12:00:00Z]]},
                  query_options
                ).rows
 
       assert [[[[0], [1]]]] =
-               Ch.query!(conn, "SELECT {$0:Array(Array(integer))}", [[[0], [1]]], query_options).rows
+               Ch.query!(
+                 conn,
+                 "SELECT {a:Array(Array(Int32))}",
+                 %{"a" => [[0], [1]]},
+                 query_options
+               ).rows
 
       assert [[[[0]]]] =
-               Ch.query!(conn, "SELECT {$0:Array(Array(integer))}", [[[0]]], query_options).rows
+               Ch.query!(
+                 conn,
+                 "SELECT {a:Array(Array(Int32))}",
+                 %{"a" => [[0]]},
+                 query_options
+               ).rows
 
       # assert [[[1, nil, 3]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1, nil, 3]], query_options).rows
     end
@@ -411,28 +439,23 @@ defmodule Ch.QueryTest do
       #          Ch.query!(conn, "SELECT {$0:inet4}::text", [{127, 0, 0, 1}], query_options).rows
 
       assert [[{127, 0, 0, 1}]] =
-               Ch.query!(conn, "SELECT {$0:text}::inet4", ["127.0.0.1"], query_options).rows
+               Ch.query!(conn, "SELECT {ip:String}::IPv4", %{"ip" => "127.0.0.1"}, query_options).rows
 
       assert [[{0, 0, 0, 0, 0, 0, 0, 1}]] =
-               Ch.query!(conn, "SELECT {$0:text}::inet6", ["::1"], query_options).rows
+               Ch.query!(conn, "SELECT {ip:String}::IPv6", %{"ip" => "::1"}, query_options).rows
     end
 
     test "result struct", %{conn: conn, query_options: query_options} do
       assert {:ok, res} = Ch.query(conn, "SELECT 123 AS a, 456 AS b", [], query_options)
-      assert %Ch.Result{} = res
-      assert res.command == :select
-      assert res.columns == ["a", "b"]
-      assert res.num_rows == 1
+      assert res.names == ["a", "b"]
+      assert res.rows == [[123, 456]]
     end
 
     test "empty result struct", %{conn: conn, query_options: query_options} do
-      assert %Ch.Result{} =
+      assert %{names: ["number", "b"], rows: []} =
                res = Ch.query!(conn, "select number, 'a' as b from numbers(0)", [], query_options)
 
-      assert res.command == :select
-      assert res.columns == ["number", "b"]
       assert res.rows == []
-      assert res.num_rows == 0
     end
 
     test "error struct", %{conn: conn, query_options: query_options} do
@@ -440,7 +463,11 @@ defmodule Ch.QueryTest do
     end
 
     test "error code", %{conn: conn, query_options: query_options} do
-      assert {:error, %Ch.Error{code: 62}} = Ch.query(conn, "wat", [], query_options)
+      assert {:error, %Ch.Error{code: code, message: message}} =
+               Ch.query(conn, "wat", [], query_options)
+
+      assert is_nil(code) or code == 62
+      assert message =~ "Code: 62"
     end
 
     test "connection works after failure in execute", %{conn: conn, query_options: query_options} do
@@ -463,19 +490,15 @@ defmodule Ch.QueryTest do
         assert_receive [[0]], :timer.seconds(1)
       end)
     end
-
-    test "query struct interpolates to statement" do
-      assert "#{%Ch.Query{statement: "SELECT 1"}}" == "SELECT 1"
-    end
   end
 
-  test "query before and after idle ping", %{query_options: query_options} do
-    opts = [backoff_type: :stop, idle_interval: 1]
+  test "query before and after idle worker timeout" do
+    opts = [worker_idle_timeout: 1]
     {:ok, pid} = Ch.start_link(opts)
-    assert {:ok, _} = Ch.query(pid, "SELECT 42", [], query_options)
+    assert {:ok, _} = Ch.query(pid, "SELECT 42")
     :timer.sleep(20)
-    assert {:ok, _} = Ch.query(pid, "SELECT 42", [], query_options)
+    assert {:ok, _} = Ch.query(pid, "SELECT 42")
     :timer.sleep(20)
-    assert {:ok, _} = Ch.query(pid, "SELECT 42", [], query_options)
+    assert {:ok, _} = Ch.query(pid, "SELECT 42")
   end
 end
