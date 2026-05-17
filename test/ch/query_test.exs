@@ -447,15 +447,20 @@ defmodule Ch.QueryTest do
 
     test "result struct", %{conn: conn, query_options: query_options} do
       assert {:ok, res} = Ch.query(conn, "SELECT 123 AS a, 456 AS b", [], query_options)
+      assert %Ch.Result{} = res
       assert res.names == ["a", "b"]
       assert res.rows == [[123, 456]]
+      assert is_list(res.headers)
+      assert is_binary(IO.iodata_to_binary(res.data))
     end
 
     test "empty result struct", %{conn: conn, query_options: query_options} do
-      assert %{names: ["number", "b"], rows: []} =
+      assert %Ch.Result{names: ["number", "b"], rows: []} =
                res = Ch.query!(conn, "select number, 'a' as b from numbers(0)", [], query_options)
 
       assert res.rows == []
+      assert is_list(res.headers)
+      assert is_binary(IO.iodata_to_binary(res.data))
     end
 
     test "error struct", %{conn: conn, query_options: query_options} do

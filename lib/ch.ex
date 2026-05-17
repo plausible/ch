@@ -10,7 +10,7 @@ defmodule Ch do
 
       {:ok, pool} = Ch.start_link(url: "http://localhost:8123")
 
-      {:ok, %{names: ["number"], rows: [[1], [2], [3]]}} =
+      {:ok, %Ch.Result{names: ["number"], rows: [[1], [2], [3]]}} =
         Ch.query(pool, "SELECT number FROM system.numbers LIMIT {limit:UInt8}", %{
           "limit" => 3
         })
@@ -26,7 +26,8 @@ defmodule Ch do
 
   `Ch` automatically decompresses successful responses that it decodes itself
   (`RowBinaryWithNamesAndTypes`) and error responses. Successful responses in
-  other formats are returned as received, including any `content-encoding`.
+  other formats keep the raw response body in `Ch.Result.data`, including any
+  `content-encoding`.
   """
   @behaviour NimblePool
 
@@ -108,11 +109,10 @@ defmodule Ch do
   The parsed query response.
 
   If the response format is `RowBinaryWithNamesAndTypes`, `Ch` returns decoded
-  column names and rows. Empty successful responses return `nil`. Other
-  successful formats return the raw response body iodata as received from
-  ClickHouse.
+  column names and rows in `Ch.Result`. Other successful formats keep the raw
+  response body in `Ch.Result.data`.
   """
-  @type query_result :: %{names: [String.t()], rows: [[term]]} | iodata | nil
+  @type query_result :: Ch.Result.t()
 
   @typedoc """
   A query execution error.
@@ -205,9 +205,9 @@ defmodule Ch do
     * `:headers` - HTTP headers sent with the request.
 
   By default, `Ch` adds `x-clickhouse-format: RowBinaryWithNamesAndTypes`,
-  decodes that response format, and returns `%{names: names, rows: rows}`.
+  decodes that response format, and returns `%Ch.Result{names: names, rows: rows}`.
   Passing a different `x-clickhouse-format` header disables automatic row
-  decoding and returns the response body as received.
+  decoding and keeps the response body in `%Ch.Result{data: data}`.
 
   If an error response is compressed with `gzip` or `zstd`, `Ch` decompresses it
   before returning `%Ch.Error{}`.
@@ -407,14 +407,21 @@ defmodule Ch do
     if format == "RowBinaryWithNamesAndTypes" do
       case body |> maybe_decompress(headers) |> response_body_to_binary() do
         "" ->
-          {:ok, nil}
+          {:ok, %Ch.Result{headers: headers, data: body}}
 
-        data ->
-          [names | rows] = Ch.RowBinary.decode_names_and_rows(data)
-          {:ok, %{names: names, rows: rows}}
+        decoded_data ->
+          [names | rows] = Ch.RowBinary.decode_names_and_rows(decoded_data)
+
+          {:ok,
+           %Ch.Result{
+             names: names,
+             rows: rows,
+             headers: headers,
+             data: body
+           }}
       end
     else
-      {:ok, body}
+      {:ok, %Ch.Result{headers: headers, data: body}}
     end
   end
 

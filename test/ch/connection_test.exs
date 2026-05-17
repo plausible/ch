@@ -32,10 +32,11 @@ defmodule Ch.ConnectionTest do
     Help.query!("CREATE TABLE connection_test_insert(a UInt8 DEFAULT 1, b String) ENGINE Memory")
     on_exit(fn -> Help.query!("DROP TABLE connection_test_insert") end)
 
-    assert Ch.query!(pool, """
-           INSERT INTO connection_test_insert VALUES
-           (1, 'a'), (2, 'b'), (NULL, NULL)
-           """) == nil
+    assert %Ch.Result{names: nil, rows: nil, data: nil} =
+             Ch.query!(pool, """
+             INSERT INTO connection_test_insert VALUES
+             (1, 'a'), (2, 'b'), (NULL, NULL)
+             """)
 
     assert Ch.query!(pool, "SELECT * FROM connection_test_insert ORDER BY a, b").rows == [
              [1, ""],
@@ -43,14 +44,15 @@ defmodule Ch.ConnectionTest do
              [2, "b"]
            ]
 
-    assert Ch.query!(
-             pool,
-             """
-             INSERT INTO connection_test_insert(a, b)
-             SELECT a, b FROM connection_test_insert WHERE a > {min:UInt8}
-             """,
-             %{"min" => 1}
-           ) == nil
+    assert %Ch.Result{names: nil, rows: nil, data: nil} =
+             Ch.query!(
+               pool,
+               """
+               INSERT INTO connection_test_insert(a, b)
+               SELECT a, b FROM connection_test_insert WHERE a > {min:UInt8}
+               """,
+               %{"min" => 1}
+             )
 
     assert Ch.query!(pool, "SELECT * FROM connection_test_insert WHERE a > 1").rows == [
              [2, "b"],
@@ -65,9 +67,10 @@ defmodule Ch.ConnectionTest do
     rows = [[1, "a"], [2, "b"], [3, "c"]]
     rowbinary = RowBinary.encode_rows(rows, ["UInt8", "String"])
 
-    assert Ch.query!(pool, [
-             "INSERT INTO connection_test_rowbinary FORMAT RowBinary\n" | rowbinary
-           ]) == nil
+    assert %Ch.Result{names: nil, rows: nil, data: nil} =
+             Ch.query!(pool, [
+               "INSERT INTO connection_test_rowbinary FORMAT RowBinary\n" | rowbinary
+             ])
 
     assert Ch.query!(pool, "SELECT * FROM connection_test_rowbinary ORDER BY a").rows == rows
   end
@@ -95,9 +98,10 @@ defmodule Ch.ConnectionTest do
 
     Ch.query!(pool, "INSERT INTO connection_test_delete VALUES (1, 'a'), (2, 'b')")
 
-    assert Ch.query!(pool, "DELETE FROM connection_test_delete WHERE 1", %{},
-             settings: [mutations_sync: 1]
-           ) == nil
+    assert %Ch.Result{names: nil, rows: nil, data: nil} =
+             Ch.query!(pool, "DELETE FROM connection_test_delete WHERE 1", %{},
+               settings: [mutations_sync: 1]
+             )
 
     assert Ch.query!(pool, "SELECT * FROM connection_test_delete").rows == []
   end

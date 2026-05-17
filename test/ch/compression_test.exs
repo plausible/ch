@@ -14,6 +14,7 @@ defmodule Ch.CompressionTest do
                %{"limit" => 1_000_000},
                headers: [{"accept-encoding", "gzip"}, {"x-clickhouse-format", "RowBinary"}]
              )
+             |> Map.fetch!(:data)
              |> IO.iodata_to_binary()
 
     assert byte_size(data) == 1_513_706
@@ -28,6 +29,7 @@ defmodule Ch.CompressionTest do
                %{"limit" => 1_000_000},
                headers: [{"accept-encoding", "lz4"}, {"x-clickhouse-format", "RowBinary"}]
              )
+             |> Map.fetch!(:data)
              |> IO.iodata_to_binary()
 
     assert byte_size(data) == 4_004_633
@@ -42,6 +44,7 @@ defmodule Ch.CompressionTest do
                %{"limit" => 1_000_000},
                headers: [{"accept-encoding", "zstd"}, {"x-clickhouse-format", "RowBinary"}]
              )
+             |> Map.fetch!(:data)
              |> IO.iodata_to_binary()
 
     assert byte_size(data) == 1_052_492
@@ -74,23 +77,29 @@ defmodule Ch.CompressionTest do
   test "automatically handles empty ZSTD RowBinaryWithNamesAndTypes responses", %{pool: pool} do
     on_exit(fn -> Help.query!("DROP TABLE compression_test_zstd_empty_response") end)
 
-    assert Ch.query!(
-             pool,
-             "CREATE TABLE compression_test_zstd_empty_response(a UInt8) ENGINE Memory",
-             %{},
-             headers: [{"accept-encoding", "zstd"}]
-           ) == nil
+    assert %Ch.Result{names: nil, rows: nil, data: nil, headers: headers} =
+             Ch.query!(
+               pool,
+               "CREATE TABLE compression_test_zstd_empty_response(a UInt8) ENGINE Memory",
+               %{},
+               headers: [{"accept-encoding", "zstd"}]
+             )
+
+    assert is_list(headers)
   end
 
   test "automatically handles empty GZIP RowBinaryWithNamesAndTypes responses", %{pool: pool} do
     on_exit(fn -> Help.query!("DROP TABLE compression_test_gzip_empty_response") end)
 
-    assert Ch.query!(
-             pool,
-             "CREATE TABLE compression_test_gzip_empty_response(a UInt8) ENGINE Memory",
-             %{},
-             headers: [{"accept-encoding", "gzip"}]
-           ) == nil
+    assert %Ch.Result{names: nil, rows: nil, data: nil, headers: headers} =
+             Ch.query!(
+               pool,
+               "CREATE TABLE compression_test_gzip_empty_response(a UInt8) ENGINE Memory",
+               %{},
+               headers: [{"accept-encoding", "gzip"}]
+             )
+
+    assert is_list(headers)
   end
 
   test "automatically decompresses ZSTD error responses", %{pool: pool} do
@@ -125,8 +134,8 @@ defmodule Ch.CompressionTest do
         Ch.RowBinary.encode_rows(rows, types)
       ])
 
-    assert Ch.query!(pool, payload, %{}, headers: [{"content-encoding", "zstd"}]) ==
-             nil
+    assert %Ch.Result{names: nil, rows: nil, data: nil} =
+             Ch.query!(pool, payload, %{}, headers: [{"content-encoding", "zstd"}])
 
     assert Ch.query!(pool, "SELECT * FROM compression_test_zstd_payload ORDER BY id").rows == rows
 

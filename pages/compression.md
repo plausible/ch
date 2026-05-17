@@ -21,14 +21,14 @@ Supported automatic decompression:
 | --- | --- | --- | --- |
 | decoded `RowBinaryWithNamesAndTypes` success | decompressed automatically | decompressed automatically | raises |
 | error response | decompressed automatically | decompressed automatically | raises |
-| raw successful response | returned as received | returned as received | returned as received |
+| raw successful response | stored as received in `Ch.Result.data` | stored as received in `Ch.Result.data` | stored as received in `Ch.Result.data` |
 
-By default, `Ch.query/4` requests `RowBinaryWithNamesAndTypes`, decodes it, and returns `%{names: names, rows: rows}`. If you add `accept-encoding: zstd` or `accept-encoding: gzip`, `Ch` decompresses before decoding.
+By default, `Ch.query/4` requests `RowBinaryWithNamesAndTypes`, decodes it, and returns `%Ch.Result{names: names, rows: rows, headers: headers, data: data}`. If you add `accept-encoding: zstd` or `accept-encoding: gzip`, `Ch` decompresses before decoding.
 
-If you override the response format, `Ch` returns the successful body as received:
+If you override the response format, `Ch` returns `%Ch.Result{}` with the successful body as received in `data`:
 
 ```elixir
-csv_gz =
+%Ch.Result{data: csv_gz} =
   Ch.query!(
     pool,
     "SELECT number FROM system.numbers LIMIT 1_000_000",
@@ -68,6 +68,16 @@ Ch.query!(
 
 ClickHouse decompresses the request body before parsing the SQL and input format.
 
+The uncompressed form is the same explicit RowBinary insert body:
+
+```elixir
+Ch.query!(pool, [
+  "INSERT INTO users FORMAT RowBinaryWithNamesAndTypes\n",
+  Ch.RowBinary.encode_names_and_types(names, types),
+  Ch.RowBinary.encode_rows(rows, types)
+])
+```
+
 ## Why ZSTD Is Not Default
 
 `Ch` does not add `accept-encoding: zstd` automatically.
@@ -75,7 +85,7 @@ ClickHouse decompresses the request body before parsing the SQL and input format
 Compression is useful for large responses, but making it the default would also affect small queries and raw export workflows. Keeping it explicit means:
 
 - small queries avoid compression overhead;
-- raw responses can be returned exactly as ClickHouse sent them;
+- raw responses can be stored exactly as ClickHouse sent them;
 - compressed CSV/RowBinary exports can be written directly;
 - callers choose the tradeoff per query.
 

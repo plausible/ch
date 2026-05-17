@@ -76,6 +76,7 @@ defmodule Ch.MixProject do
       extras: [
         "README.md",
         "CHANGELOG.md",
+        "pages/query.md",
         "pages/datetime-timezones.md",
         "pages/compression.md"
       ],
