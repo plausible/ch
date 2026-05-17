@@ -55,9 +55,14 @@ defmodule Ch.HTTP do
   """
   @spec path(Ch.query_params(), Enumerable.t()) :: String.t()
   def path(params, options \\ []) do
-    case encode_params(params) ++ options do
-      [] -> "/"
-      qp -> "/?" <> URI.encode_query(qp)
+    params = params |> encode_params() |> URI.encode_query()
+    options = URI.encode_query(options)
+
+    case {params, options} do
+      {"", ""} -> "/"
+      {"", options} -> "/?" <> options
+      {params, ""} -> "/?" <> params
+      {params, options} -> "/?" <> params <> "&" <> options
     end
   end
 
