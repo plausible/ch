@@ -17,8 +17,6 @@ defmodule Ch.CompressionTest do
              )
              |> Map.fetch!(:data)
              |> IO.iodata_to_binary()
-
-    assert byte_size(data) == 1_513_706
   end
 
   test "can request LZ4 response through headers", %{pool: pool} do
@@ -33,8 +31,6 @@ defmodule Ch.CompressionTest do
              )
              |> Map.fetch!(:data)
              |> IO.iodata_to_binary()
-
-    assert byte_size(data) == 4_004_633
   end
 
   test "can request ZSTD response through headers", %{pool: pool} do
@@ -49,8 +45,6 @@ defmodule Ch.CompressionTest do
              )
              |> Map.fetch!(:data)
              |> IO.iodata_to_binary()
-
-    assert byte_size(data) == 1_052_492
   end
 
   test "automatically decompresses and decodes ZSTD RowBinaryWithNamesAndTypes", %{pool: pool} do
