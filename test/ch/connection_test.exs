@@ -11,6 +11,46 @@ defmodule Ch.ConnectionTest do
     assert Ch.query!(pool, "select 1").rows == [[1]]
   end
 
+  test "selects with named params", %{pool: pool} do
+    assert Ch.query!(pool, "select {a:UInt8}", %{"a" => 1}).rows == [[1]]
+    assert Ch.query!(pool, "select {b:Bool}", %{"b" => true}).rows == [[true]]
+    assert Ch.query!(pool, "select {b:Bool}", %{"b" => false}).rows == [[false]]
+    assert Ch.query!(pool, "select {n:Nullable(Nothing)}", %{"n" => nil}).rows == [[nil]]
+    assert Ch.query!(pool, "select {a:Float32}", %{"a" => 1.0}).rows == [[1.0]]
+    assert Ch.query!(pool, "select {a:String}", %{"a" => "a&b=c"}).rows == [["a&b=c"]]
+    assert Ch.query!(pool, "select {a:String}", %{"a" => "a\n"}).rows == [["a\n"]]
+    assert Ch.query!(pool, "select {a:String}", %{"a" => "a\t"}).rows == [["a\t"]]
+
+    assert Ch.query!(pool, "select {a:Array(String)}", %{"a" => ["a\tb"]}).rows == [
+             [["a\tb"]]
+           ]
+
+    assert Ch.query!(pool, "select {a:Array(Bool)}", %{"a" => [true, false]}).rows == [
+             [[true, false]]
+           ]
+
+    assert Ch.query!(pool, "select {a:Array(Nullable(String))}", %{
+             "a" => ["a", nil, "b"]
+           }).rows == [[["a", nil, "b"]]]
+
+    assert Ch.query!(pool, "select {a:Decimal(9,4)}", %{
+             "a" => Decimal.new("2000.333")
+           }).rows == [[Decimal.new("2000.3330")]]
+
+    assert Ch.query!(pool, "select {a:Date}", %{"a" => ~D[2022-01-01]}).rows == [
+             [~D[2022-01-01]]
+           ]
+
+    assert Ch.query!(pool, "select {a:Date32}", %{"a" => ~D[2022-01-01]}).rows == [
+             [~D[2022-01-01]]
+           ]
+
+    uuid = "9B29BD20-924C-4DE5-BDB3-8C2AA1FCE1FC"
+    uuid_bin = uuid |> String.replace("-", "") |> Base.decode16!()
+
+    assert Ch.query!(pool, "select {a:UUID}", %{"a" => uuid}).rows == [[uuid_bin]]
+  end
+
   test "accepts query settings", %{pool: pool} do
     assert Ch.query!(pool, "show settings like 'async_insert'", %{}, settings: [async_insert: 1]).rows ==
              [["async_insert", "Bool", "1"]]
@@ -21,16 +61,41 @@ defmodule Ch.ConnectionTest do
 
   test "creates and drops a table", %{pool: pool} do
     Ch.query!(pool, "CREATE TABLE connection_test_create(a UInt8) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE connection_test_create") end)
+
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_create")
+      Ch.stop(cleanup)
+    end)
 
     assert Ch.query!(pool, "SHOW TABLES LIKE 'connection_test_create'").rows == [
              ["connection_test_create"]
            ]
   end
 
+  test "returns readonly errors for create", %{pool: pool} do
+    assert {:error, %Ch.Error{message: message}} =
+             Ch.query(
+               pool,
+               "CREATE TABLE connection_test_create_readonly(a UInt8) ENGINE Memory",
+               %{},
+               settings: [readonly: 1]
+             )
+
+    assert message =~ "Cannot execute query in readonly mode"
+  end
+
   test "inserts values and insert-selects rows", %{pool: pool} do
-    Help.query!("CREATE TABLE connection_test_insert(a UInt8 DEFAULT 1, b String) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE connection_test_insert") end)
+    Ch.query!(
+      pool,
+      "CREATE TABLE connection_test_insert(a UInt8 DEFAULT 1, b String) ENGINE Memory"
+    )
+
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_insert")
+      Ch.stop(cleanup)
+    end)
 
     assert %Ch.Result{names: nil, rows: nil, data: nil} =
              Ch.query!(pool, """
@@ -61,8 +126,13 @@ defmodule Ch.ConnectionTest do
   end
 
   test "inserts RowBinary data", %{pool: pool} do
-    Help.query!("CREATE TABLE connection_test_rowbinary(a UInt8, b String) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE connection_test_rowbinary") end)
+    Ch.query!(pool, "CREATE TABLE connection_test_rowbinary(a UInt8, b String) ENGINE Memory")
+
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_rowbinary")
+      Ch.stop(cleanup)
+    end)
 
     rows = [[1, "a"], [2, "b"], [3, "c"]]
     rowbinary = RowBinary.encode_rows(rows, ["UInt8", "String"])
@@ -76,8 +146,13 @@ defmodule Ch.ConnectionTest do
   end
 
   test "returns readonly errors", %{pool: pool} do
-    Help.query!("CREATE TABLE connection_test_readonly(a UInt8) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE connection_test_readonly") end)
+    Ch.query!(pool, "CREATE TABLE connection_test_readonly(a UInt8) ENGINE Memory")
+
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_readonly")
+      Ch.stop(cleanup)
+    end)
 
     assert {:error, %Ch.Error{message: message}} =
              Ch.query(pool, "INSERT INTO connection_test_readonly VALUES (1)", %{},
@@ -88,13 +163,17 @@ defmodule Ch.ConnectionTest do
   end
 
   test "deletes rows", %{pool: pool} do
-    Help.query!("""
+    Ch.query!(pool, """
     CREATE TABLE connection_test_delete(a UInt8, b String)
     ENGINE MergeTree
     ORDER BY tuple()
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE connection_test_delete") end)
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_delete")
+      Ch.stop(cleanup)
+    end)
 
     Ch.query!(pool, "INSERT INTO connection_test_delete VALUES (1, 'a'), (2, 'b')")
 
@@ -149,7 +228,7 @@ defmodule Ch.ConnectionTest do
   end
 
   test "inserts and selects nullable/default values", %{pool: pool} do
-    Help.query!("""
+    Ch.query!(pool, """
     CREATE TABLE connection_test_nulls (
       a UInt8,
       b Nullable(UInt8),
@@ -158,7 +237,11 @@ defmodule Ch.ConnectionTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE connection_test_nulls") end)
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_nulls")
+      Ch.stop(cleanup)
+    end)
 
     rowbinary =
       RowBinary.encode_rows(
@@ -173,8 +256,41 @@ defmodule Ch.ConnectionTest do
     assert Ch.query!(pool, "SELECT * FROM connection_test_nulls").rows == [[0, nil, 0, nil]]
   end
 
+  test "inserts nullable input rows and applies defaults", %{pool: pool} do
+    Ch.query!(pool, """
+    CREATE TABLE connection_test_input_default(
+      n Int32,
+      s String DEFAULT 'secret'
+    ) ENGINE Memory
+    """)
+
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_input_default")
+      Ch.stop(cleanup)
+    end)
+
+    rows = [[1, nil], [-1, nil]]
+    rowbinary = RowBinary.encode_rows(rows, ["UInt32", "Nullable(String)"])
+
+    Ch.query!(pool, [
+      """
+      INSERT INTO connection_test_input_default
+        SELECT id, name
+        FROM input('id UInt32, name Nullable(String)')
+        FORMAT RowBinary
+      """
+      | rowbinary
+    ])
+
+    assert Ch.query!(pool, "SELECT * FROM connection_test_input_default ORDER BY n").rows == [
+             [-1, "secret"],
+             [1, "secret"]
+           ]
+  end
+
   test "inserts RowBinaryWithNamesAndTypes", %{pool: pool} do
-    Help.query!("""
+    Ch.query!(pool, """
     CREATE TABLE connection_test_names_types (
       country_code FixedString(2),
       rare_string LowCardinality(String),
@@ -182,7 +298,11 @@ defmodule Ch.ConnectionTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE connection_test_names_types") end)
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_names_types")
+      Ch.stop(cleanup)
+    end)
 
     names = ["country_code", "rare_string", "maybe_int32"]
     types = ["FixedString(2)", "LowCardinality(String)", "Nullable(Int32)"]
@@ -200,6 +320,166 @@ defmodule Ch.ConnectionTest do
 
     assert Ch.query!(pool, "SELECT * FROM connection_test_names_types ORDER BY country_code").rows ==
              rows
+  end
+
+  test "returns RowBinaryWithNamesAndTypes type mismatch errors", %{pool: pool} do
+    Ch.query!(pool, """
+    CREATE TABLE connection_test_names_types_mismatch (
+      country_code FixedString(2),
+      rare_string LowCardinality(String),
+      maybe_int32 Nullable(Int32)
+    ) ENGINE Memory
+    """)
+
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_names_types_mismatch")
+      Ch.stop(cleanup)
+    end)
+
+    names = ["country_code", "rare_string", "maybe_int32"]
+    rows = [["AB", "rare", -42]]
+
+    rowbinary = [
+      RowBinary.encode_names_and_types(names, ["FixedString(2)", "String", "Nullable(Int32)"])
+      | RowBinary.encode_rows(rows, ["FixedString(2)", "String", "Nullable(Int32)"])
+    ]
+
+    assert {:error, %Ch.Error{message: message}} =
+             Ch.query(pool, [
+               "INSERT INTO connection_test_names_types_mismatch FORMAT RowBinaryWithNamesAndTypes\n"
+               | rowbinary
+             ])
+
+    assert message =~ "Type of 'rare_string' must be LowCardinality(String), not String"
+  end
+
+  test "inserts and selects geo types", %{pool: pool} do
+    Ch.query!(pool, "CREATE TABLE connection_test_geo_point(p Point) ENGINE Memory")
+    Ch.query!(pool, "CREATE TABLE connection_test_geo_ring(r Ring) ENGINE Memory")
+    Ch.query!(pool, "CREATE TABLE connection_test_geo_polygon(pg Polygon) ENGINE Memory")
+
+    Ch.query!(
+      pool,
+      "CREATE TABLE connection_test_geo_multipolygon(mp MultiPolygon) ENGINE Memory"
+    )
+
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP TABLE connection_test_geo_point")
+      Ch.query!(cleanup, "DROP TABLE connection_test_geo_ring")
+      Ch.query!(cleanup, "DROP TABLE connection_test_geo_polygon")
+      Ch.query!(cleanup, "DROP TABLE connection_test_geo_multipolygon")
+      Ch.stop(cleanup)
+    end)
+
+    Ch.query!(pool, "INSERT INTO connection_test_geo_point VALUES((10, 10))")
+
+    Ch.query!(pool, [
+      "INSERT INTO connection_test_geo_point FORMAT RowBinary\n",
+      RowBinary.encode_rows([[{20, 20}]], ["Point"])
+    ])
+
+    assert Ch.query!(pool, "SELECT p FROM connection_test_geo_point ORDER BY p").rows == [
+             [{10.0, 10.0}],
+             [{20.0, 20.0}]
+           ]
+
+    ring = [{20, 20}, {0, 0}, {0, 20}]
+
+    Ch.query!(
+      pool,
+      "INSERT INTO connection_test_geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)])"
+    )
+
+    Ch.query!(pool, [
+      "INSERT INTO connection_test_geo_ring FORMAT RowBinary\n",
+      RowBinary.encode_rows([[ring]], ["Ring"])
+    ])
+
+    assert Ch.query!(pool, "SELECT r FROM connection_test_geo_ring ORDER BY r").rows == [
+             [[{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}]],
+             [[{20.0, 20.0}, {0.0, 0.0}, {0.0, 20.0}]]
+           ]
+
+    polygon = [[{0, 1.0}, {10, 3.2}], [], [{2, 2}]]
+
+    Ch.query!(
+      pool,
+      "INSERT INTO connection_test_geo_polygon VALUES([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]])"
+    )
+
+    Ch.query!(pool, [
+      "INSERT INTO connection_test_geo_polygon FORMAT RowBinary\n",
+      RowBinary.encode_rows([[polygon]], ["Polygon"])
+    ])
+
+    assert Ch.query!(pool, "SELECT pg FROM connection_test_geo_polygon ORDER BY pg").rows == [
+             [[[{0.0, 1.0}, {10.0, 3.2}], [], [{2.0, 2.0}]]],
+             [
+               [
+                 [{20.0, 20.0}, {50.0, 20.0}, {50.0, 50.0}, {20.0, 50.0}],
+                 [{30.0, 30.0}, {50.0, 50.0}, {50.0, 30.0}]
+               ]
+             ]
+           ]
+
+    multipolygon = [[[{0.0, 1.0}, {10.0, 3.0}], [], [{2, 2}]], [], [[{3, 3}]]]
+
+    Ch.query!(
+      pool,
+      "INSERT INTO connection_test_geo_multipolygon VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]]])"
+    )
+
+    Ch.query!(pool, [
+      "INSERT INTO connection_test_geo_multipolygon FORMAT RowBinary\n",
+      RowBinary.encode_rows([[multipolygon]], ["MultiPolygon"])
+    ])
+
+    assert Ch.query!(pool, "SELECT mp FROM connection_test_geo_multipolygon ORDER BY mp").rows ==
+             [
+               [
+                 [
+                   [[{0.0, 0.0}, {10.0, 0.0}, {10.0, 10.0}, {0.0, 10.0}]],
+                   [
+                     [{20.0, 20.0}, {50.0, 20.0}, {50.0, 50.0}, {20.0, 50.0}],
+                     [{30.0, 30.0}, {50.0, 50.0}, {50.0, 30.0}]
+                   ]
+                 ]
+               ],
+               [[[[{0.0, 1.0}, {10.0, 3.0}], [], [{2.0, 2.0}]], [], [[{3.0, 3.0}]]]]
+             ]
+  end
+
+  test "accepts database and auth through headers", %{pool: pool} do
+    Ch.query!(pool, "CREATE DATABASE connection_test_database_header")
+
+    on_exit(fn ->
+      {:ok, cleanup} = Ch.start_link()
+      Ch.query!(cleanup, "DROP DATABASE connection_test_database_header")
+      Ch.stop(cleanup)
+    end)
+
+    Ch.query!(
+      pool,
+      "CREATE TABLE connection_test_database_header.example(a UInt8) ENGINE Memory"
+    )
+
+    assert Ch.query!(pool, "SHOW TABLES", %{},
+             headers: [{"x-clickhouse-database", "connection_test_database_header"}]
+           ).rows == [["example"]]
+
+    assert {:error, %Ch.Error{message: message}} =
+             Ch.query(pool, "SELECT 1", %{},
+               headers: [{"x-clickhouse-user", "no-exists"}, {"x-clickhouse-key", "wrong"}]
+             )
+
+    assert message =~ "AUTHENTICATION_FAILED"
+
+    assert {:error, %Ch.Error{message: message}} =
+             Ch.query(pool, "SELECT 1", %{}, headers: [{"x-clickhouse-database", "no-db"}])
+
+    assert message =~ "UNKNOWN_DATABASE"
   end
 
   test "selects many columns in RowBinaryWithNamesAndTypes", %{pool: pool} do
