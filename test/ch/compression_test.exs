@@ -12,7 +12,8 @@ defmodule Ch.CompressionTest do
              |> Ch.query!(
                "select number from system.numbers limit {limit:UInt32}",
                %{"limit" => 1_000_000},
-               headers: [{"accept-encoding", "gzip"}, {"x-clickhouse-format", "RowBinary"}]
+               headers: [{"accept-encoding", "gzip"}, {"x-clickhouse-format", "RowBinary"}],
+               settings: %{"enable_http_compression" => 1}
              )
              |> Map.fetch!(:data)
              |> IO.iodata_to_binary()
@@ -27,7 +28,8 @@ defmodule Ch.CompressionTest do
              |> Ch.query!(
                "select number from system.numbers limit {limit:UInt32}",
                %{"limit" => 1_000_000},
-               headers: [{"accept-encoding", "lz4"}, {"x-clickhouse-format", "RowBinary"}]
+               headers: [{"accept-encoding", "lz4"}, {"x-clickhouse-format", "RowBinary"}],
+               settings: %{"enable_http_compression" => 1}
              )
              |> Map.fetch!(:data)
              |> IO.iodata_to_binary()
@@ -42,7 +44,8 @@ defmodule Ch.CompressionTest do
              |> Ch.query!(
                "select number from system.numbers limit {limit:UInt32}",
                %{"limit" => 1_000_000},
-               headers: [{"accept-encoding", "zstd"}, {"x-clickhouse-format", "RowBinary"}]
+               headers: [{"accept-encoding", "zstd"}, {"x-clickhouse-format", "RowBinary"}],
+               settings: %{"enable_http_compression" => 1}
              )
              |> Map.fetch!(:data)
              |> IO.iodata_to_binary()
@@ -56,7 +59,8 @@ defmodule Ch.CompressionTest do
                pool,
                "select number from system.numbers limit {limit:UInt32}",
                %{"limit" => 1_000_000},
-               headers: [{"accept-encoding", "zstd"}]
+               headers: [{"accept-encoding", "zstd"}],
+               settings: %{"enable_http_compression" => 1}
              )
 
     assert length(rows) == 1_000_000
@@ -68,7 +72,8 @@ defmodule Ch.CompressionTest do
                pool,
                "select number from system.numbers limit {limit:UInt32}",
                %{"limit" => 1_000_000},
-               headers: [{"accept-encoding", "gzip"}]
+               headers: [{"accept-encoding", "gzip"}],
+               settings: %{"enable_http_compression" => 1}
              )
 
     assert length(rows) == 1_000_000
@@ -82,7 +87,8 @@ defmodule Ch.CompressionTest do
                pool,
                "CREATE TABLE compression_test_zstd_empty_response(a UInt8) ENGINE Memory",
                %{},
-               headers: [{"accept-encoding", "zstd"}]
+               headers: [{"accept-encoding", "zstd"}],
+               settings: %{"enable_http_compression" => 1}
              )
 
     assert is_list(headers)
@@ -96,7 +102,8 @@ defmodule Ch.CompressionTest do
                pool,
                "CREATE TABLE compression_test_gzip_empty_response(a UInt8) ENGINE Memory",
                %{},
-               headers: [{"accept-encoding", "gzip"}]
+               headers: [{"accept-encoding", "gzip"}],
+               settings: %{"enable_http_compression" => 1}
              )
 
     assert is_list(headers)
@@ -104,7 +111,10 @@ defmodule Ch.CompressionTest do
 
   test "automatically decompresses ZSTD error responses", %{pool: pool} do
     assert {:error, %Ch.Error{message: message}} =
-             Ch.query(pool, "SELECT missing_column", %{}, headers: [{"accept-encoding", "zstd"}])
+             Ch.query(pool, "SELECT missing_column", %{},
+               headers: [{"accept-encoding", "zstd"}],
+               settings: %{"enable_http_compression" => 1}
+             )
 
     assert message =~ "UNKNOWN_IDENTIFIER"
     refute message =~ <<0x28, 0xB5, 0x2F, 0xFD>>
@@ -112,7 +122,10 @@ defmodule Ch.CompressionTest do
 
   test "automatically decompresses GZIP error responses", %{pool: pool} do
     assert {:error, %Ch.Error{message: message}} =
-             Ch.query(pool, "SELECT missing_column", %{}, headers: [{"accept-encoding", "gzip"}])
+             Ch.query(pool, "SELECT missing_column", %{},
+               headers: [{"accept-encoding", "gzip"}],
+               settings: %{"enable_http_compression" => 1}
+             )
 
     assert message =~ "UNKNOWN_IDENTIFIER"
     refute message =~ <<0x1F, 0x8B>>
@@ -120,7 +133,6 @@ defmodule Ch.CompressionTest do
 
   test "can send ZSTD compressed RowBinaryWithNamesAndTypes payloads", %{pool: pool} do
     Help.query!("CREATE TABLE compression_test_zstd_payload(id UInt8, name String) ENGINE Memory")
-
     on_exit(fn -> Help.query!("DROP TABLE compression_test_zstd_payload") end)
 
     names = ["id", "name"]
@@ -140,7 +152,8 @@ defmodule Ch.CompressionTest do
     assert Ch.query!(pool, "SELECT * FROM compression_test_zstd_payload ORDER BY id").rows == rows
 
     assert Ch.query!(pool, "SELECT * FROM compression_test_zstd_payload ORDER BY id", %{},
-             headers: [{"accept-encoding", "zstd"}]
+             headers: [{"accept-encoding", "zstd"}],
+             settings: %{"enable_http_compression" => 1}
            ).rows == rows
   end
 end
