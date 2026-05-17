@@ -60,9 +60,8 @@ defmodule Ch.ConnectionTest do
   end
 
   test "inserts RowBinary data", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS connection_test_rowbinary")
     Help.query!("CREATE TABLE connection_test_rowbinary(a UInt8, b String) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_test_rowbinary") end)
+    on_exit(fn -> Help.query!("DROP TABLE connection_test_rowbinary") end)
 
     rows = [[1, "a"], [2, "b"], [3, "c"]]
     rowbinary = RowBinary.encode_rows(rows, ["UInt8", "String"])
@@ -75,9 +74,8 @@ defmodule Ch.ConnectionTest do
   end
 
   test "returns readonly errors", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS connection_test_readonly")
     Help.query!("CREATE TABLE connection_test_readonly(a UInt8) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_test_readonly") end)
+    on_exit(fn -> Help.query!("DROP TABLE connection_test_readonly") end)
 
     assert {:error, %Ch.Error{message: message}} =
              Ch.query(pool, "INSERT INTO connection_test_readonly VALUES (1)", %{},
@@ -88,15 +86,13 @@ defmodule Ch.ConnectionTest do
   end
 
   test "deletes rows", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS connection_test_delete")
-
     Help.query!("""
     CREATE TABLE connection_test_delete(a UInt8, b String)
     ENGINE MergeTree
     ORDER BY tuple()
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_test_delete") end)
+    on_exit(fn -> Help.query!("DROP TABLE connection_test_delete") end)
 
     Ch.query!(pool, "INSERT INTO connection_test_delete VALUES (1, 'a'), (2, 'b')")
 
@@ -150,8 +146,6 @@ defmodule Ch.ConnectionTest do
   end
 
   test "inserts and selects nullable/default values", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS connection_test_nulls")
-
     Help.query!("""
     CREATE TABLE connection_test_nulls (
       a UInt8,
@@ -161,7 +155,7 @@ defmodule Ch.ConnectionTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_test_nulls") end)
+    on_exit(fn -> Help.query!("DROP TABLE connection_test_nulls") end)
 
     rowbinary =
       RowBinary.encode_rows(
@@ -177,8 +171,6 @@ defmodule Ch.ConnectionTest do
   end
 
   test "inserts RowBinaryWithNamesAndTypes", %{pool: pool} do
-    Help.query!("DROP TABLE IF EXISTS connection_test_names_types")
-
     Help.query!("""
     CREATE TABLE connection_test_names_types (
       country_code FixedString(2),
@@ -187,7 +179,7 @@ defmodule Ch.ConnectionTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_test_names_types") end)
+    on_exit(fn -> Help.query!("DROP TABLE connection_test_names_types") end)
 
     names = ["country_code", "rare_string", "maybe_int32"]
     types = ["FixedString(2)", "LowCardinality(String)", "Nullable(Int32)"]
