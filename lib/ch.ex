@@ -12,6 +12,8 @@ defmodule Ch do
   {:ok, pool} = Ch.start_link(pool_size: 50, url: "http://localhost:8123")
   {:ok, resp_headers, data} = Ch.query(pool, "select number from numbers({count:UInt16})", %{"count" => 50000}, headers: req_headers)
   Ch.HTTP.decode(resp_headers, data)
+
+  https://github.com/ClickHouse/ClickHouse/issues/71591#issuecomment-3301331070
   """
   @behaviour NimblePool
 
