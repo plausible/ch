@@ -1,5 +1,7 @@
 url = "http://localhost:8123"
 
+Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
+
 {:ok, _pid} = Help.start_link_pool(url)
 
 version =
