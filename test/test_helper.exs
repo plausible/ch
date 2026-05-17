@@ -1,46 +1,39 @@
-clickhouse_available? =
-  case :httpc.request(:get, {~c"http://localhost:8123/ping", []}, [], []) do
-    {:ok, {{_version, _status = 200, _reason}, _headers, ~c"Ok.\n"}} ->
-      true
+url = "http://localhost:8123"
 
-    {:error, {:failed_connect, [{:to_address, _to_address}, {:inet, [:inet], :econnrefused}]}} ->
-      false
+{:ok, _pid} = Help.start_link_pool(url)
+
+version =
+  case Help.query("select version()") do
+    {:ok, %{rows: [[version]]}} ->
+      version
+
+    {:error, reason} ->
+      Mix.shell().error("""
+      ClickHouse is not detected at #{url}: #{Exception.message(reason)}
+
+      Please start the container with the following command:
+
+          docker compose up -d clickhouse
+      """)
+
+      System.halt(1)
   end
 
-unless clickhouse_available? do
-  Mix.shell().error("""
-  ClickHouse is not detected at localhost:8123! Please start the local container with the following command:
-
-      docker compose up -d clickhouse
-  """)
-
-  System.halt(1)
-end
-
-Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
-default_test_db = System.get_env("CH_DATABASE", "ch_elixir_test")
-Application.put_env(:ch, :database, default_test_db)
-
-Ch.Test.query(
-  "DROP DATABASE IF EXISTS {db:Identifier}",
-  %{"db" => default_test_db},
-  database: "default"
-)
-
-Ch.Test.query(
-  "CREATE DATABASE {db:Identifier}",
-  %{"db" => default_test_db},
-  database: "default"
-)
-
-%{rows: [[ch_version]]} = Ch.Test.query("SELECT version()")
-
-extra_exclude =
-  if ch_version >= "25" do
+exclude =
+  if version >= "25" do
     []
   else
     # Time, Variant, JSON, and Dynamic types are not supported in older ClickHouse versions we have in the CI
     [:time, :variant, :json, :dynamic]
   end
 
-ExUnit.start(exclude: [:slow | extra_exclude])
+assert_receive_timeout =
+  if System.get_env("CI") do
+    to_timeout(second: 5)
+  else
+    to_timeout(second: 1)
+  end
+
+Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
+
+ExUnit.start(exclude: exclude, assert_receive_timeout: assert_receive_timeout)

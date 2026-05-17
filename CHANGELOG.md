@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking:** replace DBConnection with NimblePool.
+- **Breaking:** require Elixir 1.18 or later for the built-in `JSON` module and Erlang/OTP 28 or later for `:zstd`.
+- **Breaking:** `Ch.start_link/1` no longer accepts DBConnection options or connection-level ClickHouse options such as `:database`, `:username`, `:password`, `:settings`, `:timeout`, `:scheme`, `:hostname`, `:port`, and `:transport_opts`. Use `:url` for the endpoint, pass ClickHouse settings per query with `Ch.query/4`'s `:settings` option, and pass ClickHouse/database/auth headers per query with `:headers`.
+- **Breaking:** remove DBConnection compatibility APIs and structs such as `Ch.stream/4`, `Ch.run/3`, `Ch.Query`, `Ch.Stream`, DBConnection transactions/checkouts, and DBConnection streaming/collectable inserts.
+- **Breaking:** `Ch.query/4` only accepts named query parameters as a map. Positional and pseudo-positional params such as `[value]` with `{$0:Type}` are no longer supported.
+- **Breaking:** remove query command detection and the `:command` query option.
+- **Breaking:** remove query options `:format`, `:types`, `:encode`, `:decode`, and `:multipart`. Use an `x-clickhouse-format` header or explicit `FORMAT ...` SQL for formats, and pass already-encoded request bodies for inserts.
+- **Breaking:** remove automatic RowBinary insert encoding from `Ch.query/4`. Call `Ch.RowBinary.encode_rows/2` or `Ch.RowBinary.encode_names_and_types/2` explicitly and pass the resulting iodata in the query body.
+- **Breaking:** remove multipart query parameter requests for now. `multipart: true` is no longer supported; see https://github.com/plausible/ch/issues/344 for restoring it.
+- **Breaking:** `Ch.query/4` now returns `%Ch.Result{names: names, rows: rows, headers: headers, data: data}` for successful responses. Decoded `RowBinaryWithNamesAndTypes` responses populate `:names` and `:rows`; raw formats, inserts, DDL, and other empty responses keep the response body in `:data` and leave `:names` and `:rows` as `nil`.
+- **Breaking:** successful inserts, DDL, and other empty responses no longer return `%Ch.Result{command: command, num_rows: num_rows}`. `x-clickhouse-summary` written-row counts are no longer surfaced.
+- **Breaking:** `Ch.RowBinary` no longer has a separate `:binary` type. Use `:string` for ClickHouse `String`; it now preserves raw bytes and no longer replaces invalid UTF-8 with the replacement character.
+- Remove the `Jason` dependency. JSON encoding/decoding now uses Elixir's built-in `JSON` module.
+- Add explicit request and response compression support through HTTP headers. `zstd` and `gzip` response bodies are decompressed automatically for decoded `RowBinaryWithNamesAndTypes` and error responses; raw successful responses are kept as received in `Ch.Result.data`.
+
 ## 0.8.3 (2026-05-12)
 
 - use DBConnection v2.10 https://github.com/plausible/ch/pull/339

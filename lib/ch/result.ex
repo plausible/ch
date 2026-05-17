@@ -1,28 +1,31 @@
 defmodule Ch.Result do
   @moduledoc """
-  Result struct returned from any successful query.
+  ClickHouse query result.
+
+  `Ch.query/4` returns this struct for successful responses.
   """
 
-  defstruct [:command, :num_rows, :columns, :rows, :headers, :data]
+  defstruct [
+    :names,
+    :rows,
+    :headers,
+    :data
+  ]
 
   @typedoc """
-  The Result struct.
+  Query result.
 
   ## Fields
 
-    * `:command` - An atom of the query command, for example: `:select`, `:insert`
-    * `:columns` - A list of column names
-    * `:rows` - A list of lists (each inner list corresponding to a row, each element in the inner list corresponds to a column)
-    * `:num_rows` - The number of fetched or affected rows
-    * `:headers` - The HTTP response headers
-    * `:data` - The raw iodata from the response
+    * `:names` - Column names returned by ClickHouse, or `nil` when Ch did not decode rows.
+    * `:rows` - Decoded rows, or `nil` when Ch did not decode rows.
+    * `:headers` - HTTP response headers.
+    * `:data` - Raw response body iodata as received from ClickHouse.
   """
   @type t :: %__MODULE__{
-          command: Ch.Query.command() | nil,
-          num_rows: non_neg_integer | nil,
-          columns: [String.t()] | nil,
-          rows: [[term]] | iodata | nil,
+          names: [String.t()] | nil,
+          rows: [[term]] | nil,
           headers: Mint.Types.headers(),
-          data: iodata
+          data: iodata | nil
         }
 end
