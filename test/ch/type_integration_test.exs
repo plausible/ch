@@ -1,5 +1,6 @@
 defmodule Ch.TypeIntegrationTest do
   use ExUnit.Case, async: true
+  use ExUnitProperties
 
   alias Ch.RowBinary
 
@@ -7,31 +8,51 @@ defmodule Ch.TypeIntegrationTest do
     {:ok, pool: start_supervised!(Ch)}
   end
 
-  test "integer params round-trip", %{pool: pool} do
-    assert Ch.query!(
-             pool,
-             """
-             SELECT
-               {i8:Int8},
-               {i16:Int16},
-               {i32:Int32},
-               {i64:Int64},
-               {u8:UInt8},
-               {u16:UInt16},
-               {u32:UInt32},
-               {u64:UInt64}
-             """,
-             %{
-               "i8" => -1,
-               "i16" => -1000,
-               "i32" => 100_000,
-               "i64" => -1_000_000,
-               "u8" => 1,
-               "u16" => 1000,
-               "u32" => 100_000,
-               "u64" => 1_000_000
-             }
-           ).rows == [[-1, -1000, 100_000, -1_000_000, 1, 1000, 100_000, 1_000_000]]
+  property "integer params round-trip across ClickHouse integer widths", %{pool: pool} do
+    check all {type, value} <- integer_param() do
+      assert Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}).rows == [[value]]
+    end
+  end
+
+  property "fixed string params are padded to their declared size", %{pool: pool} do
+    check all {size, value} <- fixed_string_param() do
+      padding = :binary.copy(<<0>>, size - byte_size(value))
+
+      assert Ch.query!(pool, "SELECT {value:FixedString(#{size})}", %{"value" => value}).rows ==
+               [[value <> padding]]
+    end
+  end
+
+  property "decimal params preserve Decimal(18, 4) scale", %{pool: pool} do
+    check all value <- decimal_param() do
+      assert Ch.query!(pool, "SELECT {value:Decimal(18, 4)}", %{"value" => value}).rows ==
+               [[Decimal.round(value, 4)]]
+    end
+  end
+
+  property "uuid params accept canonical text and decode to 16 bytes", %{pool: pool} do
+    check all {uuid_text, uuid_bin} <- uuid_param() do
+      assert Ch.query!(pool, "SELECT {value:UUID}, toString({value:UUID})", %{
+               "value" => uuid_text
+             }).rows == [[uuid_bin, String.downcase(uuid_text)]]
+    end
+  end
+
+  property "DateTime64 UTC params preserve microseconds", %{pool: pool} do
+    check all dt <- utc_datetime64() do
+      assert Ch.query!(pool, "SELECT {value:DateTime64(6, 'UTC')}", %{"value" => dt}).rows ==
+               [[dt]]
+    end
+  end
+
+  property "map and tuple params round-trip", %{pool: pool} do
+    check all map <- map_of(safe_string(), integer(0..255), max_length: 8),
+              tuple <- tuple_param() do
+      assert Ch.query!(pool, "SELECT {map:Map(String, UInt8)}, {tuple:Tuple(Int8, String)}", %{
+               "map" => map,
+               "tuple" => tuple
+             }).rows == [[map, tuple]]
+    end
   end
 
   test "fixed strings", %{pool: pool} do
@@ -109,6 +130,24 @@ defmodule Ch.TypeIntegrationTest do
              [4, false, 0],
              [5, true, 5]
            ]
+  end
+
+  property "Bool values inserted as RowBinary round-trip", %{pool: pool} do
+    Help.query!("CREATE TABLE type_integration_bool_property(id UInt8, b Bool) ENGINE Memory")
+    on_exit(fn -> Help.query!("DROP TABLE type_integration_bool_property") end)
+
+    check all rows <- bool_rows() do
+      Ch.query!(pool, "TRUNCATE TABLE type_integration_bool_property")
+
+      rowbinary = RowBinary.encode_rows(rows, ["UInt8", "Bool"])
+
+      Ch.query!(pool, [
+        "INSERT INTO type_integration_bool_property FORMAT RowBinary\n" | rowbinary
+      ])
+
+      assert Ch.query!(pool, "SELECT * FROM type_integration_bool_property ORDER BY id").rows ==
+               Enum.sort_by(rows, &List.first/1)
+    end
   end
 
   test "uuid", %{pool: pool} do
@@ -226,5 +265,86 @@ defmodule Ch.TypeIntegrationTest do
                  "2019-01-01 00:00:00.123"
                ]
              ]
+  end
+
+  defp integer_param do
+    one_of([
+      typed_integer("Int8", -128..127),
+      typed_integer("Int16", -32_768..32_767),
+      typed_integer("Int32", -2_147_483_648..2_147_483_647),
+      typed_integer("Int64", -9_007_199_254_740_992..9_007_199_254_740_991),
+      typed_integer("UInt8", 0..255),
+      typed_integer("UInt16", 0..65_535),
+      typed_integer("UInt32", 0..4_294_967_295),
+      typed_integer("UInt64", 0..9_007_199_254_740_991)
+    ])
+  end
+
+  defp typed_integer(type, range) do
+    gen all value <- integer(range) do
+      {type, value}
+    end
+  end
+
+  defp fixed_string_param do
+    gen all size <- integer(1..12),
+            value <- string(:alphanumeric, max_length: size) do
+      {size, value}
+    end
+  end
+
+  defp decimal_param do
+    gen all sign <- member_of([1, -1]),
+            coef <- integer(0..999_999_999),
+            exp <- integer(-4..4) do
+      Decimal.new(sign, coef, exp)
+    end
+  end
+
+  defp uuid_param do
+    gen all bytes <- binary(length: 16) do
+      <<a::binary-size(4), b::binary-size(2), c::binary-size(2), d::binary-size(2),
+        e::binary-size(6)>> = bytes
+
+      uuid =
+        [a, b, c, d, e]
+        |> Enum.map_join("-", &Base.encode16(&1, case: :lower))
+
+      {uuid, bytes}
+    end
+  end
+
+  defp utc_datetime64 do
+    gen all date <- date_gen(),
+            hour <- integer(0..23),
+            minute <- integer(0..59),
+            second <- integer(0..59),
+            microsecond <- integer(0..999_999) do
+      DateTime.new!(date, Time.new!(hour, minute, second, {microsecond, 6}), "Etc/UTC")
+    end
+  end
+
+  defp tuple_param do
+    gen all n <- integer(-128..127),
+            string <- safe_string() do
+      {n, string}
+    end
+  end
+
+  defp bool_rows do
+    gen all ids <- uniq_list_of(integer(0..255), max_length: 32),
+            values <- list_of(boolean(), length: length(ids)) do
+      Enum.zip_with(ids, values, fn id, value -> [id, value] end)
+    end
+  end
+
+  defp date_gen do
+    gen all days <- integer(0..20_000) do
+      Date.add(~D[1970-01-01], days)
+    end
+  end
+
+  defp safe_string do
+    string(:printable, max_length: 32)
   end
 end

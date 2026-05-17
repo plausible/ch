@@ -98,8 +98,7 @@ defmodule Ch.QueryStringTest do
     # https://clickhouse.com/docs/en/interfaces/http#tabs-in-url-parameters
     # "escaped" format is the same as https://clickhouse.com/docs/en/interfaces/formats#tabseparated-data-formatting
     property "string parameters round-trip through ClickHouse", %{pool: pool} do
-      check all string <- safe_string(),
-                max_runs: 50 do
+      check all string <- safe_string() do
         assert Ch.query!(pool, "select {s:String}", %{"s" => string}).rows == [[string]]
       end
     end

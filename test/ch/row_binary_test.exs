@@ -164,26 +164,17 @@ defmodule Ch.RowBinaryTest do
     end
   end
 
-  test "utf8" do
-    # example from https://clickhouse.com/docs/en/sql-reference/functions/string-functions/#tovalidutf8
+  test "strings preserve raw bytes" do
     value = "\x61\xF0\x80\x80\x80b"
-    bin = IO.iodata_to_binary(encode(:binary, value))
     str = IO.iodata_to_binary(encode(:string, value))
 
-    # encoding is the same since we don't want to modify the values implicitly
-    assert bin == str
-
-    # but decoding is different based on what type is provided
-    assert decode_rows(str, [:string]) == [["a�b"]]
-    assert decode_rows(bin, [:string]) == [["a�b"]]
-    assert decode_rows(str, [:binary]) == [["\x61\xF0\x80\x80\x80b"]]
-    assert decode_rows(bin, [:binary]) == [["\x61\xF0\x80\x80\x80b"]]
+    assert decode_rows(str, [:string]) == [[value]]
 
     path = "/some/url" <> <<0xAE>> <> "-/"
-    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [["/some/url�-/"]]
+    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
 
     path = <<0xAF>> <> "/some/url" <> <<0xAE, 0xFE>> <> "-/" <> <<0xFA>>
-    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [["�/some/url�-/�"]]
+    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
 
     path = "/opportunity/category/جوائز-ومسابقات"
     assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
@@ -777,19 +768,19 @@ defmodule Ch.RowBinaryTest do
       assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "long strings and binaries" do
+    test "long strings" do
       long_string = String.duplicate("a", 50_000)
-      long_binary = String.duplicate(<<0xA>>, 50_000)
+      long_byte_string = String.duplicate(<<0xA>>, 50_000)
 
       data =
         [
-          [encode(:string, long_string), encode(:binary, long_binary)],
-          [encode(:string, long_string <> "b"), encode(:binary, long_binary <> <<0xB>>)]
+          [encode(:string, long_string), encode(:string, long_byte_string)],
+          [encode(:string, long_string <> "b"), encode(:string, long_byte_string <> <<0xB>>)]
         ]
 
-      assert byte_by_byte(data, [:string, :binary]) == [
-               [long_string, long_binary],
-               [long_string <> "b", long_binary <> <<0xB>>]
+      assert byte_by_byte(data, [:string, :string]) == [
+               [long_string, long_byte_string],
+               [long_string <> "b", long_byte_string <> <<0xB>>]
              ]
     end
   end

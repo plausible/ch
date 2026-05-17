@@ -20,9 +20,8 @@ defmodule Ch.ConnectionTest do
   end
 
   test "creates and drops a table", %{pool: pool} do
-    on_exit(fn -> Help.query!("DROP TABLE IF EXISTS connection_test_create") end)
-
     Ch.query!(pool, "CREATE TABLE connection_test_create(a UInt8) ENGINE Memory")
+    on_exit(fn -> Help.query!("DROP TABLE connection_test_create") end)
 
     assert Ch.query!(pool, "SHOW TABLES LIKE 'connection_test_create'").rows == [
              ["connection_test_create"]

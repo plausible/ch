@@ -347,9 +347,10 @@ defmodule Ch do
 
   defp maybe_decompress(data, headers) do
     case get_header(headers, "content-encoding") do
-      "zstd" -> :zstd.decompress(data)
-      "gzip" -> :zlib.gunzip(data)
+      "zstd" when data != nil -> data |> IO.iodata_to_binary() |> :zstd.decompress()
+      "gzip" when data != nil -> data |> IO.iodata_to_binary() |> :zlib.gunzip()
       nil -> data
+      _ when data == nil -> data
       other -> raise "unsupported content encoding: #{inspect(other)}"
     end
   end
@@ -358,13 +359,14 @@ defmodule Ch do
     format = get_header(headers, "x-clickhouse-format")
 
     if format == "RowBinaryWithNamesAndTypes" do
-      [names | rows] =
-        body
-        |> maybe_decompress(headers)
-        |> IO.iodata_to_binary()
-        |> Ch.RowBinary.decode_names_and_rows()
+      case body |> maybe_decompress(headers) |> response_body_to_binary() do
+        "" ->
+          {:ok, nil}
 
-      {:ok, %{names: names, rows: rows}}
+        data ->
+          [names | rows] = Ch.RowBinary.decode_names_and_rows(data)
+          {:ok, %{names: names, rows: rows}}
+      end
     else
       {:ok, body}
     end
@@ -376,9 +378,16 @@ defmodule Ch do
         String.to_integer(code)
       end
 
-    message = IO.iodata_to_binary(body)
+    message =
+      body
+      |> maybe_decompress(headers)
+      |> response_body_to_binary()
+
     {:error, %Ch.Error{code: code, message: message}}
   end
+
+  defp response_body_to_binary(nil), do: ""
+  defp response_body_to_binary(body), do: IO.iodata_to_binary(body)
 
   @compile inline: [get_header: 2]
   defp get_header(headers, name) do

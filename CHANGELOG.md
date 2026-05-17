@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-- replace DBConnection with NimblePool
+- **Breaking:** replace DBConnection with NimblePool.
+- **Breaking:** `Ch.start_link/1` no longer accepts DBConnection options or connection-level ClickHouse options such as `:database`, `:username`, `:password`, `:settings`, `:timeout`, `:scheme`, `:hostname`, `:port`, and `:transport_opts`. Use `:url` for the endpoint, pass ClickHouse settings per query with `Ch.query/4`'s `:settings` option, and pass ClickHouse/database/auth headers per query with `:headers`.
+- **Breaking:** remove DBConnection compatibility APIs and structs such as `Ch.stream/4`, `Ch.run/3`, `Ch.Query`, and `%Ch.Result{}`. `Ch.query/4` now returns decoded `RowBinaryWithNamesAndTypes` as `%{names: names, rows: rows}`, raw response bodies for other formats, or `nil` for empty successful responses.
+- **Breaking:** `Ch.RowBinary` no longer has a separate `:binary` type. Use `:string` for ClickHouse `String`; it now preserves raw bytes and no longer replaces invalid UTF-8 with the replacement character.
 
 ## 0.8.3 (2026-05-12)
 

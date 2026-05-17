@@ -91,7 +91,6 @@ defmodule Ch.RowBinary do
   defp encoding_type(t)
        when t in [
               :string,
-              :binary,
               :json,
               :dynamic,
               :boolean,
@@ -184,7 +183,7 @@ defmodule Ch.RowBinary do
   def encode(:varint, i) when is_integer(i) and i < 128, do: i
   def encode(:varint, i) when is_integer(i), do: encode_varint_cont(i)
 
-  def encode(type, str) when type in [:string, :binary] do
+  def encode(:string, str) do
     case str do
       _ when is_binary(str) -> [encode(:varint, byte_size(str)) | str]
       _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
@@ -700,7 +699,6 @@ defmodule Ch.RowBinary do
   defp decoding_type(t)
        when t in [
               :string,
-              :binary,
               :json,
               :dynamic,
               :boolean,
@@ -821,54 +819,13 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [to_utf8(s) | row], rows, types)
+      decode_rows(types_rest, bin, [s | row], rows, types)
     end
   end
 
   defp decode_string_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
     to_be_continued(rows, bin, [:string | types_rest], row)
   end
-
-  @doc false
-  def to_utf8(str) do
-    utf8 = to_utf8(str, 0, 0, str, [])
-    IO.iodata_to_binary(utf8)
-  end
-
-  @dialyzer {:no_improper_lists, to_utf8: 5, to_utf8_escape: 5}
-
-  defp to_utf8(<<valid::utf8, rest::bytes>>, from, len, original, acc) do
-    to_utf8(rest, from, len + utf8_size(valid), original, acc)
-  end
-
-  defp to_utf8(<<_invalid, rest::bytes>>, from, len, original, acc) do
-    acc = [acc | binary_part(original, from, len)]
-    to_utf8_escape(rest, from + len, 1, original, acc)
-  end
-
-  defp to_utf8(<<>>, from, len, original, acc) do
-    [acc | binary_part(original, from, len)]
-  end
-
-  defp to_utf8_escape(<<valid::utf8, rest::bytes>>, from, len, original, acc) do
-    acc = [acc | "�"]
-    to_utf8(rest, from + len, utf8_size(valid), original, acc)
-  end
-
-  defp to_utf8_escape(<<_invalid, rest::bytes>>, from, len, original, acc) do
-    to_utf8_escape(rest, from, len + 1, original, acc)
-  end
-
-  defp to_utf8_escape(<<>>, _from, _len, _original, acc) do
-    [acc | "�"]
-  end
-
-  # UTF-8 encodes code points in one to four bytes
-  @compile inline: [utf8_size: 1]
-  defp utf8_size(codepoint) when codepoint <= 0x7F, do: 1
-  defp utf8_size(codepoint) when codepoint <= 0x7FF, do: 2
-  defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
-  defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
   @compile inline: [decode_string_json_decode_rows: 5]
 
@@ -886,24 +843,6 @@ defmodule Ch.RowBinary do
 
   defp decode_string_json_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
     to_be_continued(rows, bin, [:json | types_rest], row)
-  end
-
-  @compile inline: [decode_binary_decode_rows: 5]
-
-  for {pattern, size} <- varints do
-    defp decode_binary_decode_rows(
-           <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
-           types_rest,
-           row,
-           rows,
-           types
-         ) do
-      decode_rows(types_rest, bin, [s | row], rows, types)
-    end
-  end
-
-  defp decode_binary_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
-    to_be_continued(rows, bin, [:binary | types_rest], row)
   end
 
   @compile inline: [decode_array_decode_rows: 6]
@@ -1322,9 +1261,6 @@ defmodule Ch.RowBinary do
       :string ->
         decode_string_decode_rows(bin, types_rest, row, rows, types)
 
-      :binary ->
-        decode_binary_decode_rows(bin, types_rest, row, rows, types)
-
       :json ->
         # assuming it arrives as text and not "native" binary JSON
         # i.e. assumes `settings: [output_format_binary_write_json_as_string: 1]`
@@ -1337,7 +1273,6 @@ defmodule Ch.RowBinary do
       {:dynamic, dynamic} ->
         decode_dynamic(bin, dynamic, types_rest, row, rows, types)
 
-      # TODO utf8?
       {:fixed_string, size} ->
         case bin do
           <<s::size(^size)-bytes, rest::bytes>> ->
