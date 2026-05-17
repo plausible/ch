@@ -73,7 +73,7 @@ defmodule Ch.MixProject do
       source_url: @source_url,
       source_ref: "v#{@version}",
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md"],
+      extras: ["README.md", "CHANGELOG.md", "pages/datetime-timezones.md"],
       skip_undefined_reference_warnings_on: ["CHANGELOG.md"]
     ]
   end
