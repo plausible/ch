@@ -111,31 +111,43 @@ defmodule Ch.RowBinaryTest do
     end
 
     test "encoding type aliases" do
-      assert encoding_types([{:datetime, "UTC"}]) == [:datetime]
+      assert encoding_types([{:datetime, "UTC"}]) == [{:datetime, "UTC"}]
+      assert encoding_types([{:datetime, "Europe/Vienna"}]) == [{:datetime, "Europe/Vienna"}]
       assert encoding_types([{:datetime64, 6}]) == [datetime64: 1_000_000]
-      assert encoding_types([{:datetime64, 3, "UTC"}]) == [datetime64: 1000]
+      assert encoding_types([{:datetime64, 3, "UTC"}]) == [{:datetime64, 1000, "UTC"}]
+
+      assert encoding_types([{:datetime64, 3, "Europe/Vienna"}]) ==
+               [{:datetime64, 1000, "Europe/Vienna"}]
+
       assert encoding_types([{:decimal, 9, 4}]) == [decimal32: 4]
       assert encoding_types([{:decimal, 18, 4}]) == [decimal64: 4]
       assert encoding_types([{:decimal, 38, 4}]) == [decimal128: 4]
       assert encoding_types([{:decimal, 76, 4}]) == [decimal256: 4]
       assert encoding_types([{:simple_aggregate_function, "any", :u8}]) == [:u8]
 
-      # See https://github.com/plausible/ch/issues/353
-      assert_raise ArgumentError,
-                   "can't encode DateTime with non-UTC timezone: \"Europe/Vienna\"",
-                   fn ->
-                     encoding_types([{:datetime, "Europe/Vienna"}])
-                   end
-
-      assert_raise ArgumentError,
-                   "can't encode DateTime64 with non-UTC timezone: \"Europe/Vienna\"",
-                   fn ->
-                     encoding_types([{:datetime64, 3, "Europe/Vienna"}])
-                   end
-
       assert_raise ArgumentError, "unsupported type for encoding: :unsupported", fn ->
         encoding_types([:unsupported])
       end
+    end
+
+    test "timezone-qualified datetime encodes naive values in the annotated timezone" do
+      types = ["DateTime('Europe/Vienna')", "DateTime64(3, 'Europe/Vienna')"]
+
+      rows = [
+        [~N[2022-01-01 12:00:00], ~N[2022-07-01 12:00:00.123456]],
+        [~U[2022-01-01 12:00:00Z], ~U[2022-07-01 12:00:00.123456Z]]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == [
+               [
+                 DateTime.from_naive!(~N[2022-01-01 12:00:00], "Europe/Vienna"),
+                 DateTime.from_naive!(~N[2022-07-01 12:00:00.123], "Europe/Vienna")
+               ],
+               [
+                 DateTime.shift_zone!(~U[2022-01-01 12:00:00Z], "Europe/Vienna"),
+                 DateTime.shift_zone!(~U[2022-07-01 12:00:00.123Z], "Europe/Vienna")
+               ]
+             ]
     end
 
     test "decimal" do
