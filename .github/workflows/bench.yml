@@ -32,7 +32,7 @@ jobs:
             output_path: bench/output/decode-github-action-benchmark.json
 
     env:
-      MIX_ENV: bench
+      MIX_ENV: dev
       BENCHMARK_OUTPUT_PATH: ${{ matrix.output_path }}
 
     steps:
