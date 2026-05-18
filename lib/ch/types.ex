@@ -624,8 +624,16 @@ defmodule Ch.Types do
     ["DateTime64(", Integer.to_string(precision), ", '", timezone, "')"]
   end
 
+  def encode({:enum8, []}) do
+    raise ArgumentError, "Enum8 requires at least one mapping"
+  end
+
   def encode({:enum8, mapping}) do
     ["Enum8('", encode_mapping(mapping), ?)]
+  end
+
+  def encode({:enum16, []}) do
+    raise ArgumentError, "Enum16 requires at least one mapping"
   end
 
   def encode({:enum16, mapping}) do
@@ -653,6 +661,4 @@ defmodule Ch.Types do
   defp encode_mapping([{k, v} | mapping]) when is_binary(k) do
     [k, "' = ", Integer.to_string(v), ", '" | encode_mapping(mapping)]
   end
-
-  defp encode_mapping([] = empty), do: empty
 end

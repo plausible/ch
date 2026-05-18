@@ -252,7 +252,7 @@ defmodule Ch.RowBinaryFloatTest do
       gen all values <- list_of(finite_float32_param(), max_length: 8) do
         {"Float32", values, Enum.map(values, &f32/1)}
       end,
-      gen all values <- list_of(finite_float(), max_length: 8) do
+      gen all values <- list_of(finite_float32_param(), max_length: 8) do
         {"Float64", values, values}
       end
     ])
