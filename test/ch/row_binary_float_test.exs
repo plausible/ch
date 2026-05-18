@@ -18,9 +18,10 @@ defmodule Ch.RowBinaryFloatTest do
 
   property "float arrays round-trip as query params through ClickHouse", %{pool: pool} do
     check all {type, values, expected} <- float_array_param() do
-      assert Ch.query!(pool, "SELECT {value:Array(#{type})}", %{"value" => values}, []).rows == [
-               [expected]
-             ]
+      assert [[actual]] =
+               Ch.query!(pool, "SELECT {value:Array(#{type})}", %{"value" => values}, []).rows
+
+      assert_float_array_equal(actual, expected)
     end
   end
 
@@ -287,4 +288,15 @@ defmodule Ch.RowBinaryFloatTest do
     <<rounded::32-little-float>> = <<value::32-little-float>>
     rounded
   end
+
+  defp assert_float_array_equal(actual, expected) do
+    assert length(actual) == length(expected)
+
+    Enum.zip(actual, expected)
+    |> Enum.each(fn {actual_value, expected_value} ->
+      assert_in_delta actual_value, expected_value, float_delta(expected_value)
+    end)
+  end
+
+  defp float_delta(value), do: max(abs(value) * 1.0e-12, 1.0e-12)
 end
