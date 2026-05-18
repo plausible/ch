@@ -144,7 +144,10 @@ defmodule Ch.HTTP do
 
   defp encode_array_param(nil), do: "null"
 
-  defp encode_array_param(%s{} = param) when s in [Date, NaiveDateTime] do
+  # DateTime64 array literals parse unquoted numbers as scaled ticks, while
+  # scalar query params parse the same text as seconds. Quote DateTime values so
+  # ClickHouse uses timestamp parsing inside arrays, tuples, and maps too.
+  defp encode_array_param(%s{} = param) when s in [Date, NaiveDateTime, DateTime] do
     [?', encode_param(param), ?']
   end
 
