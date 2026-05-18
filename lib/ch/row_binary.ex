@@ -227,16 +227,31 @@ defmodule Ch.RowBinary do
   end
 
   for size <- [16, 32, 64, 128, 256] do
-    def encode(unquote(:"u#{size}"), u) when is_integer(u) do
+    unsigned_max = (1 <<< size) - 1
+    signed_min = -(1 <<< (size - 1))
+    signed_max = (1 <<< (size - 1)) - 1
+    uint = :"u#{size}"
+    int = :"i#{size}"
+
+    def encode(unquote(uint), u) when is_integer(u) and u >= 0 and u <= unquote(unsigned_max) do
       <<u::unquote(size)-little>>
     end
 
-    def encode(unquote(:"i#{size}"), i) when is_integer(i) do
+    def encode(unquote(int), i)
+        when is_integer(i) and i >= unquote(signed_min) and i <= unquote(signed_max) do
       <<i::unquote(size)-little-signed>>
     end
 
-    def encode(unquote(:"u#{size}"), nil), do: <<0::unquote(size)>>
-    def encode(unquote(:"i#{size}"), nil), do: <<0::unquote(size)>>
+    def encode(unquote(uint), nil), do: <<0::unquote(size)>>
+    def encode(unquote(int), nil), do: <<0::unquote(size)>>
+
+    def encode(unquote(uint), term) do
+      raise ArgumentError, "invalid UInt#{unquote(size)}: #{inspect(term)}"
+    end
+
+    def encode(unquote(int), term) do
+      raise ArgumentError, "invalid Int#{unquote(size)}: #{inspect(term)}"
+    end
   end
 
   for size <- [32, 64] do
