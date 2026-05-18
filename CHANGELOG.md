@@ -16,6 +16,7 @@
 - **Breaking:** `Ch.RowBinary` no longer has a separate `:binary` type. Use `:string` for ClickHouse `String`; it now preserves raw bytes and no longer replaces invalid UTF-8 with the replacement character.
 - Remove the `Jason` dependency. JSON encoding/decoding now uses Elixir's built-in `JSON` module.
 - Add explicit request and response compression support through HTTP headers. `zstd` and `gzip` response bodies are decompressed automatically for decoded `RowBinaryWithNamesAndTypes` and error responses; raw successful responses are kept as received in `Ch.Result.data`.
+- Fix `Time64` RowBinary encoding for precisions below microseconds.
 
 ## 0.8.3 (2026-05-12)
 
