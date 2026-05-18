@@ -11,6 +11,28 @@ defmodule Ch.ConnectionTest do
     assert Ch.query!(pool, "select 1").rows == [[1]]
   end
 
+  test "validates pool options" do
+    assert {:ok, pool} = Ch.start_link(name: :ch_connection_test_pool)
+    Ch.stop(pool)
+
+    start_supervised!({Registry, keys: :unique, name: :ch_connection_test_registry})
+    via = {:via, Registry, {:ch_connection_test_registry, "pool"}}
+
+    assert {:ok, pool} = Ch.start_link(name: via)
+    Ch.stop(pool)
+
+    assert_raise NimbleOptions.ValidationError,
+                 ~s[invalid value for :name option: expected :name to be an atom or a {:via, module, term} tuple, got: "pool"],
+                 fn -> Ch.start_link(name: "pool") end
+
+    assert {:ok, pool} = Ch.start_link(url: "https://localhost:8123")
+    Ch.stop(pool)
+
+    assert_raise ArgumentError, "unexpected HTTP scheme: \"tcp\"", fn ->
+      Ch.start_link(url: "tcp://localhost:9000")
+    end
+  end
+
   test "selects with named params", %{pool: pool} do
     assert Ch.query!(pool, "select {a:UInt8}", %{"a" => 1}).rows == [[1]]
     assert Ch.query!(pool, "select {b:Bool}", %{"b" => true}).rows == [[true]]

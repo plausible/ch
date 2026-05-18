@@ -263,7 +263,10 @@ defmodule Ch.QueryStringTest do
   end
 
   defp query_options do
-    uniq_list_of({safe_key(), one_of([integer(), boolean(), safe_string()])}, max_length: 8)
+    gen all options <-
+              map_of(safe_key(), one_of([integer(), boolean(), safe_string()]), max_length: 8) do
+      Map.to_list(options)
+    end
   end
 
   defp param do
