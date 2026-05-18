@@ -580,9 +580,9 @@ defmodule Ch.Types do
   end
 
   def encode(:datetime), do: "DateTime"
-  def encode({:time64, p}), do: ["Time64(", String.Chars.Integer.to_string(p), ?)]
+  def encode({:time64, p}), do: ["Time64(", Integer.to_string(p), ?)]
   def encode({:nullable, type}), do: ["Nullable(", encode(type), ?)]
-  def encode({:fixed_string, n}), do: ["FixedString(", String.Chars.Integer.to_string(n), ?)]
+  def encode({:fixed_string, n}), do: ["FixedString(", Integer.to_string(n), ?)]
   def encode({:array, type}), do: ["Array(", encode(type), ?)]
   def encode({:tuple, types}), do: ["Tuple(", encode_intersperse(types, ", "), ?)]
   def encode({:variant, types}), do: ["Variant(", encode_intersperse(types, ", "), ?)]
@@ -610,13 +610,7 @@ defmodule Ch.Types do
   end
 
   def encode({:decimal, precision, scale}) do
-    [
-      "Decimal(",
-      String.Chars.Integer.to_string(precision),
-      ", ",
-      String.Chars.Integer.to_string(scale),
-      ?)
-    ]
+    ["Decimal(", Integer.to_string(precision), ", ", Integer.to_string(scale), ?)]
   end
 
   def encode({:datetime, timezone}) when is_binary(timezone) do
@@ -624,11 +618,11 @@ defmodule Ch.Types do
   end
 
   def encode({:datetime64, precision}) do
-    ["DateTime64(", String.Chars.Integer.to_string(precision), ?)]
+    ["DateTime64(", Integer.to_string(precision), ?)]
   end
 
   def encode({:datetime64, precision, timezone}) when is_binary(timezone) do
-    ["DateTime64(", String.Chars.Integer.to_string(precision), ", '", timezone, "')"]
+    ["DateTime64(", Integer.to_string(precision), ", '", timezone, "')"]
   end
 
   def encode({:enum8, mapping}) do
@@ -654,11 +648,11 @@ defmodule Ch.Types do
   defp encode_intersperse([] = empty, _separator), do: empty
 
   defp encode_mapping([{k, v}]) when is_binary(k) do
-    [k, "' = ", String.Chars.Integer.to_string(v)]
+    [k, "' = ", Integer.to_string(v)]
   end
 
   defp encode_mapping([{k, v} | mapping]) when is_binary(k) do
-    [k, "' = ", String.Chars.Integer.to_string(v), ", '" | encode_mapping(mapping)]
+    [k, "' = ", Integer.to_string(v), ", '" | encode_mapping(mapping)]
   end
 
   defp encode_mapping([] = empty), do: empty

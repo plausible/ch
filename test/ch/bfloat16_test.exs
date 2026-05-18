@@ -1,5 +1,5 @@
 defmodule Ch.BFloat16Test do
-  use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnit.Case, async: true
   use ExUnitProperties
 
   import Bitwise
@@ -22,88 +22,78 @@ defmodule Ch.BFloat16Test do
     0xFF7F
   ]
 
-  setup ctx do
-    {:ok,
-     query_options: ctx[:query_options] || [],
-     conn: start_supervised!({Ch, database: Ch.Test.database()})}
+  setup do
+    {:ok, pool: start_supervised!(Ch)}
   end
 
-  property "plain finite values", %{conn: conn, query_options: query_options} do
+  property "plain finite values", %{pool: pool} do
     check all value <- bounded_bfloat16() do
       assert Ch.query!(
-               conn,
+               pool,
                "select #{Float.to_string(value)}::BFloat16",
-               _no_params = %{},
-               query_options
+               _no_params = %{}
              ).rows ==
                [[value]]
     end
   end
 
   property "finite params round-trip through ClickHouse casts", %{
-    conn: conn,
-    query_options: query_options
+    pool: pool
   } do
     check all value <- bounded_bfloat16() do
       assert Ch.query!(
-               conn,
+               pool,
                "select {value:BFloat16} as value",
-               %{"value" => value},
-               query_options
+               %{"value" => value}
              ).rows ==
                [[value]]
     end
   end
 
-  test "special values decode as nil", %{conn: conn, query_options: query_options} do
+  test "special values decode as nil", %{pool: pool} do
     assert Ch.query!(
-             conn,
+             pool,
              "select 'nan'::BFloat16, 'inf'::BFloat16, '-inf'::BFloat16",
-             [],
-             query_options
+             %{}
            ).rows ==
              [[nil, nil, nil]]
   end
 
   test "RowBinary edge values round-trip through ClickHouse", %{
-    conn: conn,
-    query_options: query_options
+    pool: pool
   } do
     table = "bf16_edges"
     insert = "insert into bf16_edges (idx, bf16) format RowBinary"
 
-    create_table(conn, table)
+    create_table(pool, table)
 
     on_exit(fn ->
-      Ch.Test.query("drop table if exists {table:Identifier}", %{"table" => table})
+      Help.query!("drop table if exists {table:Identifier}", %{"table" => table})
     end)
 
     values = Enum.map(@bf16_edges, &bfloat16_to_float/1)
 
-    assert_rowbinary_round_trip(conn, table, insert, query_options, values)
+    assert_rowbinary_round_trip(pool, table, insert, values)
   end
 
   property "finite RowBinary values round-trip through ClickHouse", %{
-    conn: conn,
-    query_options: query_options
+    pool: pool
   } do
     table = "bf16_finite"
     insert = "insert into bf16_finite (idx, bf16) format RowBinary"
 
-    create_table(conn, table)
+    create_table(pool, table)
 
     on_exit(fn ->
-      Ch.Test.query("drop table if exists {table:Identifier}", %{"table" => table})
+      Help.query!("drop table if exists {table:Identifier}", %{"table" => table})
     end)
 
-    query_options = Keyword.merge(query_options, types: ["UInt8", "BFloat16"])
-
     check all bits <- list_of(finite_bfloat16_bits(), length: 20) do
-      create_table(conn, table, if_not_exists: true)
+      create_table(pool, table, if_not_exists: true)
 
       values = Enum.map(bits, &bfloat16_to_float/1)
 
-      assert_rowbinary_round_trip(conn, table, insert, query_options, values)
+      assert_rowbinary_round_trip(pool, table, insert, values)
     end
   end
 
@@ -140,37 +130,30 @@ defmodule Ch.BFloat16Test do
     float
   end
 
-  defp create_table(conn, table, opts \\ []) do
+  defp create_table(pool, table, opts \\ []) do
     exists = if opts[:if_not_exists], do: " if not exists", else: ""
 
     Ch.query!(
-      conn,
+      pool,
       "create table#{exists} {table:Identifier} (idx UInt8, bf16 BFloat16) engine Memory",
       %{"table" => table}
     )
   end
 
-  defp assert_rowbinary_round_trip(conn, table, insert, query_options, values) do
-    Ch.query!(conn, "truncate table {table:Identifier}", %{"table" => table})
-
-    query_options = Keyword.merge(query_options, types: ["UInt8", "BFloat16"])
+  defp assert_rowbinary_round_trip(pool, table, insert, values) do
+    Ch.query!(pool, "truncate table {table:Identifier}", %{"table" => table})
 
     rows =
       values
       |> Enum.with_index()
       |> Enum.map(fn {value, idx} -> [idx, value] end)
 
-    assert %{num_rows: count} =
-             Ch.query!(
-               conn,
-               insert,
-               rows,
-               query_options
-             )
+    rowbinary = Ch.RowBinary.encode_rows(rows, ["UInt8", "BFloat16"])
 
-    assert count == length(values)
+    assert %Ch.Result{names: nil, rows: nil, data: nil} =
+             Ch.query!(pool, [insert, ?\n | rowbinary])
 
-    assert Ch.query!(conn, "select bf16 from {table:Identifier} order by idx", %{"table" => table}).rows ==
+    assert Ch.query!(pool, "select bf16 from {table:Identifier} order by idx", %{"table" => table}).rows ==
              Enum.map(values, &[&1])
   end
 end

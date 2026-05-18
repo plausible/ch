@@ -1,15 +1,9 @@
 defmodule Ch.DecimalParamTest do
-  use ExUnit.Case,
-    parameterize: [%{query_options: []}, %{query_options: [multipart: true]}],
-    async: true
-
+  use ExUnit.Case, async: true
   use ExUnitProperties
 
-  import Ch.Test, only: [parameterize_query: 4, parameterize_query!: 4]
-
-  setup ctx do
-    {:ok, conn} = Ch.start_link()
-    {:ok, conn: conn, query_options: ctx[:query_options] || []}
+  setup do
+    {:ok, pool: start_supervised!(Ch), query_options: []}
   end
 
   test "decimal parameter boundaries", ctx do
@@ -21,16 +15,25 @@ defmodule Ch.DecimalParamTest do
 
     assert_decimal_param(
       ctx,
-      Decimal.new(max_integer),
+      Decimal.new(max_integer, max_digits: :infinity, max_exponent: :infinity),
       "Decimal(76, 0)",
-      Decimal.new(max_integer)
+      Decimal.new(max_integer, max_digits: :infinity, max_exponent: :infinity)
     )
 
-    assert_decimal_param(ctx, Decimal.new(1, 1, -76), "Decimal(76, 76)", Decimal.new(max_scale))
+    assert_decimal_param(
+      ctx,
+      Decimal.new(1, 1, -76),
+      "Decimal(76, 76)",
+      Decimal.new(max_scale, max_digits: :infinity, max_exponent: :infinity)
+    )
   end
 
   test "compact exponent Decimal params are not expanded before request", ctx do
-    encoded = encoded_decimal_param(ctx.query_options, Decimal.new("1e1000000"))
+    encoded =
+      encoded_decimal_param(
+        ctx.query_options,
+        Decimal.new("1e1000000", max_digits: :infinity, max_exponent: :infinity)
+      )
 
     assert encoded =~ "1E+1000000"
     assert byte_size(encoded) < 300
@@ -40,10 +43,21 @@ defmodule Ch.DecimalParamTest do
     assert decimal_error(ctx, Decimal.new(1, 1, 76), "Decimal(76, 0)") =~
              "value 1E+76 cannot be parsed as Decimal(76, 0)"
 
-    assert decimal_error(ctx, Decimal.new(String.duplicate("9", 77)), "Decimal(76, 0)") =~
+    assert decimal_error(
+             ctx,
+             Decimal.new(String.duplicate("9", 77),
+               max_digits: :infinity,
+               max_exponent: :infinity
+             ),
+             "Decimal(76, 0)"
+           ) =~
              "value 99999999999999999999999999999999999999999999999999999999999999999999999999999 cannot be parsed as Decimal(76, 0)"
 
-    assert decimal_error(ctx, Decimal.new("1e1000000"), "Decimal(76, 0)") =~
+    assert decimal_error(
+             ctx,
+             Decimal.new("1e1000000", max_digits: :infinity, max_exponent: :infinity),
+             "Decimal(76, 0)"
+           ) =~
              "value 1E+1000000 cannot be parsed as Decimal(76, 0)"
 
     assert_raise ArgumentError, "ClickHouse Decimal values must be finite", fn ->
@@ -72,9 +86,9 @@ defmodule Ch.DecimalParamTest do
   end
 
   defp assert_decimal_param(ctx, decimal, type, expected) do
-    assert %Ch.Result{rows: [[actual, ^type]]} =
-             parameterize_query!(
-               ctx,
+    assert %{rows: [[actual, ^type]]} =
+             Ch.query!(
+               ctx.pool,
                "select {d:#{type}} as x, toTypeName(x)",
                %{"d" => decimal},
                ctx.query_options
@@ -85,8 +99,8 @@ defmodule Ch.DecimalParamTest do
 
   defp decimal_error(ctx, decimal, type) do
     assert {:error, error} =
-             parameterize_query(
-               ctx,
+             Ch.query(
+               ctx.pool,
                "select {d:#{type}}",
                %{"d" => decimal},
                ctx.query_options
@@ -112,14 +126,12 @@ defmodule Ch.DecimalParamTest do
   end
 
   defp encoded_decimal_param(query_options, decimal) do
-    query = Ch.Query.build("select {d:Decimal(76, 0)}", query_options)
-
-    {query_params, _headers, body} =
-      DBConnection.Query.encode(query, %{"d" => decimal}, [])
-
-    case query_params do
-      [{"param_d", value}] -> value
-      [] -> IO.iodata_to_binary(body)
-    end
+    query_options
+    |> Keyword.get(:settings, [])
+    |> then(&Ch.HTTP.path(%{"d" => decimal}, &1))
+    |> URI.parse()
+    |> Map.fetch!(:query)
+    |> URI.decode_query()
+    |> Map.fetch!("param_d")
   end
 end

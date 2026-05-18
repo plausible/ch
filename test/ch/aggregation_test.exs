@@ -2,12 +2,11 @@ defmodule Ch.AggregationTest do
   use ExUnit.Case, async: true
 
   setup do
-    conn = start_supervised!({Ch, database: Ch.Test.database()})
-    {:ok, conn: conn}
+    {:ok, pool: start_supervised!(Ch)}
   end
 
-  test "select SimpleAggregateFunction types", %{conn: conn} do
-    Ch.query!(conn, """
+  test "select SimpleAggregateFunction types", %{pool: pool} do
+    Help.query!("""
     CREATE TABLE candle_fragments (
       ticker LowCardinality(String),
       time DateTime('UTC') CODEC(Delta, Default),
@@ -19,7 +18,9 @@ defmodule Ch.AggregationTest do
     ORDER BY (ticker, time)
     """)
 
-    Ch.query!(conn, """
+    on_exit(fn -> Help.query!("drop table candle_fragments") end)
+
+    Help.query!("""
     CREATE MATERIALIZED VIEW candles_one_hour_amt
     (
       ticker LowCardinality(String),
@@ -43,7 +44,9 @@ defmodule Ch.AggregationTest do
     GROUP BY ticker, time
     """)
 
-    Ch.query!(conn, """
+    on_exit(fn -> Help.query!("drop view candles_one_hour_amt") end)
+
+    Ch.query!(pool, """
     INSERT INTO candle_fragments(ticker, time, high, open, close, low) VALUES
     ('INTC', '2023-04-13 20:33:00', 32, 32, 32, 32),
     ('INTC', '2023-04-13 20:34:00', 33, 33, 33, 33),
@@ -51,7 +54,8 @@ defmodule Ch.AggregationTest do
     ('INTC', '2023-04-13 20:36:00', 32, 27, 27, 27)
     """)
 
-    assert Ch.query!(conn, """
+    assert pool
+           |> Ch.query!("""
            SELECT
              t.ticker AS ticker,
              toStartOfHour(t.time) AS start_time,
@@ -63,23 +67,25 @@ defmodule Ch.AggregationTest do
              min(t.low) AS low
            FROM candles_one_hour_amt t
            GROUP BY ticker, time
-           """).rows == [
+           """)
+           |> Help.to_maps() ==
              [
-               "INTC",
-               ~U[2023-04-13 20:00:00Z],
-               ~U[2023-04-13 21:00:00Z],
-               ~D[2023-04-13],
-               33.0,
-               32.0,
-               27.0,
-               26.0
+               %{
+                 "ticker" => "INTC",
+                 "start_time" => ~U[2023-04-13 20:00:00Z],
+                 "end_time" => ~U[2023-04-13 21:00:00Z],
+                 "date" => ~D[2023-04-13],
+                 "high" => 33.0,
+                 "open" => 32.0,
+                 "close" => 27.0,
+                 "low" => 26.0
+               }
              ]
-           ]
   end
 
   # based on https://github.com/ClickHouse/clickhouse-java/issues/1232
-  test "insert AggregateFunction via input()", %{conn: conn} do
-    Ch.query!(conn, """
+  test "insert AggregateFunction via input()", %{pool: pool} do
+    Help.query!("""
     CREATE TABLE test_insert_aggregate_function (
       uid Int16,
       updated SimpleAggregateFunction(max, DateTime),
@@ -87,35 +93,47 @@ defmodule Ch.AggregationTest do
     ) ENGINE AggregatingMergeTree ORDER BY uid
     """)
 
+    on_exit(fn -> Help.query!("drop table test_insert_aggregate_function") end)
+
     rows = [
       [1, ~N[2020-01-02 00:00:00], "b"],
       [1, ~N[2020-01-01 00:00:00], "a"]
     ]
 
-    assert %{num_rows: 2} =
-             Ch.query!(
-               conn,
-               """
-               INSERT INTO test_insert_aggregate_function
-                 SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
-                 FROM input('uid Int16, updated DateTime, name String')
-                 FORMAT RowBinary\
-               """,
-               rows,
-               types: ["Int16", "DateTime", "String"]
-             )
+    rowbinary = Ch.RowBinary.encode_rows(rows, _types = ["Int16", "DateTime", "String"])
 
-    assert Ch.query!(conn, """
+    insert = """
+    INSERT INTO test_insert_aggregate_function
+      SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
+      FROM input('uid Int16, updated DateTime, name String')
+      FORMAT RowBinary
+    """
+
+    Ch.query!(pool, [insert | rowbinary])
+
+    assert Ch.query!(pool, """
            SELECT uid, max(updated) AS updated, argMaxMerge(name)
            FROM test_insert_aggregate_function
            GROUP BY uid
-           """).rows == [[1, ~N[2020-01-02 00:00:00], "b"]]
+           """).rows == [
+             [1, ~N[2020-01-02 00:00:00], "b"]
+           ]
   end
 
   # https://kb.altinity.com/altinity-kb-schema-design/ingestion-aggregate-function/
   describe "altinity examples" do
-    test "ephemeral column", %{conn: conn} do
-      Ch.query!(conn, """
+    setup do
+      rows = [
+        [1231, ~N[2020-01-02 00:00:00], "Jane"],
+        [1231, ~N[2020-01-01 00:00:00], "John"]
+      ]
+
+      rowbinary = Ch.RowBinary.encode_rows(rows, ["Int16", "DateTime", "String"])
+      {:ok, rowbinary: rowbinary}
+    end
+
+    test "ephemeral column", %{pool: pool, rowbinary: rowbinary} do
+      Help.query!("""
       CREATE TABLE test_users_ephemeral_column (
         uid Int16,
         updated SimpleAggregateFunction(max, DateTime),
@@ -124,25 +142,24 @@ defmodule Ch.AggregationTest do
       ) ENGINE AggregatingMergeTree ORDER BY uid
       """)
 
-      Ch.query!(
-        conn,
-        "INSERT INTO test_users_ephemeral_column(uid, updated, name_stub) FORMAT RowBinary",
-        _rows = [
-          [1231, ~N[2020-01-02 00:00:00], "Jane"],
-          [1231, ~N[2020-01-01 00:00:00], "John"]
-        ],
-        types: ["Int16", "DateTime", "String"]
-      )
+      on_exit(fn -> Help.query!("drop table test_users_ephemeral_column") end)
 
-      assert Ch.query!(conn, """
+      Ch.query!(pool, [
+        "INSERT INTO test_users_ephemeral_column(uid, updated, name_stub) FORMAT RowBinary\n"
+        | rowbinary
+      ])
+
+      assert Ch.query!(pool, """
              SELECT uid, max(updated) AS updated, argMaxMerge(name)
              FROM test_users_ephemeral_column
              GROUP BY uid
-             """).rows == [[1231, ~N[2020-01-02 00:00:00], "Jane"]]
+             """).rows == [
+               [1231, ~N[2020-01-02 00:00:00], "Jane"]
+             ]
     end
 
-    test "input function", %{conn: conn} do
-      Ch.query!(conn, """
+    test "input function", %{pool: pool, rowbinary: rowbinary} do
+      Help.query!("""
       CREATE TABLE test_users_input_function (
         uid Int16,
         updated SimpleAggregateFunction(max, DateTime),
@@ -150,29 +167,28 @@ defmodule Ch.AggregationTest do
       ) ENGINE AggregatingMergeTree ORDER BY uid
       """)
 
-      Ch.query!(
-        conn,
+      on_exit(fn -> Help.query!("drop table test_users_input_function") end)
+
+      Ch.query!(pool, [
         """
         INSERT INTO test_users_input_function
           SELECT uid, updated, arrayReduce('argMaxState', [name], [updated])
-          FROM input('uid Int16, updated DateTime, name String') FORMAT RowBinary\
-        """,
-        _rows = [
-          [1231, ~N[2020-01-02 00:00:00], "Jane"],
-          [1231, ~N[2020-01-01 00:00:00], "John"]
-        ],
-        types: ["Int16", "DateTime", "String"]
-      )
+          FROM input('uid Int16, updated DateTime, name String') FORMAT RowBinary
+        """
+        | rowbinary
+      ])
 
-      assert Ch.query!(conn, """
+      assert Ch.query!(pool, """
              SELECT uid, max(updated) AS updated, argMaxMerge(name)
              FROM test_users_input_function
              GROUP BY uid
-             """).rows == [[1231, ~N[2020-01-02 00:00:00], "Jane"]]
+             """).rows == [
+               [1231, ~N[2020-01-02 00:00:00], "Jane"]
+             ]
     end
 
-    test "materialized view and null engine", %{conn: conn} do
-      Ch.query!(conn, """
+    test "materialized view and null engine", %{pool: pool, rowbinary: rowbinary} do
+      Help.query!("""
       CREATE TABLE test_users_mv_ne (
         uid Int16,
         updated SimpleAggregateFunction(max, DateTime),
@@ -180,7 +196,9 @@ defmodule Ch.AggregationTest do
       ) ENGINE AggregatingMergeTree ORDER BY uid
       """)
 
-      Ch.query!(conn, """
+      on_exit(fn -> Help.query!("drop table test_users_mv_ne") end)
+
+      Help.query!("""
       CREATE TABLE test_users_ne (
         uid Int16,
         updated DateTime,
@@ -188,27 +206,25 @@ defmodule Ch.AggregationTest do
       ) ENGINE Null
       """)
 
-      Ch.query!(conn, """
+      on_exit(fn -> Help.query!("drop table test_users_ne") end)
+
+      Help.query!("""
       CREATE MATERIALIZED VIEW test_users_mv TO test_users_mv_ne AS
         SELECT uid, updated, arrayReduce('argMaxState', [name], [updated]) name
         FROM test_users_ne
       """)
 
-      Ch.query!(
-        conn,
-        "INSERT INTO test_users_ne FORMAT RowBinary",
-        _rows = [
-          [1231, ~N[2020-01-02 00:00:00], "Jane"],
-          [1231, ~N[2020-01-01 00:00:00], "John"]
-        ],
-        types: ["Int16", "DateTime", "String"]
-      )
+      on_exit(fn -> Help.query!("drop view test_users_mv") end)
 
-      assert Ch.query!(conn, """
+      Ch.query!(pool, ["INSERT INTO test_users_ne FORMAT RowBinary\n" | rowbinary])
+
+      assert Ch.query!(pool, """
              SELECT uid, max(updated) AS updated, argMaxMerge(name)
              FROM test_users_mv_ne
              GROUP BY uid
-             """).rows == [[1231, ~N[2020-01-02 00:00:00], "Jane"]]
+             """).rows == [
+               [1231, ~N[2020-01-02 00:00:00], "Jane"]
+             ]
     end
   end
 end

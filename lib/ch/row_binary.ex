@@ -91,7 +91,6 @@ defmodule Ch.RowBinary do
   defp encoding_type(t)
        when t in [
               :string,
-              :binary,
               :json,
               :dynamic,
               :boolean,
@@ -185,7 +184,7 @@ defmodule Ch.RowBinary do
   def encode(:varint, i) when is_integer(i) and i < 128, do: i
   def encode(:varint, i) when is_integer(i), do: encode_varint_cont(i)
 
-  def encode(type, str) when type in [:string, :binary] do
+  def encode(:string, str) do
     case str do
       _ when is_binary(str) -> [encode(:varint, byte_size(str)) | str]
       _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
@@ -197,7 +196,7 @@ defmodule Ch.RowBinary do
     # assuming it can be sent as text and not "native" binary JSON
     # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
     # TODO
-    encode(:string, Jason.encode_to_iodata!(json))
+    encode(:string, JSON.encode_to_iodata!(json))
   end
 
   def encode({:fixed_string, size}, str) when byte_size(str) == size do
@@ -229,16 +228,31 @@ defmodule Ch.RowBinary do
   end
 
   for size <- [16, 32, 64, 128, 256] do
-    def encode(unquote(:"u#{size}"), u) when is_integer(u) do
+    unsigned_max = (1 <<< size) - 1
+    signed_min = -(1 <<< (size - 1))
+    signed_max = (1 <<< (size - 1)) - 1
+    uint = :"u#{size}"
+    int = :"i#{size}"
+
+    def encode(unquote(uint), u) when is_integer(u) and u >= 0 and u <= unquote(unsigned_max) do
       <<u::unquote(size)-little>>
     end
 
-    def encode(unquote(:"i#{size}"), i) when is_integer(i) do
+    def encode(unquote(int), i)
+        when is_integer(i) and i >= unquote(signed_min) and i <= unquote(signed_max) do
       <<i::unquote(size)-little-signed>>
     end
 
-    def encode(unquote(:"u#{size}"), nil), do: <<0::unquote(size)>>
-    def encode(unquote(:"i#{size}"), nil), do: <<0::unquote(size)>>
+    def encode(unquote(uint), nil), do: <<0::unquote(size)>>
+    def encode(unquote(int), nil), do: <<0::unquote(size)>>
+
+    def encode(unquote(uint), term) do
+      raise ArgumentError, "invalid UInt#{unquote(size)}: #{inspect(term)}"
+    end
+
+    def encode(unquote(int), term) do
+      raise ArgumentError, "invalid Int#{unquote(size)}: #{inspect(term)}"
+    end
   end
 
   for size <- [32, 64] do
@@ -374,7 +388,7 @@ defmodule Ch.RowBinary do
 
     micros_as_ticks =
       cond do
-        time_unit < 1_000_000 -> div(micros, time_unit)
+        time_unit < 1_000_000 -> div(micros, div(1_000_000, time_unit))
         time_unit == 1_000_000 -> micros
         true -> micros * div(time_unit, 1_000_000)
       end
@@ -727,7 +741,6 @@ defmodule Ch.RowBinary do
   defp decoding_type(t)
        when t in [
               :string,
-              :binary,
               :json,
               :dynamic,
               :boolean,
@@ -849,54 +862,13 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [to_utf8(s) | row], rows, types)
+      decode_rows(types_rest, bin, [s | row], rows, types)
     end
   end
 
   defp decode_string_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
     to_be_continued(rows, bin, [:string | types_rest], row)
   end
-
-  @doc false
-  def to_utf8(str) do
-    utf8 = to_utf8(str, 0, 0, str, [])
-    IO.iodata_to_binary(utf8)
-  end
-
-  @dialyzer {:no_improper_lists, to_utf8: 5, to_utf8_escape: 5}
-
-  defp to_utf8(<<valid::utf8, rest::bytes>>, from, len, original, acc) do
-    to_utf8(rest, from, len + utf8_size(valid), original, acc)
-  end
-
-  defp to_utf8(<<_invalid, rest::bytes>>, from, len, original, acc) do
-    acc = [acc | binary_part(original, from, len)]
-    to_utf8_escape(rest, from + len, 1, original, acc)
-  end
-
-  defp to_utf8(<<>>, from, len, original, acc) do
-    [acc | binary_part(original, from, len)]
-  end
-
-  defp to_utf8_escape(<<valid::utf8, rest::bytes>>, from, len, original, acc) do
-    acc = [acc | "�"]
-    to_utf8(rest, from + len, utf8_size(valid), original, acc)
-  end
-
-  defp to_utf8_escape(<<_invalid, rest::bytes>>, from, len, original, acc) do
-    to_utf8_escape(rest, from, len + 1, original, acc)
-  end
-
-  defp to_utf8_escape(<<>>, _from, _len, _original, acc) do
-    [acc | "�"]
-  end
-
-  # UTF-8 encodes code points in one to four bytes
-  @compile inline: [utf8_size: 1]
-  defp utf8_size(codepoint) when codepoint <= 0x7F, do: 1
-  defp utf8_size(codepoint) when codepoint <= 0x7FF, do: 2
-  defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
-  defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
   @compile inline: [decode_string_json_decode_rows: 5]
 
@@ -908,30 +880,12 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [Jason.decode!(s) | row], rows, types)
+      decode_rows(types_rest, bin, [JSON.decode!(s) | row], rows, types)
     end
   end
 
   defp decode_string_json_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
     to_be_continued(rows, bin, [:json | types_rest], row)
-  end
-
-  @compile inline: [decode_binary_decode_rows: 5]
-
-  for {pattern, size} <- varints do
-    defp decode_binary_decode_rows(
-           <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
-           types_rest,
-           row,
-           rows,
-           types
-         ) do
-      decode_rows(types_rest, bin, [s | row], rows, types)
-    end
-  end
-
-  defp decode_binary_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
-    to_be_continued(rows, bin, [:binary | types_rest], row)
   end
 
   @compile inline: [decode_array_decode_rows: 6]
@@ -1357,9 +1311,6 @@ defmodule Ch.RowBinary do
       :string ->
         decode_string_decode_rows(bin, types_rest, row, rows, types)
 
-      :binary ->
-        decode_binary_decode_rows(bin, types_rest, row, rows, types)
-
       :json ->
         # assuming it arrives as text and not "native" binary JSON
         # i.e. assumes `settings: [output_format_binary_write_json_as_string: 1]`
@@ -1372,7 +1323,6 @@ defmodule Ch.RowBinary do
       {:dynamic, dynamic} ->
         decode_dynamic(bin, dynamic, types_rest, row, rows, types)
 
-      # TODO utf8?
       {:fixed_string, size} ->
         case bin do
           <<s::size(^size)-bytes, rest::bytes>> ->

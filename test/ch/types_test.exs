@@ -151,6 +151,7 @@ defmodule Ch.TypesTest do
 
     test "enum" do
       assert decode("Enum8('hello' = 1, 'world' = 2)") == {:enum8, [{"hello", 1}, {"world", 2}]}
+      assert decode("Enum8('é€𐍈' = 1)") == {:enum8, [{"é€𐍈", 1}]}
 
       assert decode("Enum16('hello' = -1, 'world' = 2)") ==
                {:enum16, [{"hello", -1}, {"world", 2}]}

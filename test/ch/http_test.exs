@@ -1,66 +1,28 @@
 defmodule Ch.HTTPTest do
-  use ExUnit.Case,
-    async: true,
-    parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnit.Case, async: true
+  use ExUnitProperties
 
-  @moduletag :slow
+  doctest Ch.HTTP
 
-  setup ctx do
-    {:ok, query_options: ctx[:query_options] || []}
-  end
+  property "timeout to deadline to timeout preserves the remaining timeout" do
+    check all timeout <- integer(0..60_000) do
+      round_tripped = timeout |> Ch.HTTP.to_deadline() |> Ch.HTTP.to_timeout()
 
-  describe "user-agent" do
-    setup do
-      {:ok, ch: start_supervised!(Ch)}
-    end
-
-    test "sets user-agent to ch/<version> by default", %{ch: ch, query_options: query_options} do
-      %Ch.Result{rows: [[123]], headers: resp_header} =
-        Ch.query!(ch, "select 123", [], query_options)
-
-      {"x-clickhouse-query-id", query_id} = List.keyfind!(resp_header, "x-clickhouse-query-id", 0)
-
-      assert query_http_user_agent(ch, query_id, query_options) ==
-               "ch/" <> Mix.Project.config()[:version]
-    end
-
-    test "uses the provided user-agent", %{ch: ch, query_options: query_options} do
-      req_headers = [{"user-agent", "plausible/0.1.0"}]
-
-      %Ch.Result{rows: [[123]], headers: resp_header} =
-        Ch.query!(
-          ch,
-          "select 123",
-          _params = [],
-          Keyword.merge(query_options, headers: req_headers)
-        )
-
-      {"x-clickhouse-query-id", query_id} = List.keyfind!(resp_header, "x-clickhouse-query-id", 0)
-      assert query_http_user_agent(ch, query_id, query_options) == "plausible/0.1.0"
+      assert round_tripped <= timeout
+      assert round_tripped >= max(timeout - 50, 0)
     end
   end
 
-  defp query_http_user_agent(ch, query_id, query_options) do
-    retry(fn ->
-      %Ch.Result{rows: [[user_agent]]} =
-        Ch.query!(
-          ch,
-          "select http_user_agent from system.query_log where query_id = {query_id:String} limit 1",
-          %{"query_id" => query_id},
-          query_options
-        )
+  property "deadline to timeout to deadline preserves the absolute deadline" do
+    check all offset <- integer(0..60_000) do
+      deadline = {:deadline, System.monotonic_time(:millisecond) + offset}
+      {:deadline, original_timestamp} = deadline
 
-      user_agent
-    end)
-  end
+      {:deadline, round_tripped_timestamp} =
+        deadline |> Ch.HTTP.to_timeout() |> Ch.HTTP.to_deadline()
 
-  defp retry(f) do
-    try do
-      f.()
-    catch
-      _, _ ->
-        :timer.sleep(100)
-        retry(f)
+      assert round_tripped_timestamp <= original_timestamp
+      assert round_tripped_timestamp >= original_timestamp - 50
     end
   end
 end

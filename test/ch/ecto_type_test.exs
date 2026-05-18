@@ -121,6 +121,8 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, nil} = Ecto.Type.cast(type, nil)
 
     assert :error = Ecto.Type.cast(type, {42, "something"})
+    assert :error = Ecto.Type.cast(type, {"something"})
+    assert :error = Ecto.Type.cast(type, "something")
 
     assert {:ok, {"something", 42}} = Ecto.Type.dump(type, {"something", 42})
     assert {:ok, {"something", 42}} = Ecto.Type.load(type, {"something", 42})
@@ -231,7 +233,11 @@ defmodule Ch.EctoTypeTest do
     assert Ecto.Type.format(type) == "#Ch<Map(String, UInt64)>"
 
     assert {:ok, %{"answer" => 42}} = Ecto.Type.cast(type, %{"answer" => 42})
+    assert {:ok, %{"answer" => 42}} = Ecto.Type.cast(type, [{"answer", 42}])
     assert {:ok, nil} = Ecto.Type.cast(type, nil)
+    assert :error = Ecto.Type.cast(type, %{42 => 42})
+    assert :error = Ecto.Type.cast(type, [{"answer"}])
+    assert :error = Ecto.Type.cast(type, "answer")
 
     assert {:ok, %{"answer" => 42}} = Ecto.Type.dump(type, %{"answer" => 42})
     assert {:ok, %{"answer" => 42}} = Ecto.Type.load(type, %{"answer" => 42})
