@@ -105,6 +105,35 @@ defmodule Ch.RowBinaryTest do
   end
 
   describe "encode/2" do
+    test "timezone-qualified encoding types" do
+      assert encoding_types([{:datetime, "UTC"}]) == [{:datetime, "UTC"}]
+      assert encoding_types([{:datetime, "Europe/Vienna"}]) == [{:datetime, "Europe/Vienna"}]
+      assert encoding_types([{:datetime64, 3, "UTC"}]) == [{:datetime64, 1000, "UTC"}]
+
+      assert encoding_types([{:datetime64, 3, "Europe/Vienna"}]) ==
+               [{:datetime64, 1000, "Europe/Vienna"}]
+    end
+
+    test "timezone-qualified datetime encodes naive values in the annotated timezone" do
+      types = ["DateTime('Europe/Vienna')", "DateTime64(3, 'Europe/Vienna')"]
+
+      rows = [
+        [~N[2022-01-01 12:00:00], ~N[2022-07-01 12:00:00.123456]],
+        [~U[2022-01-01 12:00:00Z], ~U[2022-07-01 12:00:00.123456Z]]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == [
+               [
+                 DateTime.from_naive!(~N[2022-01-01 12:00:00], "Europe/Vienna"),
+                 DateTime.from_naive!(~N[2022-07-01 12:00:00.123], "Europe/Vienna")
+               ],
+               [
+                 DateTime.shift_zone!(~U[2022-01-01 12:00:00Z], "Europe/Vienna"),
+                 DateTime.shift_zone!(~U[2022-07-01 12:00:00.123Z], "Europe/Vienna")
+               ]
+             ]
+    end
+
     test "decimal" do
       type = {:decimal32, _scale = 4}
       assert encode(type, Decimal.new("2")) == <<20000::32-little>>
