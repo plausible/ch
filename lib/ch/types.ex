@@ -661,5 +661,4 @@ defmodule Ch.Types do
   defp encode_mapping([{k, v} | mapping]) when is_binary(k) do
     [k, "' = ", Integer.to_string(v), ", '" | encode_mapping(mapping)]
   end
-
 end
