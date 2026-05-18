@@ -32,19 +32,19 @@ Start a pool:
 {:ok, pool} = Ch.start_link(url: "http://localhost:8123")
 ```
 
-Run a query with named ClickHouse parameters:
+Run a query:
 
 ```elixir
-%Ch.Result{names: ["number"], rows: [[0], [1] | _rest]} =
+%Ch.Result{names: ["number"], rows: [[0], [1], [2]]} =
   Ch.query!(
     pool,
     "select number from numbers({limit:UInt32})",
-    %{"limit" => 100},
+    %{"limit" => 3},
     headers: [{"accept-encoding", "zstd"}]
   )
 ```
 
-Create a table and insert RowBinary data:
+Create a table and insert RowBinaryWithNamesAndTypes data:
 
 ```elixir
 session_id = "ch-demo-session"
@@ -61,7 +61,7 @@ types = ["UInt64", "String"]
 rows = [[1, "one"], [2, "two"]]
 
 insert = [
-  "INSERT INTO demo FORMAT RowBinaryWithNamesAndTypes\n",
+  "insert into demo format RowBinaryWithNamesAndTypes\n",
   Ch.RowBinary.encode_names_and_types(names, types)
   | Ch.RowBinary.encode_rows(rows, types)
 ]
