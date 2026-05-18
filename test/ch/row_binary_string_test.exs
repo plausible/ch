@@ -152,7 +152,7 @@ defmodule Ch.RowBinaryStringTest do
   end
 
   defp string_rows do
-    gen all values <- uniq_list_of(small_binary(), min_length: 1, max_length: 16) do
+    gen all values <- list_of(small_binary(), min_length: 1, max_length: 16) do
       values
       |> Enum.with_index()
       |> Enum.map(fn {value, id} -> [id, value] end)

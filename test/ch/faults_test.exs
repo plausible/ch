@@ -4,10 +4,9 @@ defmodule Ch.FaultsTest do
   @socket_opts [:binary, {:active, true}, {:packet, :raw}]
 
   setup do
-    {:ok, clickhouse} = :gen_tcp.connect({127, 0, 0, 1}, 8123, @socket_opts)
     {:ok, listen} = :gen_tcp.listen(0, @socket_opts)
     {:ok, port} = :inet.port(listen)
-    {:ok, clickhouse: clickhouse, listen: listen, port: port}
+    {:ok, listen: listen, port: port}
   end
 
   test "returns transport errors when ClickHouse is unreachable", %{listen: listen, port: port} do
@@ -21,17 +20,20 @@ defmodule Ch.FaultsTest do
   end
 
   test "removes a timed out connection and reconnects on the next query", ctx do
-    %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+    %{port: port, listen: listen} = ctx
     {:ok, pool} = Ch.start_link(url: "http://localhost:#{port}")
+
+    clickhouse = connect_clickhouse!()
 
     select =
       Task.async(fn ->
-        Ch.query(pool, "select 1 + 1", %{}, timeout: 100)
+        Ch.query(pool, "select 1 + 1", %{}, timeout: 500)
       end)
 
     {:ok, mint} = :gen_tcp.accept(listen)
     :ok = :gen_tcp.send(clickhouse, read_packets(mint))
     :ok = :gen_tcp.send(mint, first_byte(read_packets(clickhouse)))
+    :ok = :gen_tcp.close(clickhouse)
 
     assert {:error, %Mint.TransportError{reason: :timeout}} = Task.await(select)
 
@@ -40,15 +42,17 @@ defmodule Ch.FaultsTest do
         Ch.query(pool, "select 1 + 1", %{}, timeout: 1_000)
       end)
 
+    clickhouse = connect_clickhouse!()
     {:ok, mint} = :gen_tcp.accept(listen)
     :ok = :gen_tcp.send(clickhouse, read_packets(mint))
     :ok = :gen_tcp.send(mint, read_packets(clickhouse))
+    :ok = :gen_tcp.close(clickhouse)
 
     assert {:ok, %{rows: [[2]]}} = Task.await(select)
   end
 
   test "removes a closed connection and reconnects on the next query", ctx do
-    %{port: port, listen: listen, clickhouse: clickhouse} = ctx
+    %{port: port, listen: listen} = ctx
     {:ok, pool} = Ch.start_link(url: "http://localhost:#{port}")
 
     select =
@@ -56,10 +60,12 @@ defmodule Ch.FaultsTest do
         Ch.query(pool, "select 1 + 1", %{}, timeout: 1_000)
       end)
 
+    clickhouse = connect_clickhouse!()
     {:ok, mint} = :gen_tcp.accept(listen)
     :ok = :gen_tcp.send(clickhouse, read_packets(mint))
     :ok = :gen_tcp.send(mint, first_byte(read_packets(clickhouse)))
     :ok = :gen_tcp.close(mint)
+    :ok = :gen_tcp.close(clickhouse)
 
     assert {:error, %Mint.TransportError{reason: :closed}} = Task.await(select)
 
@@ -68,11 +74,18 @@ defmodule Ch.FaultsTest do
         Ch.query(pool, "select 1 + 1", %{}, timeout: 1_000)
       end)
 
+    clickhouse = connect_clickhouse!()
     {:ok, mint} = :gen_tcp.accept(listen)
     :ok = :gen_tcp.send(clickhouse, read_packets(mint))
     :ok = :gen_tcp.send(mint, read_packets(clickhouse))
+    :ok = :gen_tcp.close(clickhouse)
 
     assert {:ok, %{rows: [[2]]}} = Task.await(select)
+  end
+
+  defp connect_clickhouse! do
+    {:ok, clickhouse} = :gen_tcp.connect({127, 0, 0, 1}, 8123, @socket_opts)
+    clickhouse
   end
 
   defp read_packets(socket) do
@@ -87,7 +100,7 @@ defmodule Ch.FaultsTest do
       {:tcp, ^socket, packet} -> read_packets(socket, [acc | packet])
       {:tcp_closed, ^socket} -> acc
     after
-      10 -> acc
+      50 -> acc
     end
   end
 
