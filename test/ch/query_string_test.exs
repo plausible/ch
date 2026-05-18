@@ -402,7 +402,7 @@ defmodule Ch.QueryStringTest do
 
   defp expected_array_param(nil), do: "null"
 
-  defp expected_array_param(%value{} = param) when value in [Date, NaiveDateTime, DateTime],
+  defp expected_array_param(%value{} = param) when value in [Date, Time, NaiveDateTime, DateTime],
     do: "'" <> expected_param(param) <> "'"
 
   defp expected_array_param(value), do: expected_param(value)
