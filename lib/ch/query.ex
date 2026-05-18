@@ -392,7 +392,7 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   defp encode_array_param(nil), do: "null"
 
-  defp encode_array_param(%s{} = param) when s in [Date, NaiveDateTime] do
+  defp encode_array_param(%s{} = param) when s in [Date, Time, NaiveDateTime, DateTime] do
     [?', encode_param(param), ?']
   end
 

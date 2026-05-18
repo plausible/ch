@@ -1,5 +1,7 @@
 defmodule Ch.DynamicTest do
   use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnitProperties
+
   import Ch.Test, only: [parameterize_query!: 2, parameterize_query!: 3, parameterize_query!: 4]
 
   @moduletag :dynamic
@@ -432,5 +434,67 @@ defmodule Ch.DynamicTest do
              [true, "Bool", true, "Bool", true],
              [[1, 2, 3], "Array(Int64)", [1, 2, 3], "Array(Int64)", true]
            ]
+  end
+
+  property "RowBinary Dynamic inserts round-trip supported encoded values", ctx do
+    parameterize_query!(
+      ctx,
+      "CREATE TABLE dynamic_test_property (id UInt64, d Dynamic) ENGINE = Memory;"
+    )
+
+    on_exit(fn -> Ch.Test.query("DROP TABLE dynamic_test_property") end)
+
+    check all rows <- dynamic_rows(), max_runs: 25 do
+      parameterize_query!(ctx, "TRUNCATE TABLE dynamic_test_property")
+
+      parameterize_query!(ctx, "INSERT INTO dynamic_test_property FORMAT RowBinary", rows,
+        types: ["UInt64", "Dynamic"]
+      )
+
+      assert parameterize_query!(ctx, "SELECT * FROM dynamic_test_property ORDER BY id").rows ==
+               Enum.sort_by(rows, &List.first/1)
+    end
+  end
+
+  test "RowBinary Dynamic rejects unsupported encoded values" do
+    assert_raise CaseClauseError, fn ->
+      Ch.RowBinary.encode_rows([[true]], ["Dynamic"])
+    end
+
+    assert_raise CaseClauseError, fn ->
+      Ch.RowBinary.encode_rows([[%{"a" => 1}]], ["Dynamic"])
+    end
+  end
+
+  defp dynamic_rows do
+    gen all ids <- uniq_list_of(integer(0..18_446_744_073_709_551_615), max_length: 12),
+            values <- list_of(dynamic_value(), length: length(ids)) do
+      Enum.zip_with(ids, values, fn id, value -> [id, value] end)
+    end
+  end
+
+  defp dynamic_value do
+    one_of([
+      string(:printable, max_length: 32),
+      integer(-9_007_199_254_740_992..9_007_199_254_740_991),
+      integer(-10_000..10_000) |> map(&(&1 * 1.0)),
+      date_gen(),
+      naive_datetime_gen()
+    ])
+  end
+
+  defp date_gen do
+    gen all days <- integer(0..20_000) do
+      Date.add(~D[1970-01-01], days)
+    end
+  end
+
+  defp naive_datetime_gen do
+    gen all date <- date_gen(),
+            hour <- integer(0..23),
+            minute <- integer(0..59),
+            second <- integer(0..59) do
+      NaiveDateTime.new!(date, Time.new!(hour, minute, second))
+    end
   end
 end

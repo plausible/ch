@@ -1,5 +1,6 @@
 defmodule Ch.JSONTest do
   use ExUnit.Case, parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
+  use ExUnitProperties
 
   @moduletag :json
 
@@ -358,5 +359,79 @@ defmodule Ch.JSONTest do
         query_options
       )
     end
+  end
+
+  property "JSON values inserted as RowBinary round-trip through ClickHouse", %{
+    conn: conn,
+    query_options: query_options
+  } do
+    Ch.query!(
+      conn,
+      "CREATE TABLE json_test_property (id UInt64, json JSON) ENGINE = Memory;",
+      [],
+      query_options
+    )
+
+    on_exit(fn -> Ch.Test.query("DROP TABLE json_test_property") end)
+
+    check all rows <- json_rows(), max_runs: 25 do
+      Ch.query!(conn, "TRUNCATE TABLE json_test_property", [], query_options)
+
+      Ch.query!(
+        conn,
+        "INSERT INTO json_test_property FORMAT RowBinary",
+        rows,
+        Keyword.merge(query_options,
+          types: ["UInt64", "JSON"],
+          settings: [input_format_binary_read_json_as_string: 1]
+        )
+      )
+
+      assert Ch.query!(
+               conn,
+               "SELECT id, json FROM json_test_property ORDER BY id",
+               [],
+               Keyword.merge(query_options,
+                 settings: [output_format_binary_write_json_as_string: 1]
+               )
+             ).rows == Enum.sort_by(rows, &List.first/1)
+    end
+  end
+
+  test "RowBinary JSON rejects non-encodable values" do
+    assert_raise Protocol.UndefinedError, fn ->
+      Ch.RowBinary.encode_rows([[self()]], ["JSON"])
+    end
+  end
+
+  defp json_rows do
+    gen all ids <- uniq_list_of(integer(0..18_446_744_073_709_551_615), max_length: 12),
+            values <- list_of(json_object(), length: length(ids)) do
+      Enum.zip_with(ids, values, fn id, value -> [id, value] end)
+    end
+  end
+
+  defp json_object do
+    map_of(
+      string(:alphanumeric, min_length: 1, max_length: 16),
+      json_value(),
+      min_length: 1,
+      max_length: 8
+    )
+  end
+
+  defp json_value do
+    one_of([
+      integer(-1_000_000..1_000_000),
+      string(:printable, max_length: 32),
+      boolean(),
+      list_of(integer(-1_000..1_000), min_length: 1, max_length: 8),
+      map_of(
+        string(:alphanumeric, min_length: 1, max_length: 16),
+        string(:printable, max_length: 32),
+        min_length: 1,
+        max_length: 4
+      )
+    ])
   end
 end

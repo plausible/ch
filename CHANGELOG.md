@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix `Time` and `DateTime` query parameters inside arrays, tuples, and maps by quoting them as ClickHouse literals.
+
 ## 0.9.0 (2026-08-08)
 
 - Fix `Time64` RowBinary encoding for precisions below microseconds. https://github.com/plausible/ch/pull/347
