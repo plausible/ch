@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779137156459,
+  "lastUpdate": 1779137293926,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
@@ -2116,6 +2116,44 @@ window.BENCHMARK_DATA = {
             "range": "stddev 18.1%",
             "unit": "ips",
             "extra": "average: 1073.44 ms\nmedian: 1153.54 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ruslandoga+gh@icloud.com",
+            "name": "ruslandoga",
+            "username": "ruslandoga"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3ffd9c62f8679f0c43610e11761245923ceda684",
+          "message": "Fix RowBinary string property generator (#360)\n\n* Fix RowBinary string property generator\n\n* Allow float array param round-off\n\n* Stabilize fault reconnect tests",
+          "timestamp": "2026-05-18T23:47:30+03:00",
+          "tree_id": "15049fb969debba2512a4fcb8c593a2bc32fa49d",
+          "url": "https://github.com/plausible/ch/commit/3ffd9c62f8679f0c43610e11761245923ceda684"
+        },
+        "date": 1779137293544,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.9541,
+            "range": "stddev 7.76%",
+            "unit": "ips",
+            "extra": "average: 1048.14 ms\nmedian: 1016.72 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.9519,
+            "range": "stddev 16.27%",
+            "unit": "ips",
+            "extra": "average: 1050.56 ms\nmedian: 1103.86 ms"
           }
         ]
       }
