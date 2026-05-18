@@ -103,6 +103,134 @@ defmodule Ch.QueryStringTest do
       end
     end
 
+    property "string parameters in arrays, tuples, and maps round-trip through ClickHouse", %{
+      pool: pool
+    } do
+      check all array <- list_of(safe_string(), max_length: 8),
+                tuple <- fixed_list([safe_string(), safe_string()]),
+                map_entries <- uniq_list_of({safe_string(), safe_string()}, max_length: 8) do
+        map = Map.new(map_entries)
+
+        assert Ch.query!(
+                 pool,
+                 """
+                 select
+                   {array:Array(String)},
+                   {tuple:Tuple(String, String)},
+                   {map:Map(String, String)}
+                 """,
+                 %{
+                   "array" => array,
+                   "tuple" => List.to_tuple(tuple),
+                   "map" => map
+                 }
+               ).rows == [[array, List.to_tuple(tuple), map]]
+      end
+    end
+
+    property "nullable parameters in arrays, tuples, and maps round-trip through ClickHouse", %{
+      pool: pool
+    } do
+      nullable_string = one_of([constant(nil), safe_string()])
+
+      check all array <- list_of(nullable_string, max_length: 8),
+                tuple <- fixed_list([nullable_string, nullable_string]),
+                map_entries <- uniq_list_of({safe_string(), nullable_string}, max_length: 8) do
+        map = Map.new(map_entries)
+
+        assert Ch.query!(
+                 pool,
+                 """
+                 select
+                   {array:Array(Nullable(String))},
+                   {tuple:Tuple(Nullable(String), Nullable(String))},
+                   {map:Map(String, Nullable(String))}
+                 """,
+                 %{
+                   "array" => array,
+                   "tuple" => List.to_tuple(tuple),
+                   "map" => map
+                 }
+               ).rows == [[array, List.to_tuple(tuple), map]]
+      end
+    end
+
+    property "DateTime parameters round-trip through ClickHouse UTC types", %{pool: pool} do
+      check all datetime <- utc_datetime_gen(),
+                datetimes <- list_of(utc_datetime_gen(), max_length: 8) do
+        assert Ch.query!(
+                 pool,
+                 """
+                 select
+                   {datetime:DateTime64(6, 'UTC')},
+                   {datetimes:Array(DateTime64(6, 'UTC'))}
+                 """,
+                 %{
+                   "datetime" => datetime,
+                   "datetimes" => datetimes
+                 }
+               ).rows == [[datetime, datetimes]]
+      end
+    end
+
+    test "DateTime parameters in arrays are parsed as timestamps instead of DateTime64 ticks", %{
+      pool: pool
+    } do
+      datetime = ~U[2004-02-22 12:19:49.123456Z]
+
+      assert Ch.query!(
+               pool,
+               "select {datetime:DateTime64(6, 'UTC')}, {datetimes:Array(DateTime64(6, 'UTC'))}",
+               %{
+                 "datetime" => datetime,
+                 "datetimes" => [datetime]
+               }
+             ).rows == [[datetime, [datetime]]]
+    end
+
+    test "string parameters with URL, SQL, and control metacharacters round-trip in containers",
+         %{
+           pool: pool
+         } do
+      strings = [
+        "",
+        "'",
+        "''",
+        "\"",
+        "\\",
+        "\\'",
+        "\t",
+        "\n",
+        "\r",
+        "\b",
+        "\f",
+        "\0",
+        "a&b=c?d#e%20",
+        "x'), 1; select 1 --",
+        "[]{}(),:"
+      ]
+
+      map =
+        strings
+        |> Enum.with_index()
+        |> Map.new(fn {string, index} -> {Integer.to_string(index), string} end)
+
+      assert Ch.query!(
+               pool,
+               """
+               select
+                 {array:Array(String)},
+                 {tuple:Tuple(String, String, String)},
+                 {map:Map(String, String)}
+               """,
+               %{
+                 "array" => strings,
+                 "tuple" => {"'", "\\", "x'), 1; select 1 --"},
+                 "map" => map
+               }
+             ).rows == [[strings, {"'", "\\", "x'), 1; select 1 --"}, map]]
+    end
+
     test "string parameters are escaped", %{pool: pool} do
       for s <- ["\t", "\n", "\\", "'", "\b", "\f", "\r", "\0"] do
         assert Ch.query!(pool, "select {s:String}", %{"s" => s}).rows == [[s]]
@@ -155,6 +283,7 @@ defmodule Ch.QueryStringTest do
       safe_string(),
       decimal_gen(),
       date_gen(),
+      utc_datetime_gen(),
       naive_datetime_gen(),
       time_gen()
     ])
@@ -169,6 +298,7 @@ defmodule Ch.QueryStringTest do
       safe_string(),
       decimal_gen(),
       date_gen(),
+      utc_datetime_gen(),
       naive_datetime_gen(),
       time_gen()
     ])
@@ -215,6 +345,12 @@ defmodule Ch.QueryStringTest do
     end
   end
 
+  defp utc_datetime_gen do
+    gen all naive <- naive_datetime_gen() do
+      DateTime.from_naive!(naive, "Etc/UTC")
+    end
+  end
+
   defp expected_param(value) when is_integer(value), do: Integer.to_string(value)
   defp expected_param(value) when is_float(value), do: Float.to_string(value)
   defp expected_param(value) when is_boolean(value), do: Atom.to_string(value)
@@ -223,6 +359,20 @@ defmodule Ch.QueryStringTest do
   defp expected_param(%Date{} = value), do: Date.to_iso8601(value)
   defp expected_param(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
   defp expected_param(%Time{} = value), do: Time.to_iso8601(value)
+
+  defp expected_param(%DateTime{microsecond: {val, precision}} = value)
+       when val > 0 and precision > 0 do
+    size = round(:math.pow(10, precision))
+    unix = DateTime.to_unix(value, size)
+    seconds = div(unix, size)
+    fractional = rem(unix, size)
+
+    Integer.to_string(seconds) <>
+      "." <> String.pad_leading(Integer.to_string(fractional), precision, "0")
+  end
+
+  defp expected_param(%DateTime{} = value),
+    do: value |> DateTime.to_unix(:second) |> Integer.to_string()
 
   defp expected_param(value) when is_binary(value) do
     value
@@ -249,7 +399,7 @@ defmodule Ch.QueryStringTest do
 
   defp expected_array_param(nil), do: "null"
 
-  defp expected_array_param(%value{} = param) when value in [Date, NaiveDateTime],
+  defp expected_array_param(%value{} = param) when value in [Date, NaiveDateTime, DateTime],
     do: "'" <> expected_param(param) <> "'"
 
   defp expected_array_param(value), do: expected_param(value)
