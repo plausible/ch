@@ -270,7 +270,7 @@ defmodule Ch.ConnectionTest do
       Ch.stop(cleanup)
     end)
 
-    rows = [[1, nil], [-1, nil]]
+    rows = [[1, nil], [4_294_967_295, nil]]
     rowbinary = RowBinary.encode_rows(rows, ["UInt32", "Nullable(String)"])
 
     Ch.query!(pool, [
