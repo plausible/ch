@@ -632,8 +632,16 @@ defmodule Ch.Types do
     ["DateTime64(", Integer.to_string(precision), ", '", encode_string(timezone), "')"]
   end
 
+  def encode({:enum8, []}) do
+    raise ArgumentError, "Enum8 requires at least one mapping"
+  end
+
   def encode({:enum8, mapping}) do
     ["Enum8('", encode_mapping(mapping), ?)]
+  end
+
+  def encode({:enum16, []}) do
+    raise ArgumentError, "Enum16 requires at least one mapping"
   end
 
   def encode({:enum16, mapping}) do
@@ -665,18 +673,14 @@ defmodule Ch.Types do
   defp encode_mapping([] = empty), do: empty
 
   defp encode_string(string) do
-    for <<char::utf8 <- string>> do
-      escape_string_char(char)
-    end
+    string
+    |> String.replace("\\", "\\\\")
+    |> String.replace("'", "\\'")
+    |> String.replace(<<0>>, "\\0")
+    |> String.replace("\b", "\\b")
+    |> String.replace("\f", "\\f")
+    |> String.replace("\n", "\\n")
+    |> String.replace("\r", "\\r")
+    |> String.replace("\t", "\\t")
   end
-
-  defp escape_string_char(?\0), do: "\\0"
-  defp escape_string_char(?\b), do: "\\b"
-  defp escape_string_char(?\f), do: "\\f"
-  defp escape_string_char(?\n), do: "\\n"
-  defp escape_string_char(?\r), do: "\\r"
-  defp escape_string_char(?\t), do: "\\t"
-  defp escape_string_char(?'), do: "\\'"
-  defp escape_string_char(?\\), do: "\\\\"
-  defp escape_string_char(char), do: <<char::utf8>>
 end

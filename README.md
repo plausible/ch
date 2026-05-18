@@ -32,49 +32,45 @@ Start a pool:
 {:ok, pool} = Ch.start_link(url: "http://localhost:8123")
 ```
 
-Run a query with named ClickHouse parameters:
+Run a query:
 
 ```elixir
-%Ch.Result{names: ["number"], rows: [[0], [1] | _rest]} =
+%Ch.Result{names: ["number"], rows: [[0], [1], [2]]} =
   Ch.query!(
     pool,
     "select number from numbers({limit:UInt32})",
-    %{"limit" => 100},
+    %{"limit" => 3},
     headers: [{"accept-encoding", "zstd"}]
   )
 ```
 
-Insert RowBinary data by encoding it explicitly:
+Create a table and insert RowBinaryWithNamesAndTypes data:
 
 ```elixir
-rows = [[1, "one"], [2, "two"]]
-types = ["UInt8", "String"]
-rowbinary = Ch.RowBinary.encode_rows(rows, types)
-
-Ch.query!(pool, [
-  "INSERT INTO events FORMAT RowBinary\n",
-  rowbinary
-])
-```
-
-Compressed inserts use the same shape, with the whole request body compressed:
-
-```elixir
-names = ["id", "name"]
-types = ["UInt8", "String"]
-rows = [[1, "one"], [2, "two"]]
-
-payload =
-  :zstd.compress([
-    "INSERT INTO events FORMAT RowBinaryWithNamesAndTypes\n",
-    Ch.RowBinary.encode_names_and_types(names, types),
-    Ch.RowBinary.encode_rows(rows, types)
-  ])
+session_id = "ch-demo-session"
 
 Ch.query!(
   pool,
-  payload,
+  "create temporary table demo(id UInt64, text String) engine Memory",
   %{},
+  settings: %{"session_id" => session_id}
+)
+
+names = ["id", "text"]
+types = ["UInt64", "String"]
+rows = [[1, "one"], [2, "two"]]
+
+insert = [
+  "insert into demo format RowBinaryWithNamesAndTypes\n",
+  Ch.RowBinary.encode_names_and_types(names, types)
+  | Ch.RowBinary.encode_rows(rows, types)
+]
+
+Ch.query!(
+  pool,
+  :zstd.compress(insert),
+  %{},
+  settings: %{"session_id" => session_id},
   headers: [{"content-encoding", "zstd"}]
 )
 ```

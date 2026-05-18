@@ -1,7 +1,7 @@
 defmodule Ch.TypesTest do
   use ExUnit.Case, async: true
 
-  import Ch.Types, only: [decode: 1]
+  import Ch.Types, only: [decode: 1, encode: 1]
 
   doctest Ch.Types, import: true
 
@@ -214,6 +214,18 @@ defmodule Ch.TypesTest do
       assert_raise ArgumentError,
                    ~s[failed to decode "Int8$" as ClickHouse type (unexpected character "$" in type while decoding)],
                    fn -> decode("Int8$") end
+    end
+  end
+
+  describe "encode/1" do
+    test "rejects empty enum mappings" do
+      assert_raise ArgumentError, "Enum8 requires at least one mapping", fn ->
+        encode({:enum8, []})
+      end
+
+      assert_raise ArgumentError, "Enum16 requires at least one mapping", fn ->
+        encode({:enum16, []})
+      end
     end
   end
 end
