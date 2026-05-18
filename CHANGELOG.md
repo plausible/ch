@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix RowBinary encoding for timezone-qualified `DateTime` and `DateTime64` values with non-UTC timezones.
+
 ## 0.9.0 (2026-08-08)
 
 - Fix `Time64` RowBinary encoding for precisions below microseconds. https://github.com/plausible/ch/pull/347
