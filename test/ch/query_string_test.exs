@@ -135,7 +135,10 @@ defmodule Ch.QueryStringTest do
   end
 
   defp query_options do
-    uniq_list_of({safe_key(), one_of([integer(), boolean(), safe_string()])}, max_length: 8)
+    map(
+      map_of(safe_key(), one_of([integer(), boolean(), safe_string()]), max_length: 8),
+      &Map.to_list/1
+    )
   end
 
   defp param do
