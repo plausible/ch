@@ -419,7 +419,7 @@ defmodule Ch.Types do
   end
 
   defp decode([:string | stack], <<?', rest::bytes>>, acc) do
-    decode_string(rest, 0, rest, stack, acc)
+    decode_string(rest, [], stack, acc)
   end
 
   defp decode([:int | stack], <<rest::bytes>>, acc) do
@@ -514,22 +514,30 @@ defmodule Ch.Types do
     Enum.sort_by(types, fn t -> IO.iodata_to_binary(encode(t)) end)
   end
 
-  # TODO '', \'
-
-  defp decode_string(<<?', rest::bytes>>, len, original, stack, acc) do
-    part = :binary.part(original, 0, len)
-    decode(stack, rest, [:binary.copy(part) | acc])
+  defp decode_string(<<?', ?', rest::bytes>>, parts, stack, acc) do
+    decode_string(rest, [?' | parts], stack, acc)
   end
 
-  defp decode_string(<<u::utf8, rest::bytes>>, len, original, stack, acc) do
-    decode_string(rest, len + utf8_size(u), original, stack, acc)
+  defp decode_string(<<?', rest::bytes>>, parts, stack, acc) do
+    string = parts |> :lists.reverse() |> IO.iodata_to_binary()
+    decode(stack, rest, [string | acc])
   end
 
-  @compile inline: [utf8_size: 1]
-  defp utf8_size(codepoint) when codepoint <= 0x7F, do: 1
-  defp utf8_size(codepoint) when codepoint <= 0x7FF, do: 2
-  defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
-  defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
+  defp decode_string(<<?\\, escaped, rest::bytes>>, parts, stack, acc) do
+    decode_string(rest, [unescape_string_char(escaped) | parts], stack, acc)
+  end
+
+  defp decode_string(<<char::utf8, rest::bytes>>, parts, stack, acc) do
+    decode_string(rest, [<<char::utf8>> | parts], stack, acc)
+  end
+
+  defp unescape_string_char(?0), do: 0
+  defp unescape_string_char(?b), do: ?\b
+  defp unescape_string_char(?f), do: ?\f
+  defp unescape_string_char(?n), do: ?\n
+  defp unescape_string_char(?r), do: ?\r
+  defp unescape_string_char(?t), do: ?\t
+  defp unescape_string_char(char), do: char
 
   defguardp is_alpha(a) when (a >= ?a and a <= ?z) or (a >= ?A and a <= ?Z)
   defguardp is_numeric(char) when char >= ?0 and char <= ?9
@@ -613,7 +621,7 @@ defmodule Ch.Types do
   end
 
   def encode({:datetime, timezone}) when is_binary(timezone) do
-    ["DateTime('", timezone, "')"]
+    ["DateTime('", encode_string(timezone), "')"]
   end
 
   def encode({:datetime64, precision}) do
@@ -621,7 +629,7 @@ defmodule Ch.Types do
   end
 
   def encode({:datetime64, precision, timezone}) when is_binary(timezone) do
-    ["DateTime64(", Integer.to_string(precision), ", '", timezone, "')"]
+    ["DateTime64(", Integer.to_string(precision), ", '", encode_string(timezone), "')"]
   end
 
   def encode({:enum8, mapping}) do
@@ -647,12 +655,28 @@ defmodule Ch.Types do
   defp encode_intersperse([] = empty, _separator), do: empty
 
   defp encode_mapping([{k, v}]) when is_binary(k) do
-    [k, "' = ", Integer.to_string(v)]
+    [encode_string(k), "' = ", Integer.to_string(v)]
   end
 
   defp encode_mapping([{k, v} | mapping]) when is_binary(k) do
-    [k, "' = ", Integer.to_string(v), ", '" | encode_mapping(mapping)]
+    [encode_string(k), "' = ", Integer.to_string(v), ", '" | encode_mapping(mapping)]
   end
 
   defp encode_mapping([] = empty), do: empty
+
+  defp encode_string(string) do
+    for <<char::utf8 <- string>> do
+      escape_string_char(char)
+    end
+  end
+
+  defp escape_string_char(?\0), do: "\\0"
+  defp escape_string_char(?\b), do: "\\b"
+  defp escape_string_char(?\f), do: "\\f"
+  defp escape_string_char(?\n), do: "\\n"
+  defp escape_string_char(?\r), do: "\\r"
+  defp escape_string_char(?\t), do: "\\t"
+  defp escape_string_char(?'), do: "\\'"
+  defp escape_string_char(?\\), do: "\\\\"
+  defp escape_string_char(char), do: <<char::utf8>>
 end
