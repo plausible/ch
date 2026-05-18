@@ -13,6 +13,7 @@ Used in [Ecto ClickHouse adapter](https://github.com/plausible/ecto_ch).
 - RowBinary
 - Native query parameters
 - Per query settings
+- Telemetry events
 
 ## Installation
 
