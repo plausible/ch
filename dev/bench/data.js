@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779137539531,
+  "lastUpdate": 1779193713127,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
@@ -2192,6 +2192,42 @@ window.BENCHMARK_DATA = {
             "range": "stddev 17.77%",
             "unit": "ips",
             "extra": "average: 1047.63 ms\nmedian: 1121.04 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "ruslandoga",
+            "username": "ruslandoga",
+            "email": "ruslandoga+gh@icloud.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "5c9244a862bfbab75f60fa6674b91448238c448a",
+          "message": "Fix HTTP deadline roundtrip property (#363)",
+          "timestamp": "2026-05-18T20:51:21Z",
+          "url": "https://github.com/plausible/ch/commit/5c9244a862bfbab75f60fa6674b91448238c448a"
+        },
+        "date": 1779193712470,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.9356,
+            "range": "stddev 17.57%",
+            "unit": "ips",
+            "extra": "average: 1068.88 ms\nmedian: 1166.28 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.9239,
+            "range": "stddev 1.43%",
+            "unit": "ips",
+            "extra": "average: 1082.38 ms\nmedian: 1080.74 ms"
           }
         ]
       }
