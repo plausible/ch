@@ -27,6 +27,451 @@ defmodule Ch.RowBinary do
   defp encode_types([] = done), do: done
 
   @doc """
+  Defines a specialized RowBinary encoder function at compile time.
+
+  The generated function normalizes the ClickHouse types once during
+  compilation and emits direct encoding code for common scalar, string,
+  nullable, and `Array(UInt8)` columns. Complex types still fall back to
+  `encode/2`.
+
+  By default, the generated function encodes one atom-keyed row map or struct:
+
+      defmodule Events do
+        require Ch.RowBinary
+
+        Ch.RowBinary.define_encoder(
+          schema: [id: "UInt64", name: "String"],
+          name: :encode_row
+        )
+      end
+
+      Events.encode_row(%{id: 1, name: "home"})
+
+  String keys pattern match string-keyed maps:
+
+      Ch.RowBinary.define_encoder(
+        schema: %{"id" => "UInt64", "name" => "String"},
+        name: :encode_row
+      )
+
+  Pass `rows: true` to define a function that encodes many rows. Pass `:table`
+  to define a many-row function that returns a full
+  `INSERT ... FORMAT RowBinaryWithNamesAndTypes` request body with the header
+  precomputed.
+  """
+  defmacro define_encoder(opts_ast) do
+    caller = __CALLER__
+    opts = compile_time_value!(opts_ast, caller, :options)
+
+    unless Keyword.keyword?(opts) do
+      raise ArgumentError, "expected define_encoder options to be a keyword list"
+    end
+
+    build_encoder_definition(opts)
+  end
+
+  defmacro define_encoder(name_ast, opts_ast) do
+    caller = __CALLER__
+    name = compile_time_value!(name_ast, caller, :name)
+    opts = compile_time_value!(opts_ast, caller, :options)
+
+    unless is_atom(name) do
+      raise ArgumentError, "expected encoder name to be an atom, got: #{inspect(name)}"
+    end
+
+    unless Keyword.keyword?(opts) do
+      raise ArgumentError, "expected define_encoder options to be a keyword list"
+    end
+
+    opts =
+      case Keyword.fetch(opts, :name) do
+        {:ok, ^name} ->
+          opts
+
+        {:ok, other} ->
+          raise ArgumentError, "conflicting encoder names: #{inspect(name)} and #{inspect(other)}"
+
+        :error ->
+          Keyword.put(opts, :name, name)
+      end
+
+    build_encoder_definition(opts)
+  end
+
+  defp compile_time_value!(ast, caller, label) do
+    {value, _binding} = Code.eval_quoted(ast, [], caller)
+    value
+  rescue
+    _e ->
+      reraise ArgumentError,
+              [
+                message:
+                  "expected define_encoder #{label} to be available at compile time, got: #{Macro.to_string(ast)}"
+              ],
+              __STACKTRACE__
+  end
+
+  defp build_encoder_definition(opts) do
+    name = Keyword.fetch!(opts, :name)
+    schema = Keyword.fetch!(opts, :schema)
+
+    unless is_atom(name) do
+      raise ArgumentError, "expected encoder name to be an atom, got: #{inspect(name)}"
+    end
+
+    columns = encoder_columns!(schema)
+    rows? = Keyword.get(opts, :rows, Keyword.has_key?(opts, :table))
+    table = Keyword.get(opts, :table)
+
+    {pattern, row_iodata} = encoder_row(columns)
+
+    cond do
+      table ->
+        rows_fun = encoder_private_name(name, :rows)
+        prefix = insert_prefix!(table, columns)
+
+        quote do
+          def unquote(name)(rows) do
+            [unquote(prefix) | unquote(rows_fun)(rows)]
+          end
+
+          defp unquote(rows_fun)([unquote(pattern) | rows]) do
+            [unquote(row_iodata) | unquote(rows_fun)(rows)]
+          end
+
+          defp unquote(rows_fun)([]), do: []
+        end
+
+      rows? ->
+        rows_fun = encoder_private_name(name, :rows)
+
+        quote do
+          def unquote(name)(rows) do
+            unquote(rows_fun)(rows)
+          end
+
+          defp unquote(rows_fun)([unquote(pattern) | rows]) do
+            [unquote(row_iodata) | unquote(rows_fun)(rows)]
+          end
+
+          defp unquote(rows_fun)([]), do: []
+        end
+
+      true ->
+        quote do
+          def unquote(name)(unquote(pattern)) do
+            unquote(row_iodata)
+          end
+        end
+    end
+  end
+
+  defp encoder_private_name(name, suffix) do
+    :"__ch_rowbinary_#{name}_#{suffix}__"
+  end
+
+  defp insert_prefix!(table, columns) when is_atom(table) do
+    insert_prefix!(Atom.to_string(table), columns)
+  end
+
+  defp insert_prefix!(table, columns) when is_binary(table) do
+    names =
+      Enum.map(columns, fn {_key, column_name, _type, _encoding_type, _var} -> column_name end)
+
+    types = Enum.map(columns, fn {_key, _column_name, type, _encoding_type, _var} -> type end)
+
+    IO.iodata_to_binary([
+      "INSERT INTO ",
+      table,
+      " FORMAT RowBinaryWithNamesAndTypes\n",
+      encode_names_and_types(names, types)
+    ])
+  end
+
+  defp insert_prefix!(table, _columns) do
+    raise ArgumentError, "expected :table to be a string or atom, got: #{inspect(table)}"
+  end
+
+  defp encoder_columns!(schema) when is_map(schema) do
+    schema
+    |> Map.to_list()
+    |> Enum.sort_by(fn {key, _type} -> column_name!(key) end)
+    |> encoder_columns!()
+  end
+
+  defp encoder_columns!(schema) when is_list(schema) do
+    Enum.with_index(schema, fn
+      {key, type}, index ->
+        column_name = column_name!(key)
+        var = Macro.var(:"column_#{index}", nil)
+        {key, column_name, type, encoding_type(type), var}
+
+      other, _index ->
+        raise ArgumentError,
+              "expected schema entries to be {name, type} pairs, got: #{inspect(other)}"
+    end)
+  end
+
+  defp encoder_columns!(schema) do
+    raise ArgumentError, "expected :schema to be a map or list, got: #{inspect(schema)}"
+  end
+
+  defp column_name!(key) when is_binary(key), do: key
+  defp column_name!(key) when is_atom(key), do: Atom.to_string(key)
+
+  defp column_name!(key) do
+    raise ArgumentError, "expected schema keys to be strings or atoms, got: #{inspect(key)}"
+  end
+
+  defp encoder_row(columns) do
+    pattern =
+      {:%{}, [],
+       Enum.map(columns, fn {key, _column_name, _type, _encoding_type, var} ->
+         {key, var}
+       end)}
+
+    row_iodata =
+      Enum.map(columns, fn {_key, _column_name, _type, encoding_type, var} ->
+        encoder_expr(encoding_type, var)
+      end)
+
+    {pattern, row_iodata}
+  end
+
+  defp encoder_expr(:string, value) do
+    quote do
+      case unquote(value) do
+        string when is_binary(string) ->
+          [Ch.RowBinary.encode_varint(byte_size(string)) | string]
+
+        iodata when is_list(iodata) ->
+          [Ch.RowBinary.encode_varint(IO.iodata_length(iodata)) | iodata]
+
+        nil ->
+          0
+      end
+    end
+  end
+
+  defp encoder_expr(:boolean, value) do
+    quote do
+      case unquote(value) do
+        true -> 1
+        false -> 0
+        nil -> 0
+      end
+    end
+  end
+
+  defp encoder_expr(:u8, value) do
+    quote do
+      case unquote(value) do
+        u when is_integer(u) and u >= 0 and u <= 255 -> u
+        nil -> 0
+        term -> raise ArgumentError, "invalid UInt8: #{inspect(term)}"
+      end
+    end
+  end
+
+  defp encoder_expr(:i8, value) do
+    quote do
+      case unquote(value) do
+        i when is_integer(i) and i >= 0 and i <= 127 -> i
+        i when is_integer(i) and i < 0 and i >= -128 -> <<i::signed>>
+        nil -> 0
+        term -> raise ArgumentError, "invalid Int8: #{inspect(term)}"
+      end
+    end
+  end
+
+  for size <- [16, 32, 64, 128, 256] do
+    uint = :"u#{size}"
+    int = :"i#{size}"
+    unsigned_max = (1 <<< size) - 1
+    signed_min = -(1 <<< (size - 1))
+    signed_max = (1 <<< (size - 1)) - 1
+
+    defp encoder_expr(unquote(uint), value) do
+      size = unquote(size)
+      unsigned_max = unquote(unsigned_max)
+
+      quote do
+        case unquote(value) do
+          u when is_integer(u) and u >= 0 and u <= unquote(unsigned_max) ->
+            <<u::unquote(size)-little>>
+
+          nil ->
+            <<0::unquote(size)>>
+
+          term ->
+            raise ArgumentError, "invalid UInt#{unquote(size)}: #{inspect(term)}"
+        end
+      end
+    end
+
+    defp encoder_expr(unquote(int), value) do
+      size = unquote(size)
+      signed_min = unquote(signed_min)
+      signed_max = unquote(signed_max)
+
+      quote do
+        case unquote(value) do
+          i when is_integer(i) and i >= unquote(signed_min) and i <= unquote(signed_max) ->
+            <<i::unquote(size)-little-signed>>
+
+          nil ->
+            <<0::unquote(size)>>
+
+          term ->
+            raise ArgumentError, "invalid Int#{unquote(size)}: #{inspect(term)}"
+        end
+      end
+    end
+  end
+
+  for size <- [32, 64] do
+    type = :"f#{size}"
+
+    defp encoder_expr(unquote(type), value) do
+      size = unquote(size)
+
+      quote do
+        case unquote(value) do
+          f when is_number(f) -> <<f::unquote(size)-little-signed-float>>
+          nil -> <<0::unquote(size)>>
+        end
+      end
+    end
+  end
+
+  defp encoder_expr({:fixed_string, size} = type, value) do
+    quote do
+      case unquote(value) do
+        string when is_binary(string) and byte_size(string) == unquote(size) ->
+          string
+
+        string when is_binary(string) and byte_size(string) < unquote(size) ->
+          to_pad = unquote(size) - byte_size(string)
+          [string | <<0::size(to_pad * 8)>>]
+
+        nil ->
+          <<0::size(unquote(size) * 8)>>
+
+        term ->
+          Ch.RowBinary.encode(unquote(Macro.escape(type)), term)
+      end
+    end
+  end
+
+  defp encoder_expr({:array, :u8}, value) do
+    quote do
+      Ch.RowBinary.encode_u8_array(unquote(value))
+    end
+  end
+
+  defp encoder_expr({:nullable, type}, value) do
+    encoded_value = Macro.unique_var(:encoded_value, __MODULE__)
+    present_value = Macro.unique_var(:present_value, __MODULE__)
+    expr = encoder_expr(type, present_value)
+
+    quote do
+      case unquote(value) do
+        nil ->
+          1
+
+        unquote(present_value) ->
+          case unquote(expr) do
+            unquote(encoded_value)
+            when is_list(unquote(encoded_value)) or is_binary(unquote(encoded_value)) ->
+              [0 | unquote(encoded_value)]
+
+            unquote(encoded_value) ->
+              [0, unquote(encoded_value)]
+          end
+      end
+    end
+  end
+
+  defp encoder_expr(:datetime, value) do
+    epoch = @epoch_gregorian_seconds
+
+    quote do
+      case unquote(value) do
+        %NaiveDateTime{} = datetime ->
+          {seconds, _micros} = NaiveDateTime.to_gregorian_seconds(datetime)
+          <<seconds - unquote(epoch)::32-little>>
+
+        %DateTime{} = datetime ->
+          <<DateTime.to_unix(datetime, :second)::32-little>>
+
+        nil ->
+          <<0::32>>
+      end
+    end
+  end
+
+  defp encoder_expr({:datetime64, time_unit}, value) do
+    epoch = @epoch_gregorian_seconds
+
+    quote do
+      case unquote(value) do
+        %NaiveDateTime{} = datetime ->
+          {seconds, micros} = NaiveDateTime.to_gregorian_seconds(datetime)
+
+          <<(seconds - unquote(epoch)) * unquote(time_unit) +
+              div(micros * unquote(time_unit), 1_000_000)::64-little-signed>>
+
+        %DateTime{} = datetime ->
+          <<DateTime.to_unix(datetime, unquote(time_unit))::64-little-signed>>
+
+        nil ->
+          <<0::64>>
+      end
+    end
+  end
+
+  defp encoder_expr(:date, value) do
+    epoch = @epoch_gregorian_days
+
+    quote do
+      case unquote(value) do
+        %Date{} = date -> <<Date.to_gregorian_days(date) - unquote(epoch)::16-little>>
+        nil -> <<0::16>>
+      end
+    end
+  end
+
+  defp encoder_expr(:date32, value) do
+    epoch = @epoch_gregorian_days
+
+    quote do
+      case unquote(value) do
+        %Date{} = date -> <<Date.to_gregorian_days(date) - unquote(epoch)::32-little-signed>>
+        nil -> <<0::32>>
+      end
+    end
+  end
+
+  defp encoder_expr(:time, value) do
+    quote do
+      case unquote(value) do
+        %Time{} = time ->
+          {seconds, _micros} = Time.to_seconds_after_midnight(time)
+          <<seconds::32-little-signed>>
+
+        nil ->
+          <<0::32>>
+      end
+    end
+  end
+
+  defp encoder_expr(type, value) do
+    quote do
+      Ch.RowBinary.encode(unquote(Macro.escape(type)), unquote(value))
+    end
+  end
+
+  @doc """
   Encodes a single row to [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) as iodata.
 
   Examples:
@@ -76,6 +521,18 @@ defmodule Ch.RowBinary do
   end
 
   defp _encode_rows([], [], rows, types), do: _encode_rows(rows, types)
+
+  @doc false
+  def encode_varint(i) when is_integer(i) and i < 128, do: i
+  def encode_varint(i) when is_integer(i), do: encode_varint_cont(i)
+
+  @doc false
+  def encode_u8_array([_ | _] = bytes) do
+    [encode_varint(length(bytes)) | bytes]
+  end
+
+  def encode_u8_array([]), do: 0
+  def encode_u8_array(nil), do: 0
 
   @doc false
   def encoding_types([type | types]) do
@@ -180,8 +637,7 @@ defmodule Ch.RowBinary do
   @doc false
   def encode(type, value)
 
-  def encode(:varint, i) when is_integer(i) and i < 128, do: i
-  def encode(:varint, i) when is_integer(i), do: encode_varint_cont(i)
+  def encode(:varint, i), do: encode_varint(i)
 
   def encode(:string, str) do
     case str do
