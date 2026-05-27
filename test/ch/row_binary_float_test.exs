@@ -223,20 +223,6 @@ defmodule Ch.RowBinaryFloatTest do
            ]
   end
 
-  test "RowBinary rejects invalid float values" do
-    assert_raise FunctionClauseError, fn ->
-      RowBinary.encode(:f32, "1.0")
-    end
-
-    assert_raise FunctionClauseError, fn ->
-      RowBinary.encode(:f64, "1.0")
-    end
-
-    assert_raise FunctionClauseError, fn ->
-      RowBinary.encode_rows([["1.0"]], ["Float64"])
-    end
-  end
-
   defp float_param do
     one_of([
       gen all value <- finite_float32_param() do

@@ -1458,10 +1458,6 @@ defmodule Ch.RowBinary do
     decode_rows(types, bin, [], [row | rows], types)
   end
 
-  defp decode_rows([_ | _] = types_rest, <<>> = empty, row, rows, _types) do
-    to_be_continued(rows, empty, types_rest, row)
-  end
-
   @compile inline: [to_be_continued: 4]
   defp to_be_continued(rows, bin, types_rest, row) do
     {:lists.reverse(rows), bin, {:cont, types_rest, row}}
