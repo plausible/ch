@@ -1,5 +1,6 @@
 defmodule Ch.DynamicTest do
   use ExUnit.Case, async: true
+  use ExUnitProperties
 
   @moduletag :dynamic
 
@@ -425,5 +426,62 @@ defmodule Ch.DynamicTest do
              [true, "Bool", true, "Bool", true],
              [[1, 2, 3], "Array(Int64)", [1, 2, 3], "Array(Int64)", true]
            ]
+  end
+
+  property "RowBinary Dynamic inserts round-trip supported encoded values", %{pool: pool} do
+    Help.query!("CREATE TABLE dynamic_test_property (id UInt64, d Dynamic) ENGINE = Memory;")
+    on_exit(fn -> Help.query!("DROP TABLE dynamic_test_property") end)
+
+    check all rows <- dynamic_rows(), max_runs: 25 do
+      Ch.query!(pool, "TRUNCATE TABLE dynamic_test_property")
+
+      rowbinary = Ch.RowBinary.encode_rows(rows, ["UInt64", "Dynamic"])
+      Ch.query!(pool, ["INSERT INTO dynamic_test_property FORMAT RowBinary\n" | rowbinary])
+
+      assert Ch.query!(pool, "SELECT * FROM dynamic_test_property ORDER BY id").rows ==
+               Enum.sort_by(rows, &List.first/1)
+    end
+  end
+
+  test "RowBinary Dynamic rejects unsupported encoded values" do
+    assert_raise CaseClauseError, fn ->
+      Ch.RowBinary.encode_rows([[true]], ["Dynamic"])
+    end
+
+    assert_raise CaseClauseError, fn ->
+      Ch.RowBinary.encode_rows([[%{"a" => 1}]], ["Dynamic"])
+    end
+  end
+
+  defp dynamic_rows do
+    gen all ids <- uniq_list_of(integer(0..18_446_744_073_709_551_615), max_length: 12),
+            values <- list_of(dynamic_value(), length: length(ids)) do
+      Enum.zip_with(ids, values, fn id, value -> [id, value] end)
+    end
+  end
+
+  defp dynamic_value do
+    one_of([
+      string(:printable, max_length: 32),
+      integer(-9_007_199_254_740_992..9_007_199_254_740_991),
+      integer(-10_000..10_000) |> map(&(&1 * 1.0)),
+      date_gen(),
+      naive_datetime_gen()
+    ])
+  end
+
+  defp date_gen do
+    gen all days <- integer(0..20_000) do
+      Date.add(~D[1970-01-01], days)
+    end
+  end
+
+  defp naive_datetime_gen do
+    gen all date <- date_gen(),
+            hour <- integer(0..23),
+            minute <- integer(0..59),
+            second <- integer(0..59) do
+      NaiveDateTime.new!(date, Time.new!(hour, minute, second))
+    end
   end
 end
