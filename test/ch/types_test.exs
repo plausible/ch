@@ -25,6 +25,7 @@ defmodule Ch.TypesTest do
 
       assert decode("Float32") == :f32
       assert decode("Float64") == :f64
+      assert decode("BFloat16") == :bf16
 
       assert decode("Date") == :date
       assert decode("DateTime") == :datetime

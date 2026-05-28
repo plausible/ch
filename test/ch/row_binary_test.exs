@@ -45,6 +45,7 @@ defmodule Ch.RowBinaryTest do
       {:i256, 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF},
       {:f32, 1.2345678806304932},
       {:f64, 1.234567898762738492830000503040030202020433},
+      {:bf16, 1.75},
       {:date, ~D[2022-01-01]},
       {:date, ~D[2042-01-01]},
       {:date, ~D[1970-01-01]},
@@ -76,6 +77,7 @@ defmodule Ch.RowBinaryTest do
          0,
          1.234567898762738492830000503040030202020433
        ]},
+      {{:array, :bf16}, [-1.75, 0, 1.75]},
       {{:array, :date}, [~D[2022-01-01], ~D[2042-01-01], ~D[1970-01-01]]},
       {{:array, :datetime},
        [~N[1970-01-01 12:23:34], ~N[2022-01-01 22:12:59], ~N[2042-01-01 04:23:01]]},
@@ -187,6 +189,7 @@ defmodule Ch.RowBinaryTest do
       assert encode(:i64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
       assert encode(:f32, nil) == <<0, 0, 0, 0>>
       assert encode(:f64, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+      assert encode(:bf16, nil) == <<0, 0>>
       assert encode(:boolean, nil) == 0
       assert encode({:array, :string}, nil) == 0
       assert encode(:date, nil) == <<0, 0>>
@@ -271,6 +274,7 @@ defmodule Ch.RowBinaryTest do
         {"Int256", :i256},
         {"Float32", :f32},
         {"Float64", :f64},
+        {"BFloat16", :bf16},
         {"Decimal(9, 4)", {:decimal, _size = 32, _scale = 4}},
         {"Decimal(23, 11)", {:decimal, _size = 128, _scale = 11}},
         {"Bool", :boolean},

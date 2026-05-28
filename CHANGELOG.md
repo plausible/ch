@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- support `BFloat16` https://github.com/plausible/ch/pull/321
 - **Breaking:** replace DBConnection with NimblePool.
 - **Breaking:** require Elixir 1.18 or later for the built-in `JSON` module and Erlang/OTP 28 or later for `:zstd`.
 - **Breaking:** `Ch.start_link/1` no longer accepts DBConnection options or connection-level ClickHouse options such as `:database`, `:username`, `:password`, `:settings`, `:timeout`, `:scheme`, `:hostname`, `:port`, and `:transport_opts`. Use `:url` for the endpoint, pass ClickHouse settings per query with `Ch.query/4`'s `:settings` option, and pass ClickHouse/database/auth headers per query with `:headers`.
