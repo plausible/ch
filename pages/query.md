@@ -110,6 +110,23 @@ Ch.query!(pool, [
 ])
 ```
 
+For hot insert paths, define the schema once and generate a row or insert-body
+encoder:
+
+```elixir
+defmodule EventInsert do
+  require Ch.RowBinary
+
+  Ch.RowBinary.define_encoder(
+    schema: [id: "UInt8", name: "String"],
+    name: :encode_insert,
+    table: "events"
+  )
+end
+
+Ch.query!(pool, EventInsert.encode_insert([%{id: 1, name: "one"}]))
+```
+
 ## Compressed Inserts
 
 ClickHouse accepts compressed request bodies when the `content-encoding` header is set. Compress the entire SQL plus data body:

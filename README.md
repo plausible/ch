@@ -74,3 +74,19 @@ Ch.query!(
   headers: [{"content-encoding", "zstd"}]
 )
 ```
+
+For hot insert paths, define the schema once and generate an encoder:
+
+```elixir
+defmodule DemoInsert do
+  require Ch.RowBinary
+
+  Ch.RowBinary.define_encoder(
+    schema: [id: "UInt64", text: "String"],
+    name: :encode_insert,
+    table: "demo"
+  )
+end
+
+Ch.query!(pool, DemoInsert.encode_insert([%{id: 1, text: "one"}]))
+```
