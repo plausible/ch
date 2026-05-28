@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779972724785,
+  "lastUpdate": 1779972736991,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
@@ -2225,56 +2225,6 @@ window.BENCHMARK_DATA = {
       }
     ],
     "Ch RowBinary Decode": [
-      {
-        "commit": {
-          "author": {
-            "name": "ruslandoga",
-            "username": "ruslandoga",
-            "email": "ruslandoga+gh@icloud.com"
-          },
-          "committer": {
-            "name": "GitHub",
-            "username": "web-flow",
-            "email": "noreply@github.com"
-          },
-          "id": "b421389a003c9be36cff46c9a84a0f78b339b501",
-          "message": "Update CHANGELOG to remove JSON support entries\n\nRemoved support for JSON type options and dynamic JSON encoding in RowBinary.",
-          "timestamp": "2026-04-23T22:27:39Z",
-          "url": "https://github.com/plausible/ch/commit/b421389a003c9be36cff46c9a84a0f78b339b501"
-        },
-        "date": 1777112786165,
-        "tool": "customBiggerIsBetter",
-        "benches": [
-          {
-            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 1000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 724.0673,
-            "range": "stddev 25.18%",
-            "unit": "ips",
-            "extra": "average: 1.38 ms\nmedian: 1.18 ms"
-          },
-          {
-            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 100_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 2.6995,
-            "range": "stddev 3.46%",
-            "unit": "ips",
-            "extra": "average: 370.44 ms\nmedian: 375.3 ms"
-          },
-          {
-            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 10_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 59.3342,
-            "range": "stddev 7.96%",
-            "unit": "ips",
-            "extra": "average: 16.85 ms\nmedian: 16.48 ms"
-          },
-          {
-            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 0.2657,
-            "range": "stddev 8.78%",
-            "unit": "ips",
-            "extra": "average: 3763.56 ms\nmedian: 3763.56 ms"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5278,6 +5228,56 @@ window.BENCHMARK_DATA = {
             "range": "stddev 3.91%",
             "unit": "ips",
             "extra": "average: 4022.77 ms\nmedian: 4022.77 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "ruslandoga",
+            "username": "ruslandoga",
+            "email": "ruslandoga+gh@icloud.com"
+          },
+          "committer": {
+            "name": "ruslandoga",
+            "username": "ruslandoga",
+            "email": "ruslandoga+gh@icloud.com"
+          },
+          "id": "ec4c8b45ec9b3c3adaa3a0568072a9aaa7a964c1",
+          "message": "adapt to elixir v1.20",
+          "timestamp": "2026-05-27T20:55:20Z",
+          "url": "https://github.com/plausible/ch/commit/ec4c8b45ec9b3c3adaa3a0568072a9aaa7a964c1"
+        },
+        "date": 1779972736549,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 1000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 919.7742,
+            "range": "stddev 26.42%",
+            "unit": "ips",
+            "extra": "average: 1.09 ms\nmedian: 944.41 us"
+          },
+          {
+            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 100_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 4.0648,
+            "range": "stddev 10.25%",
+            "unit": "ips",
+            "extra": "average: 246.01 ms\nmedian: 249.18 ms"
+          },
+          {
+            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 10_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 67.8085,
+            "range": "stddev 12.35%",
+            "unit": "ips",
+            "extra": "average: 14.75 ms\nmedian: 14.61 ms"
+          },
+          {
+            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.3091,
+            "range": "stddev 0.23%",
+            "unit": "ips",
+            "extra": "average: 3235.2 ms\nmedian: 3235.2 ms"
           }
         ]
       }
