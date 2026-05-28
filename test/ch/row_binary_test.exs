@@ -379,6 +379,22 @@ defmodule Ch.RowBinaryTest do
 
       assert {[], "", {:cont, [:u8], []}} = decode_rows_continue("", [:u8], nil)
     end
+
+    test "keeps large array continuation stack compact" do
+      types = decoding_types(["Array(UInt8)"])
+      data = IO.iodata_to_binary(encode(:varint, 130))
+
+      assert {[], "", {:cont, [{:array_items, :u8, 130, [], []}], []}} =
+               decode_rows_continue(data, types, nil)
+    end
+
+    test "keeps large map continuation stack compact" do
+      types = decoding_types(["Map(String, UInt8)"])
+      data = IO.iodata_to_binary(encode(:varint, 130))
+
+      assert {[], "", {:cont, [:string, :u8, {:map_acc, :string, :u8, 129, []}], []}} =
+               decode_rows_continue(data, types, nil)
+    end
   end
 
   describe "decode_rows/2" do

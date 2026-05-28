@@ -874,9 +874,11 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      array_types = List.duplicate(type, unquote(size))
-      types_rest = array_types ++ [{:array_over, row} | types_rest]
-      decode_rows(types_rest, bin, [], rows, types)
+      if decode_one_type?(type) do
+        decode_array_items(bin, type, unquote(size), [], types_rest, row, rows, types)
+      else
+        decode_array_stack(bin, type, unquote(size), types_rest, row, rows, types)
+      end
     end
   end
 
@@ -907,10 +909,7 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      types_rest =
-        map_types(unquote(size), key_type, value_type) ++ [{:map_over, row} | types_rest]
-
-      decode_rows(types_rest, bin, [], rows, types)
+      decode_map_stack(bin, key_type, value_type, unquote(size), types_rest, row, rows, types)
     end
   end
 
@@ -918,11 +917,20 @@ defmodule Ch.RowBinary do
     to_be_continued(rows, bin, [{:map, key_type, value_type} | types_rest], row)
   end
 
-  defp map_types(count, key_type, value_type) when count > 0 do
-    [key_type, value_type | map_types(count - 1, key_type, value_type)]
+  defp decode_array_stack(bin, type, size, types_rest, row, rows, types) do
+    types_rest = [type, {:array_acc, type, size - 1, row} | types_rest]
+    decode_rows(types_rest, bin, [], rows, types)
   end
 
-  defp map_types(0, _key_type, _value_types), do: []
+  defp decode_map_stack(bin, key_type, value_type, size, types_rest, row, rows, types) do
+    types_rest = [
+      key_type,
+      value_type,
+      {:map_acc, key_type, value_type, size - 1, row} | types_rest
+    ]
+
+    decode_rows(types_rest, bin, [], rows, types)
+  end
 
   # https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding
   dynamic_types = [
@@ -1229,6 +1237,288 @@ defmodule Ch.RowBinary do
     end
   end
 
+  @compile inline: [
+             decode_array_items: 8,
+             decode_one_type?: 1,
+             decode_one: 2
+           ]
+
+  defp decode_array_items(bin, _type, 0, acc, types_rest, original_row, rows, types) do
+    decode_rows(types_rest, bin, [:lists.reverse(acc) | original_row], rows, types)
+  end
+
+  fixed_array_types = %{
+    u8: %{size: 1, pattern: quote(do: <<u>>), value: quote(do: u)},
+    u16: %{size: 2, pattern: quote(do: <<u::16-little>>), value: quote(do: u)},
+    u32: %{size: 4, pattern: quote(do: <<u::32-little>>), value: quote(do: u)},
+    u64: %{size: 8, pattern: quote(do: <<u::64-little>>), value: quote(do: u)},
+    u128: %{size: 16, pattern: quote(do: <<u::128-little>>), value: quote(do: u)},
+    u256: %{size: 32, pattern: quote(do: <<u::256-little>>), value: quote(do: u)},
+    i8: %{size: 1, pattern: quote(do: <<i::signed>>), value: quote(do: i)},
+    i16: %{size: 2, pattern: quote(do: <<i::16-little-signed>>), value: quote(do: i)},
+    i32: %{size: 4, pattern: quote(do: <<i::32-little-signed>>), value: quote(do: i)},
+    i64: %{size: 8, pattern: quote(do: <<i::64-little-signed>>), value: quote(do: i)},
+    i128: %{size: 16, pattern: quote(do: <<i::128-little-signed>>), value: quote(do: i)},
+    i256: %{size: 32, pattern: quote(do: <<i::256-little-signed>>), value: quote(do: i)},
+    f32: [
+      %{size: 4, pattern: quote(do: <<f::32-little-float>>), value: quote(do: f)},
+      %{size: 4, pattern: quote(do: <<_nan_or_inf::32>>), value: quote(do: nil)}
+    ],
+    f64: [
+      %{size: 8, pattern: quote(do: <<f::64-little-float>>), value: quote(do: f)},
+      %{size: 8, pattern: quote(do: <<_nan_or_inf::64>>), value: quote(do: nil)}
+    ],
+    uuid: %{
+      size: 16,
+      pattern: quote(do: <<u1::64-little, u2::64-little>>),
+      value: quote(do: <<u1::64, u2::64>>)
+    },
+    date: %{
+      size: 2,
+      pattern: quote(do: <<d::16-little>>),
+      value: quote(do: Date.from_gregorian_days(d + @epoch_gregorian_days))
+    },
+    date32: %{
+      size: 4,
+      pattern: quote(do: <<d::32-little-signed>>),
+      value: quote(do: Date.from_gregorian_days(d + @epoch_gregorian_days))
+    },
+    time: %{
+      size: 4,
+      pattern: quote(do: <<s::32-little-signed>>),
+      value: quote(do: time_after_midnight(s, 1))
+    },
+    boolean: [
+      %{size: 1, pattern: quote(do: <<0>>), value: quote(do: false)},
+      %{size: 1, pattern: quote(do: <<1>>), value: quote(do: true)},
+      %{
+        size: 1,
+        pattern: quote(do: <<b>>),
+        value: quote(do: raise("invalid boolean value: #{b}"))
+      }
+    ],
+    ipv4: %{
+      size: 4,
+      pattern: quote(do: <<b4, b3, b2, b1>>),
+      value: quote(do: {b1, b2, b3, b4})
+    },
+    ipv6: %{
+      size: 16,
+      pattern: quote(do: <<b1::16, b2::16, b3::16, b4::16, b5::16, b6::16, b7::16, b8::16>>),
+      value: quote(do: {b1, b2, b3, b4, b5, b6, b7, b8})
+    },
+    point: %{
+      size: 16,
+      pattern: quote(do: <<x::64-little-float, y::64-little-float>>),
+      value: quote(do: {x, y})
+    }
+  }
+
+  for {type, clauses} <- fixed_array_types do
+    fun = :"decode_array_#{type}_items"
+    chunk_fun = :"decode_array_#{type}_chunk"
+    item_size = clauses |> List.wrap() |> hd() |> Map.fetch!(:size)
+
+    defp decode_array_items(
+           bin,
+           unquote(type),
+           remaining,
+           acc,
+           types_rest,
+           original_row,
+           rows,
+           types
+         ) do
+      unquote(fun)(bin, remaining, acc, types_rest, original_row, rows, types)
+    end
+
+    defp unquote(fun)(bin, 0, acc, types_rest, original_row, rows, types) do
+      decode_rows(types_rest, bin, [:lists.reverse(acc) | original_row], rows, types)
+    end
+
+    defp unquote(fun)(bin, remaining, acc, types_rest, original_row, rows, types)
+         when byte_size(bin) >= remaining * unquote(item_size) do
+      size = remaining * unquote(item_size)
+      <<items::size(^size)-bytes, rest::bytes>> = bin
+      array = :lists.reverse(acc, unquote(chunk_fun)(items, []))
+      decode_rows(types_rest, rest, [array | original_row], rows, types)
+    end
+
+    for %{pattern: pattern, value: value} <- List.wrap(clauses) do
+      defp unquote(fun)(
+             <<unquote(pattern), rest::bytes>>,
+             remaining,
+             acc,
+             types_rest,
+             original_row,
+             rows,
+             types
+           ) do
+        unquote(fun)(
+          rest,
+          remaining - 1,
+          [unquote(value) | acc],
+          types_rest,
+          original_row,
+          rows,
+          types
+        )
+      end
+
+      defp unquote(chunk_fun)(<<unquote(pattern), rest::bytes>>, acc) do
+        unquote(chunk_fun)(rest, [unquote(value) | acc])
+      end
+    end
+
+    defp unquote(fun)(bin, remaining, acc, types_rest, original_row, rows, _types) do
+      continuation = {:array_items, unquote(type), remaining, acc, original_row}
+      to_be_continued(rows, bin, [continuation | types_rest], [])
+    end
+
+    defp unquote(chunk_fun)(<<>>, acc), do: :lists.reverse(acc)
+  end
+
+  defp decode_array_items(bin, type, remaining, acc, types_rest, original_row, rows, types) do
+    case decode_one(type, bin) do
+      {:ok, value, rest} ->
+        decode_array_items(
+          rest,
+          type,
+          remaining - 1,
+          [value | acc],
+          types_rest,
+          original_row,
+          rows,
+          types
+        )
+
+      :more ->
+        continuation = {:array_items, type, remaining, acc, original_row}
+        to_be_continued(rows, bin, [continuation | types_rest], [])
+    end
+  end
+
+  defp decode_one_type?(:string), do: true
+  defp decode_one_type?(:json), do: true
+  defp decode_one_type?(:nothing), do: true
+  defp decode_one_type?({:fixed_string, _size}), do: true
+  defp decode_one_type?({:time64, _time_unit}), do: true
+  defp decode_one_type?({:datetime, _timezone}), do: true
+  defp decode_one_type?({:decimal, _size, _scale}), do: true
+  defp decode_one_type?({:datetime64, _time_unit, _timezone}), do: true
+  defp decode_one_type?({:enum8, _mapping}), do: true
+  defp decode_one_type?({:enum16, _mapping}), do: true
+
+  for type <- Map.keys(simple_types) do
+    defp decode_one_type?(unquote(type)), do: true
+  end
+
+  defp decode_one_type?(_type), do: false
+
+  for {pattern, size} <- varints do
+    defp decode_one(:string, <<unquote(pattern), s::size(unquote(size))-bytes, rest::bytes>>) do
+      {:ok, s, rest}
+    end
+
+    defp decode_one(:json, <<unquote(pattern), s::size(unquote(size))-bytes, rest::bytes>>) do
+      {:ok, JSON.decode!(s), rest}
+    end
+  end
+
+  defp decode_one(:string, <<_bin::bytes>>), do: :more
+  defp decode_one(:json, <<_bin::bytes>>), do: :more
+  defp decode_one(:nothing, <<bin::bytes>>), do: {:ok, nil, bin}
+
+  for {type, clauses} <- simple_types do
+    for %{pattern: pattern, value: value} <- List.wrap(clauses) do
+      defp decode_one(unquote(type), <<unquote(pattern), rest::bytes>>) do
+        {:ok, unquote(value), rest}
+      end
+    end
+
+    defp decode_one(unquote(type), <<_bin::bytes>>), do: :more
+  end
+
+  defp decode_one({:fixed_string, size}, <<bin::bytes>>) do
+    case bin do
+      <<s::size(^size)-bytes, rest::bytes>> -> {:ok, s, rest}
+      _ -> :more
+    end
+  end
+
+  defp decode_one({:time64, time_unit}, <<bin::bytes>>) do
+    case bin do
+      <<ticks::64-little-signed, rest::bytes>> ->
+        {:ok, time_after_midnight(ticks, time_unit), rest}
+
+      _ ->
+        :more
+    end
+  end
+
+  defp decode_one({:datetime, timezone}, <<bin::bytes>>) do
+    case bin do
+      <<s::32-little, rest::bytes>> ->
+        dt = DateTime.from_unix!(s)
+
+        dt =
+          case timezone do
+            nil -> DateTime.to_naive(dt)
+            "UTC" -> dt
+            _ -> DateTime.shift_zone!(dt, timezone)
+          end
+
+        {:ok, dt, rest}
+
+      _ ->
+        :more
+    end
+  end
+
+  defp decode_one({:decimal, size, scale}, <<bin::bytes>>) do
+    case bin do
+      <<val::size(^size)-little-signed, rest::bytes>> ->
+        sign = if val < 0, do: -1, else: 1
+        {:ok, Decimal.new(sign, abs(val), -scale), rest}
+
+      _ ->
+        :more
+    end
+  end
+
+  defp decode_one({:datetime64, time_unit, timezone}, <<bin::bytes>>) do
+    case bin do
+      <<s::64-little-signed, rest::bytes>> ->
+        dt = DateTime.from_unix!(s, time_unit)
+
+        dt =
+          case timezone do
+            nil -> DateTime.to_naive(dt)
+            "UTC" -> dt
+            _ -> DateTime.shift_zone!(dt, timezone)
+          end
+
+        {:ok, dt, rest}
+
+      _ ->
+        :more
+    end
+  end
+
+  defp decode_one({:enum8, mapping}, <<bin::bytes>>) do
+    case bin do
+      <<v::signed, rest::bytes>> -> {:ok, Map.fetch!(mapping, v), rest}
+      _ -> :more
+    end
+  end
+
+  defp decode_one({:enum16, mapping}, <<bin::bytes>>) do
+    case bin do
+      <<v::16-little-signed, rest::bytes>> -> {:ok, Map.fetch!(mapping, v), rest}
+      _ -> :more
+    end
+  end
+
   defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
     case type do
       :u8 ->
@@ -1369,15 +1659,34 @@ defmodule Ch.RowBinary do
       {:array, inner_type} ->
         decode_array_decode_rows(bin, inner_type, types_rest, row, rows, types)
 
-      {:array_over, original_row} ->
+      {:array_items, inner_type, remaining, acc, original_row} ->
+        decode_array_items(bin, inner_type, remaining, acc, types_rest, original_row, rows, types)
+
+      {:array_acc, inner_type, remaining, original_row} when remaining > 0 ->
+        types_rest = [
+          inner_type,
+          {:array_acc, inner_type, remaining - 1, original_row} | types_rest
+        ]
+
+        decode_rows(types_rest, bin, row, rows, types)
+
+      {:array_acc, _inner_type, 0, original_row} ->
         decode_rows(types_rest, bin, [:lists.reverse(row) | original_row], rows, types)
 
       {:map, key_type, value_type} ->
         decode_map_decode_rows(bin, key_type, value_type, types_rest, row, rows, types)
 
-      {:map_over, original_row} ->
-        map = row |> Enum.chunk_every(2) |> Enum.map(fn [v, k] -> {k, v} end) |> Map.new()
-        decode_rows(types_rest, bin, [map | original_row], rows, types)
+      {:map_acc, key_type, value_type, remaining, original_row} when remaining > 0 ->
+        types_rest = [
+          key_type,
+          value_type,
+          {:map_acc, key_type, value_type, remaining - 1, original_row} | types_rest
+        ]
+
+        decode_rows(types_rest, bin, row, rows, types)
+
+      {:map_acc, _key_type, _value_type, 0, original_row} ->
+        decode_rows(types_rest, bin, [build_map(row) | original_row], rows, types)
 
       {:tuple, tuple_types} ->
         decode_rows(tuple_types ++ [{:tuple_over, row} | types_rest], bin, [], rows, types)
@@ -1462,6 +1771,12 @@ defmodule Ch.RowBinary do
   defp to_be_continued(rows, bin, types_rest, row) do
     {:lists.reverse(rows), bin, {:cont, types_rest, row}}
   end
+
+  @compile inline: [build_map: 1, build_map: 2]
+  defp build_map(items), do: build_map(items, %{})
+
+  defp build_map([value, key | rest], map), do: build_map(rest, Map.put(map, key, value))
+  defp build_map([], map), do: map
 
   @compile inline: [decimal_size: 1]
   # https://clickhouse.com/docs/en/sql-reference/data-types/decimal/
