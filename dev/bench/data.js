@@ -1,44 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780058065804,
+  "lastUpdate": 1780139047831,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
-      {
-        "commit": {
-          "author": {
-            "name": "ruslandoga",
-            "username": "ruslandoga",
-            "email": "ruslandoga+gh@icloud.com"
-          },
-          "committer": {
-            "name": "GitHub",
-            "username": "web-flow",
-            "email": "noreply@github.com"
-          },
-          "id": "b421389a003c9be36cff46c9a84a0f78b339b501",
-          "message": "Update CHANGELOG to remove JSON support entries\n\nRemoved support for JSON type options and dynamic JSON encoding in RowBinary.",
-          "timestamp": "2026-04-23T22:27:39Z",
-          "url": "https://github.com/plausible/ch/commit/b421389a003c9be36cff46c9a84a0f78b339b501"
-        },
-        "date": 1777461413007,
-        "tool": "customBiggerIsBetter",
-        "benches": [
-          {
-            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 1.0478,
-            "range": "stddev 2.62%",
-            "unit": "ips",
-            "extra": "average: 954.37 ms\nmedian: 947.11 ms"
-          },
-          {
-            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 1.0227,
-            "range": "stddev 17.93%",
-            "unit": "ips",
-            "extra": "average: 977.79 ms\nmedian: 1061.51 ms"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -2220,6 +2184,42 @@ window.BENCHMARK_DATA = {
             "range": "stddev 16.74%",
             "unit": "ips",
             "extra": "average: 1026.78 ms\nmedian: 1104.14 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "ruslandoga",
+            "username": "ruslandoga",
+            "email": "ruslandoga+gh@icloud.com"
+          },
+          "committer": {
+            "name": "ruslandoga",
+            "username": "ruslandoga",
+            "email": "ruslandoga+gh@icloud.com"
+          },
+          "id": "ec4c8b45ec9b3c3adaa3a0568072a9aaa7a964c1",
+          "message": "adapt to elixir v1.20",
+          "timestamp": "2026-05-27T20:55:20Z",
+          "url": "https://github.com/plausible/ch/commit/ec4c8b45ec9b3c3adaa3a0568072a9aaa7a964c1"
+        },
+        "date": 1780139047256,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.9859,
+            "range": "stddev 3.21%",
+            "unit": "ips",
+            "extra": "average: 1014.32 ms\nmedian: 1001.7 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.9582,
+            "range": "stddev 17.91%",
+            "unit": "ips",
+            "extra": "average: 1043.64 ms\nmedian: 1128.53 ms"
           }
         ]
       }
