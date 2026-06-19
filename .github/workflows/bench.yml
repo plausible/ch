@@ -36,7 +36,7 @@ jobs:
       BENCHMARK_OUTPUT_PATH: ${{ matrix.output_path }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - id: beam
         uses: erlef/setup-beam@v1
