@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782302857985,
+  "lastUpdate": 1782302868626,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
@@ -2199,58 +2199,6 @@ window.BENCHMARK_DATA = {
       }
     ],
     "Ch RowBinary Decode": [
-      {
-        "commit": {
-          "author": {
-            "email": "hq@mtod.org",
-            "name": "Adam Rutkowski",
-            "username": "aerosol"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "29d0e7556baa57fe7aa1acdf60d4497d9b1d5176",
-          "message": "Update deps (#339)",
-          "timestamp": "2026-05-12T14:30:43+03:00",
-          "tree_id": "95d1bc8a9d50178db1cfba9202e400e0cc53605c",
-          "url": "https://github.com/plausible/ch/commit/29d0e7556baa57fe7aa1acdf60d4497d9b1d5176"
-        },
-        "date": 1778585519870,
-        "tool": "customBiggerIsBetter",
-        "benches": [
-          {
-            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 1000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 720.7067,
-            "range": "stddev 21.17%",
-            "unit": "ips",
-            "extra": "average: 1.39 ms\nmedian: 1.22 ms"
-          },
-          {
-            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 100_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 2.5985,
-            "range": "stddev 3.09%",
-            "unit": "ips",
-            "extra": "average: 384.83 ms\nmedian: 386.99 ms"
-          },
-          {
-            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 10_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 58.3036,
-            "range": "stddev 6.54%",
-            "unit": "ips",
-            "extra": "average: 17.15 ms\nmedian: 16.74 ms"
-          },
-          {
-            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 0.2667,
-            "range": "stddev 9.65%",
-            "unit": "ips",
-            "extra": "average: 3749.32 ms\nmedian: 3749.32 ms"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5232,6 +5180,56 @@ window.BENCHMARK_DATA = {
             "range": "stddev 2.12%",
             "unit": "ips",
             "extra": "average: 3367.95 ms\nmedian: 3367.95 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]",
+            "email": "49699333+dependabot[bot]@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "700b37382e30eb3c0809ba5f040eebe3c3ab5073",
+          "message": "Bump actions/checkout from 6 to 7 (#375)\n\nBumps [actions/checkout](https://github.com/actions/checkout) from 6 to 7.\n- [Release notes](https://github.com/actions/checkout/releases)\n- [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/actions/checkout/compare/v6...v7)\n\n---\nupdated-dependencies:\n- dependency-name: actions/checkout\n  dependency-version: '7'\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-06-19T16:04:18Z",
+          "url": "https://github.com/plausible/ch/commit/700b37382e30eb3c0809ba5f040eebe3c3ab5073"
+        },
+        "date": 1782302868290,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 1000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 899.5479,
+            "range": "stddev 26.7%",
+            "unit": "ips",
+            "extra": "average: 1.11 ms\nmedian: 980.49 us"
+          },
+          {
+            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 100_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 3.9369,
+            "range": "stddev 10.18%",
+            "unit": "ips",
+            "extra": "average: 254.01 ms\nmedian: 263.48 ms"
+          },
+          {
+            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 10_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 68.4101,
+            "range": "stddev 12.14%",
+            "unit": "ips",
+            "extra": "average: 14.62 ms\nmedian: 14.82 ms"
+          },
+          {
+            "name": "Ch RowBinary Decode - RowBinary.decode_rows - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.3111,
+            "range": "stddev 0.82%",
+            "unit": "ips",
+            "extra": "average: 3214.7 ms\nmedian: 3214.7 ms"
           }
         ]
       }
