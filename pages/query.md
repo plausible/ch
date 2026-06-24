@@ -129,3 +129,35 @@ Ch.query!(
   headers: [{"content-encoding", "zstd"}]
 )
 ```
+
+## Telemetry
+
+Ch emits query telemetry events:
+
+- `[:ch, :query, :start]`
+- `[:ch, :query, :stop]`
+- `[:ch, :query, :error]`
+
+Successful query stop events include native-time measurements such as
+`:duration`, `:queue_time`, `:query_time`, and `:decode_time`. Decoded responses
+also include `:num_rows`, `:num_columns`, and `:response_body_bytes` when
+available.
+
+Connection lifecycle events use short names:
+
+- `[:ch, :conn, :start]`
+- `[:ch, :conn, :stop]`
+- `[:ch, :conn, :reuse]`
+- `[:ch, :conn, :drop]`
+- `[:ch, :conn, :error]`
+
+Use `:telemetry_metadata` to attach application context to query events:
+
+```elixir
+Ch.query!(
+  pool,
+  "SELECT count() FROM events",
+  %{},
+  telemetry_metadata: %{source: :dashboard}
+)
+```
