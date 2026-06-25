@@ -1,46 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782389037736,
+  "lastUpdate": 1782413788050,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
-      {
-        "commit": {
-          "author": {
-            "email": "ruslandoga+gh@icloud.com",
-            "name": "ruslandoga",
-            "username": "ruslandoga"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "b72e9fb91a7eac2c76db62db3e4ba1dbb30a22ee",
-          "message": "use unlimited decimals in tests (#340)",
-          "timestamp": "2026-05-12T14:59:04+03:00",
-          "tree_id": "3b3c2f18e1a4ad16cf8302445612fca06029c21f",
-          "url": "https://github.com/plausible/ch/commit/b72e9fb91a7eac2c76db62db3e4ba1dbb30a22ee"
-        },
-        "date": 1778587199782,
-        "tool": "customBiggerIsBetter",
-        "benches": [
-          {
-            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 0.9874,
-            "range": "stddev 1.84%",
-            "unit": "ips",
-            "extra": "average: 1012.72 ms\nmedian: 1003.47 ms"
-          },
-          {
-            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 0.9823,
-            "range": "stddev 19.06%",
-            "unit": "ips",
-            "extra": "average: 1018.05 ms\nmedian: 1112.44 ms"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -2194,6 +2156,44 @@ window.BENCHMARK_DATA = {
             "range": "stddev 1.68%",
             "unit": "ips",
             "extra": "average: 1041.32 ms\nmedian: 1034.73 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "af195113e79abdd99e3728cbbfc269325c9beee9",
+          "message": "Bump actions/cache from 5 to 6 (#377)\n\nBumps [actions/cache](https://github.com/actions/cache) from 5 to 6.\n- [Release notes](https://github.com/actions/cache/releases)\n- [Changelog](https://github.com/actions/cache/blob/main/RELEASES.md)\n- [Commits](https://github.com/actions/cache/compare/v5...v6)\n\n---\nupdated-dependencies:\n- dependency-name: actions/cache\n  dependency-version: '6'\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-06-25T21:55:44+03:00",
+          "tree_id": "f01c75497462cd3ae04c6e30a98f3f9afb17cbff",
+          "url": "https://github.com/plausible/ch/commit/af195113e79abdd99e3728cbbfc269325c9beee9"
+        },
+        "date": 1782413787702,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.9483,
+            "range": "stddev 1.32%",
+            "unit": "ips",
+            "extra": "average: 1054.51 ms\nmedian: 1047.83 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.924,
+            "range": "stddev 19.15%",
+            "unit": "ips",
+            "extra": "average: 1082.3 ms\nmedian: 1145.17 ms"
           }
         ]
       }
