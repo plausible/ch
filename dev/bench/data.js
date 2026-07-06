@@ -1,46 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783250314300,
+  "lastUpdate": 1783343200531,
   "repoUrl": "https://github.com/plausible/ch",
   "entries": {
     "Ch RowBinary Encode": [
-      {
-        "commit": {
-          "author": {
-            "email": "ruslandoga+gh@icloud.com",
-            "name": "ruslandoga",
-            "username": "ruslandoga"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "e3219d9c06630f8cc30f095c3d91cbeb8ba50ad8",
-          "message": "Add RowBinary string integration tests (#356)",
-          "timestamp": "2026-05-18T16:43:18+03:00",
-          "tree_id": "05780292768b978d53fcd6277b6f5ce927c6e362",
-          "url": "https://github.com/plausible/ch/commit/e3219d9c06630f8cc30f095c3d91cbeb8ba50ad8"
-        },
-        "date": 1779111843171,
-        "tool": "customBiggerIsBetter",
-        "benches": [
-          {
-            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 0.9878,
-            "range": "stddev 17.33%",
-            "unit": "ips",
-            "extra": "average: 1012.35 ms\nmedian: 1097.92 ms"
-          },
-          {
-            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
-            "value": 0.982,
-            "range": "stddev 2.39%",
-            "unit": "ips",
-            "extra": "average: 1018.3 ms\nmedian: 1008.14 ms"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -2186,6 +2148,42 @@ window.BENCHMARK_DATA = {
             "range": "stddev 1.81%",
             "unit": "ips",
             "extra": "average: 771.04 ms\nmedian: 772.66 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]",
+            "email": "49699333+dependabot[bot]@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "af195113e79abdd99e3728cbbfc269325c9beee9",
+          "message": "Bump actions/cache from 5 to 6 (#377)\n\nBumps [actions/cache](https://github.com/actions/cache) from 5 to 6.\n- [Release notes](https://github.com/actions/cache/releases)\n- [Changelog](https://github.com/actions/cache/blob/main/RELEASES.md)\n- [Commits](https://github.com/actions/cache/compare/v5...v6)\n\n---\nupdated-dependencies:\n- dependency-name: actions/cache\n  dependency-version: '6'\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-06-25T18:55:44Z",
+          "url": "https://github.com/plausible/ch/commit/af195113e79abdd99e3728cbbfc269325c9beee9"
+        },
+        "date": 1783343199549,
+        "tool": "customBiggerIsBetter",
+        "benches": [
+          {
+            "name": "Ch RowBinary Encode - RowBinary stream of 100k row chunks - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.966,
+            "range": "stddev 2.08%",
+            "unit": "ips",
+            "extra": "average: 1035.18 ms\nmedian: 1021.51 ms"
+          },
+          {
+            "name": "Ch RowBinary Encode - RowBinary - 1_000_000 (UInt64, String, Array(UInt8), DateTime64(3, 'UTC'), DateTime) rows",
+            "value": 0.9509,
+            "range": "stddev 17.08%",
+            "unit": "ips",
+            "extra": "average: 1051.58 ms\nmedian: 1118.05 ms"
           }
         ]
       }
