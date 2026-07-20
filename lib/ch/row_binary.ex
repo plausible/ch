@@ -321,7 +321,9 @@ defmodule Ch.RowBinary do
   end
 
   def encode({:tuple, types}, values) when is_list(types) and is_list(values) do
-    encode_row(values, types)
+    # types were already normalized by encoding_type({:tuple, ts}); use the
+    # private encoder so we don't re-run encoding_types/1 on normalized types
+    _encode_row(values, types)
   end
 
   def encode({:tuple, types}, nil) when is_list(types) do
