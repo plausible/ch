@@ -363,14 +363,12 @@ defmodule Ch.DynamicTest do
   test "converting a dynamic column to an ordinary column", %{pool: pool} do
     Help.query!("CREATE TABLE dynamic_test (d Dynamic) ENGINE = Memory;")
     on_exit(fn -> Help.query!("DROP TABLE dynamic_test") end)
-    Ch.query!(pool, "INSERT INTO dynamic_test VALUES (NULL), (42), ('42.42'), (true);")
+    Ch.query!(pool, "INSERT INTO dynamic_test VALUES (NULL), (42), ('42.42'), (true), ('e10');")
 
-    assert Ch.query!(pool, "SELECT d::Nullable(Float64) FROM dynamic_test;").rows == [
-             [nil],
-             [42.0],
-             [42.42],
-             [1.0]
-           ]
+    assert [[nil], [42.0], [42.42], [1.0], [invalid_cast_result]] =
+             Ch.query!(pool, "SELECT d::Nullable(Float64) FROM dynamic_test;").rows
+
+    assert invalid_cast_result in [nil, 0.0]
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/dynamic#converting-a-variant-column-to-dynamic-column
