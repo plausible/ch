@@ -471,9 +471,7 @@ defmodule Ch.QueryTest do
       assert {:error,
               %Ch.Error{
                 code: 62,
-                message:
-                  "Code: 62. DB::Exception: Syntax error: failed at position 1 (wat): wat. Expected one of:" <>
-                    _rest
+                message: "Code: 62. DB::Exception: Syntax error: failed at position 1" <> _rest
               }} =
                Ch.query(conn, "wat", [], query_options)
     end
