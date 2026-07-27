@@ -468,11 +468,12 @@ defmodule Ch.QueryTest do
     end
 
     test "error code", %{conn: conn, query_options: query_options} do
-      assert {:error, %Ch.Error{code: code, message: message}} =
+      assert {:error,
+              %Ch.Error{
+                code: 62,
+                message: "Code: 62. DB::Exception: Syntax error: failed at position 1" <> _rest
+              }} =
                Ch.query(conn, "wat", [], query_options)
-
-      assert is_nil(code) or code == 62
-      assert message =~ "Code: 62"
     end
 
     test "connection works after failure in execute", %{conn: conn, query_options: query_options} do
