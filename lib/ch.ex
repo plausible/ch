@@ -432,7 +432,7 @@ defmodule Ch do
       |> response_body_to_binary()
 
     code =
-      if code = get_header(headers, "x-clickhouse-error-code") do
+      if code = get_header(headers, "x-clickhouse-exception-code") do
         String.to_integer(code)
       end
 
