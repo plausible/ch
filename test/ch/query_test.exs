@@ -533,10 +533,7 @@ defmodule Ch.QueryTest do
       conn: conn,
       query_options: query_options
     } do
-      assert %Ch.Result{
-               data: "1\n",
-               headers: headers
-             } =
+      assert %Ch.Result{data: "1\n", headers: headers} =
                Ch.query!(
                  conn,
                  "SELECT 1",
