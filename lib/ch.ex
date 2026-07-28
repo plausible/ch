@@ -55,6 +55,7 @@ defmodule Ch do
       Time a connection can stay idle before the pool closes it.
       Should be lower than ClickHouse's [`keep_alive_timeout`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#keep_alive_timeout)
       to avoid sending a request over a connection that would be closed by ClickHouse soon-ish.
+      Note: `:infinity` disables idle connection expiration.
       """,
       default: to_timeout(second: 5)
     ],
