@@ -353,7 +353,8 @@ defmodule Ch do
     end
   end
 
-  defp handle_responses([{:status, _ref, status} | rest], _prev_status = nil, headers, data) do
+  defp handle_responses([{:status, _ref, status} | rest], prev_status, headers, data)
+       when prev_status in [nil, 100] do
     handle_responses(rest, status, headers, data)
   end
 
