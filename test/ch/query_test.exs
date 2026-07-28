@@ -496,15 +496,37 @@ defmodule Ch.QueryTest do
       conn: conn,
       query_options: query_options
     } do
-      assert %Ch.Result{data: "1\n", headers: headers, names: nil, rows: nil} =
+      for header_name <- [
+            "x-clickhouse-format",
+            "X-ClickHouse-Format",
+            "x-ClIcKhOuSe-FoRmAt"
+          ] do
+        assert %Ch.Result{data: "1\n", headers: headers, names: nil, rows: nil} =
+                 Ch.query!(
+                   conn,
+                   "SELECT 1",
+                   %{},
+                   Keyword.merge(query_options, headers: [{header_name, "CSV"}])
+                 )
+
+        assert :proplists.get_value("x-clickhouse-format", headers) == "CSV"
+      end
+    end
+
+    test "mixed-case user-agent overrides the default", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      assert %Ch.Result{rows: [["custom-agent/ABC"]]} =
                Ch.query!(
                  conn,
-                 "SELECT 1",
+                 "SELECT getClientHTTPHeader('User-Agent')",
                  %{},
-                 Keyword.merge(query_options, headers: [{"X-ClickHouse-Format", "CSV"}])
+                 Keyword.merge(query_options,
+                   headers: [{"User-Agent", "custom-agent/ABC"}],
+                   settings: [allow_get_client_http_header: 1]
+                 )
                )
-
-      assert :proplists.get_value("x-clickhouse-format", headers) == "CSV"
     end
 
     test "connection works after failure in execute", %{conn: conn, query_options: query_options} do
