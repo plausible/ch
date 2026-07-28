@@ -1,6 +1,13 @@
 defmodule Ch.QueryTest do
   use ExUnit.Case, async: true
 
+  describe "start_link/1" do
+    test "supports an infinite worker idle timeout" do
+      pool = start_supervised!({Ch, worker_idle_timeout: :infinity})
+      assert [[1]] = Ch.query!(pool, "SELECT 1").rows
+    end
+  end
+
   # adapted from https://github.com/elixir-ecto/postgrex/blob/master/test/query_test.exs
   describe "query" do
     setup do
