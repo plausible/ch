@@ -492,6 +492,21 @@ defmodule Ch.QueryTest do
       assert :proplists.get_keys(headers_continue) == :proplists.get_keys(headers_normal)
     end
 
+    test "mixed-case x-clickhouse-format overrides the default", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      assert %Ch.Result{data: "1\n", headers: headers, names: nil, rows: nil} =
+               Ch.query!(
+                 conn,
+                 "SELECT 1",
+                 %{},
+                 Keyword.merge(query_options, headers: [{"X-ClickHouse-Format", "CSV"}])
+               )
+
+      assert :proplists.get_value("x-clickhouse-format", headers) == "CSV"
+    end
+
     test "connection works after failure in execute", %{conn: conn, query_options: query_options} do
       assert {:error, %Ch.Error{}} = Ch.query(conn, "wat", [], query_options)
       assert [[42]] = Ch.query!(conn, "SELECT 42", [], query_options).rows
