@@ -328,7 +328,7 @@ defmodule Ch do
   defp request(conn, method, path, headers, body, deadline) do
     result =
       with {:ok, conn, _ref} <- Mint.HTTP1.request(conn, method, path, headers, body) do
-        recv_all(conn, nil, [], nil, deadline)
+        recv_all(conn, _status = nil, _headers = [], _data = nil, deadline)
       end
 
     with {:error, conn, reason} <- result do
@@ -353,8 +353,8 @@ defmodule Ch do
     end
   end
 
-  defp handle_responses([{:status, _ref, status} | rest], _prev_status = nil, headers, data) do
-    handle_responses(rest, status, headers, data)
+  defp handle_responses([{:status, _ref, status} | rest], _prev_status, _prev_headers, data) do
+    handle_responses(rest, status, _reset_headers = [], data)
   end
 
   defp handle_responses([{:headers, _ref, new_headers} | rest], status, prev_headers, data) do
