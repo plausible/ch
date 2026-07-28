@@ -383,6 +383,17 @@ defmodule Ch.QueryTest do
 
       assert Ch.query!(
                conn,
+               "SELECT {json:json}",
+               %{"json" => JSON.encode!(json)},
+               Keyword.merge(query_options,
+                 settings: [output_format_binary_write_json_as_string: true]
+               )
+             ).rows == [
+               [json]
+             ]
+
+      assert Ch.query!(
+               conn,
                "SELECT {json:Map(String, Int64)}::json",
                %{"json" => json},
                Keyword.merge(query_options,
