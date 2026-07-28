@@ -138,8 +138,9 @@ defmodule Ch do
 
     name = Keyword.get(options, :name)
     pool_size = Keyword.fetch!(options, :pool_size)
-    worker_idle_timeout = Keyword.fetch!(options, :worker_idle_timeout)
     url = Keyword.fetch!(options, :url)
+
+    worker_idle_timeout = with :infinity <- Keyword.fetch!(options, :worker_idle_timeout), do: nil
 
     %URI{scheme: scheme, host: host, port: port} = URI.parse(url)
 
