@@ -45,12 +45,16 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT 42::numeric(10,10)", [], query_options).rows
     end
 
-    @tag skip: true
     test "decode json/jsonb", %{conn: conn, query_options: query_options} do
-      assert_raise ArgumentError, "Object('json') type is not supported", fn ->
-        assert [[%{"foo" => 42}]] ==
-                 Ch.query!(conn, "SELECT '{\"foo\": 42}'::json", [], query_options).rows
-      end
+      assert [[%{"foo" => 42}]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT '{\"foo\": 42}'::json",
+                 [],
+                 Keyword.merge(query_options,
+                   settings: [output_format_binary_write_json_as_string: true]
+                 )
+               ).rows
     end
 
     test "decode uuid", %{conn: conn, query_options: query_options} do
@@ -374,10 +378,19 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT {d:numeric(2,1)}", %{"d" => 1.0}, query_options).rows
     end
 
-    @tag skip: true
     test "encode json/jsonb", %{conn: conn, query_options: query_options} do
       json = %{"foo" => 42}
-      assert [[json]] == Ch.query!(conn, "SELECT {$0::json}", [json], query_options).rows
+
+      assert Ch.query!(
+               conn,
+               "SELECT {json:Map(String, Int64)}::json",
+               %{"json" => json},
+               Keyword.merge(query_options,
+                 settings: [output_format_binary_write_json_as_string: true]
+               )
+             ).rows == [
+               [json]
+             ]
     end
 
     test "encode uuid", %{conn: conn, query_options: query_options} do
