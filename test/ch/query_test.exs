@@ -520,7 +520,7 @@ defmodule Ch.QueryTest do
       assert %Ch.Result{rows: [["custom-agent/ABC"]]} =
                Ch.query!(
                  conn,
-                 "SELECT getClientHTTPHeader('User-Agent')",
+                 "SELECT getClientHTTPHeader('user-agent')",
                  %{},
                  Keyword.merge(query_options,
                    headers: [{"User-Agent", "custom-agent/ABC"}],
