@@ -55,6 +55,7 @@ defmodule Ch do
       Time a connection can stay idle before the pool closes it.
       Should be lower than ClickHouse's [`keep_alive_timeout`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#keep_alive_timeout)
       to avoid sending a request over a connection that would be closed by ClickHouse soon-ish.
+      Note: `:infinity` disables idle connection expiration.
       """,
       default: to_timeout(second: 5)
     ],
@@ -138,8 +139,9 @@ defmodule Ch do
 
     name = Keyword.get(options, :name)
     pool_size = Keyword.fetch!(options, :pool_size)
-    worker_idle_timeout = Keyword.fetch!(options, :worker_idle_timeout)
     url = Keyword.fetch!(options, :url)
+
+    worker_idle_timeout = with :infinity <- Keyword.fetch!(options, :worker_idle_timeout), do: nil
 
     %URI{scheme: scheme, host: host, port: port} = URI.parse(url)
 
