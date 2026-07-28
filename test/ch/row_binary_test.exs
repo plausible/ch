@@ -4,6 +4,49 @@ defmodule Ch.RowBinaryTest do
   import Ch.RowBinary
   import Bitwise
 
+  defmodule AtomKeyEncoder do
+    require Ch.RowBinary
+
+    Ch.RowBinary.define_encoder(
+      schema: [
+        id: "UInt64",
+        text: "String",
+        ok: "Bool",
+        bytes: "Array(UInt8)",
+        created_at: "DateTime"
+      ],
+      name: :encode
+    )
+  end
+
+  defmodule EventRow do
+    defstruct [:id, :text, :ok, :bytes, :created_at]
+  end
+
+  defmodule StringKeyEncoder do
+    require Ch.RowBinary
+
+    Ch.RowBinary.define_encoder(
+      schema: %{
+        "bytes" => "Array(UInt8)",
+        "id" => "UInt64",
+        "text" => "String"
+      },
+      name: :encode_many,
+      rows: true
+    )
+  end
+
+  defmodule InsertEncoder do
+    require Ch.RowBinary
+
+    Ch.RowBinary.define_encoder(
+      schema: [id: "UInt64", text: "String"],
+      name: :insert,
+      table: "events"
+    )
+  end
+
   test "encode -> decode" do
     spec = [
       {:string, ""},
@@ -232,6 +275,60 @@ defmodule Ch.RowBinaryTest do
       assert_raise ArgumentError, ~s[no matching type found for encoding "x" as Variant], fn ->
         encode({:variant, [:u8]}, "x")
       end
+    end
+  end
+
+  describe "define_encoder/1" do
+    test "defines a single row encoder for atom-keyed maps and structs" do
+      row = %EventRow{
+        id: 42,
+        text: "hello",
+        ok: true,
+        bytes: [1, 2, 3],
+        created_at: ~N[2026-01-01 12:00:00]
+      }
+
+      types = ["UInt64", "String", "Bool", "Array(UInt8)", "DateTime"]
+
+      assert IO.iodata_to_binary(AtomKeyEncoder.encode(row)) ==
+               IO.iodata_to_binary(
+                 encode_row(
+                   [row.id, row.text, row.ok, row.bytes, row.created_at],
+                   types
+                 )
+               )
+    end
+
+    test "defines a many row encoder for string-keyed maps" do
+      rows = [
+        %{"bytes" => [1, 2, 3], "id" => 1, "text" => "one"},
+        %{"bytes" => [], "id" => 2, "text" => "two"}
+      ]
+
+      generic_rows =
+        Enum.map(rows, fn row ->
+          [row["bytes"], row["id"], row["text"]]
+        end)
+
+      types = ["Array(UInt8)", "UInt64", "String"]
+
+      assert IO.iodata_to_binary(StringKeyEncoder.encode_many(rows)) ==
+               IO.iodata_to_binary(encode_rows(generic_rows, types))
+    end
+
+    test "defines a many row insert body with precomputed RowBinaryWithNamesAndTypes header" do
+      rows = [
+        %{id: 1, text: "one"},
+        %{id: 2, text: "two"}
+      ]
+
+      expected = [
+        "INSERT INTO events FORMAT RowBinaryWithNamesAndTypes\n",
+        encode_names_and_types(["id", "text"], ["UInt64", "String"]),
+        encode_rows([[1, "one"], [2, "two"]], ["UInt64", "String"])
+      ]
+
+      assert IO.iodata_to_binary(InsertEncoder.insert(rows)) == IO.iodata_to_binary(expected)
     end
   end
 
