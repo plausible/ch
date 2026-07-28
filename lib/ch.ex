@@ -221,6 +221,7 @@ defmodule Ch do
     headers =
       options
       |> Keyword.get(:headers, [])
+      |> Enum.map(fn {k, v} -> {String.downcase(k), v} end)
       |> put_new_header("user-agent", @user_agent)
       |> put_new_header("x-clickhouse-format", "RowBinaryWithNamesAndTypes")
 
