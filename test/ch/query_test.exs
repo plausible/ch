@@ -45,6 +45,7 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT 42::numeric(10,10)", [], query_options).rows
     end
 
+    @tag :json
     test "decode json/jsonb", %{conn: conn, query_options: query_options} do
       assert [[%{"foo" => 42}]] ==
                Ch.query!(
@@ -378,6 +379,7 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT {d:numeric(2,1)}", %{"d" => 1.0}, query_options).rows
     end
 
+    @tag :json
     test "encode json/jsonb", %{conn: conn, query_options: query_options} do
       json = %{"foo" => 42}
 
