@@ -44,7 +44,7 @@ Run a query:
   )
 ```
 
-Create a table and insert RowBinaryWithNamesAndTypes data:
+Create a table and insert `RowBinaryWithNamesAndTypes` data:
 
 ```elixir
 session_id = "ch-demo-session"
