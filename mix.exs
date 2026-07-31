@@ -56,7 +56,7 @@ defmodule Ch.MixProject do
       {:mint, "~> 1.8"},
       {:nimble_pool, "~> 1.1"},
       {:nimble_options, "~> 1.1"},
-      {:decimal, "~> 2.0 or ~> 3.0"},
+      {:decimal, "~> 3.0"},
       {:ecto, "~> 3.14.0", optional: true},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev},
