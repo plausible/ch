@@ -44,7 +44,6 @@ defmodule Ch.MixProject do
 
   # Specifies which paths to compile per environment.
   defp elixirc_paths(:test), do: ["lib", "test/support"]
-  defp elixirc_paths(:dev), do: ["lib", "dev/support"]
   defp elixirc_paths(_env), do: ["lib"]
 
   defp extra_applications(:test), do: [:tools]
