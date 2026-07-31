@@ -25,9 +25,7 @@ defmodule Ch.MixProject do
 
   # Run "mix help compile.app" to learn about applications.
   def application do
-    [
-      extra_applications: [:logger | extra_applications(Mix.env())]
-    ]
+    [extra_applications: [:logger]]
   end
 
   def cli do
@@ -45,10 +43,6 @@ defmodule Ch.MixProject do
   # Specifies which paths to compile per environment.
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_env), do: ["lib"]
-
-  defp extra_applications(:test), do: [:tools]
-  defp extra_applications(:dev), do: [:tools]
-  defp extra_applications(_env), do: []
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
