@@ -173,6 +173,16 @@ defmodule Ch.RowBinaryTest do
                encode({:map, :string, :string}, [{"hello", "world"}])
     end
 
+    test "tuple with normalized nested types round-trips" do
+      dt = ~U[2026-01-02 03:04:05.123Z]
+      encoded = IO.iodata_to_binary(encode_rows([[{dt}]], ["Tuple(DateTime64(3, 'UTC'))"]))
+      assert decode_rows(encoded, ["Tuple(DateTime64(3, 'UTC'))"]) == [[{dt}]]
+
+      time = ~T[03:04:05.123456]
+      encoded = IO.iodata_to_binary(encode_rows([[{time}]], ["Tuple(Time64(6))"]))
+      assert decode_rows(encoded, ["Tuple(Time64(6))"]) == [[{time}]]
+    end
+
     test "nil" do
       assert encode({:nullable, :string}, nil) == 1
       assert encode(:string, nil) == 0
