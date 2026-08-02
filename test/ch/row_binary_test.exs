@@ -300,6 +300,7 @@ defmodule Ch.RowBinaryTest do
         {"Array(LowCardinality(String))", {:array, :string}},
         {"Array(Enum8('hello' = 2, 'world' = 3))",
          {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
+        {"Variant(String, UInt32)", {:variant, {:string, :u32}}},
         {"Array(Nothing)", {:array, :nothing}},
         {"Nullable(String)", {:nullable, :string}},
         {"Nullable(Float64)", {:nullable, :f64}},
@@ -408,6 +409,12 @@ defmodule Ch.RowBinaryTest do
     test "rejects unsupported decoded types" do
       assert_raise ArgumentError, "unsupported type for decoding: :unsupported", fn ->
         decode_rows(<<0>>, [:unsupported])
+      end
+    end
+
+    test "rejects invalid Variant type indexes" do
+      assert_raise ArgumentError, "invalid Variant type index: 2", fn ->
+        decode_rows(<<2>>, ["Variant(String, UInt32)"])
       end
     end
   end

@@ -754,7 +754,7 @@ defmodule Ch.RowBinary do
   end
 
   defp decoding_type({:variant = v, ts}) do
-    {v, Enum.map(ts, &decoding_type/1)}
+    {v, ts |> Enum.map(&decoding_type/1) |> List.to_tuple()}
   end
 
   defp decoding_type({:map = m, kt, vt}) do
@@ -1397,9 +1397,13 @@ defmodule Ch.RowBinary do
             decode_rows(types_rest, bin, [nil | row], rows, types)
 
           # TODO varint?
-          <<variant_type_index::8, bin::bytes>> ->
-            variant_type = Enum.at(variant_types, variant_type_index)
+          <<variant_type_index::8, bin::bytes>>
+          when variant_type_index < tuple_size(variant_types) ->
+            variant_type = elem(variant_types, variant_type_index)
             decode_rows([variant_type | types_rest], bin, row, rows, types)
+
+          <<variant_type_index::8, _bin::bytes>> ->
+            raise ArgumentError, "invalid Variant type index: #{variant_type_index}"
 
           _ ->
             to_be_continued(rows, bin, [type | types_rest], row)
