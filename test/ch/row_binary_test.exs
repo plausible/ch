@@ -416,7 +416,7 @@ defmodule Ch.RowBinaryTest do
   describe "invalid arguments" do
     # https://github.com/plausible/ch/issues/166
     test "for VarInt" do
-      assert_raise ArgumentError, "invalid VarInt: -1", fn -> encode(:varint, -1) end
+      assert_raise ArgumentError, "invalid varint: -1", fn -> encode(:varint, -1) end
     end
 
     test "for UInt8" do
