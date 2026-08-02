@@ -716,6 +716,14 @@ defmodule Ch.RowBinaryTest do
              ]
     end
 
+    test "datetime64 before the Unix epoch" do
+      assert decode_rows(<<-1::64-little-signed>>, ["DateTime64(3)"]) ==
+               [[~N[1969-12-31 23:59:59.999]]]
+
+      assert decode_rows(<<-1::64-little-signed>>, ["DateTime64(9)"]) ==
+               [[~N[1969-12-31 23:59:59.999999]]]
+    end
+
     test "integers" do
       types = [
         "UInt8",
