@@ -415,6 +415,10 @@ defmodule Ch.RowBinaryTest do
   # TODO maybe use stream_data?
   describe "invalid arguments" do
     # https://github.com/plausible/ch/issues/166
+    test "for VarInt" do
+      assert_raise ArgumentError, "invalid VarInt: -1", fn -> encode(:varint, -1) end
+    end
+
     test "for UInt8" do
       assert_raise ArgumentError, "invalid UInt8: 256", fn -> encode(:u8, 256) end
       assert_raise ArgumentError, "invalid UInt8: -1", fn -> encode(:u8, -1) end

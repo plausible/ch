@@ -180,8 +180,12 @@ defmodule Ch.RowBinary do
   @doc false
   def encode(type, value)
 
-  def encode(:varint, i) when is_integer(i) and i < 128, do: i
-  def encode(:varint, i) when is_integer(i), do: encode_varint_cont(i)
+  def encode(:varint, i) when is_integer(i) and i >= 0 and i < 128, do: i
+  def encode(:varint, i) when is_integer(i) and i >= 0, do: encode_varint_cont(i)
+
+  def encode(:varint, i) when is_integer(i) do
+    raise ArgumentError, "invalid VarInt: #{inspect(i)}"
+  end
 
   def encode(:string, str) do
     case str do
