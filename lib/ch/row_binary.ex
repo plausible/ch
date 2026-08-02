@@ -312,7 +312,22 @@ defmodule Ch.RowBinary do
     [encode(:varint, length(m)) | encode_many_kv(m, k, v)]
   end
 
-  def encode({:map, _k, _v} = t, m) when is_map(m), do: encode(t, Map.to_list(m))
+  def encode({:map, k, v}, m) when is_map(m) do
+    case map_size(m) do
+      0 ->
+        0
+
+      size ->
+        encoded =
+          Enum.reduce(m, [], fn {key, value}, acc ->
+            [encode(v, value), encode(k, key) | acc]
+          end)
+          |> :lists.reverse()
+
+        [encode(:varint, size) | encoded]
+    end
+  end
+
   def encode({:map, _k, _v}, []), do: 0
   def encode({:map, _k, _v}, nil), do: 0
 
