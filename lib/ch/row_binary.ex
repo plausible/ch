@@ -874,9 +874,13 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      array_types = List.duplicate(type, unquote(size))
-      types_rest = array_types ++ [{:array_over, row} | types_rest]
-      decode_rows(types_rest, bin, [], rows, types)
+      decode_rows(
+        [type, {:array_items, unquote(size) - 1, type, [], row} | types_rest],
+        bin,
+        [],
+        rows,
+        types
+      )
     end
   end
 
@@ -907,22 +911,24 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      types_rest =
-        map_types(unquote(size), key_type, value_type) ++ [{:map_over, row} | types_rest]
-
-      decode_rows(types_rest, bin, [], rows, types)
+      decode_rows(
+        [
+          key_type,
+          value_type,
+          {:map_items, unquote(size) - 1, key_type, value_type, %{}, row}
+          | types_rest
+        ],
+        bin,
+        [],
+        rows,
+        types
+      )
     end
   end
 
   defp decode_map_decode_rows(<<bin::bytes>>, key_type, value_type, types_rest, row, rows, _types) do
     to_be_continued(rows, bin, [{:map, key_type, value_type} | types_rest], row)
   end
-
-  defp map_types(count, key_type, value_type) when count > 0 do
-    [key_type, value_type | map_types(count - 1, key_type, value_type)]
-  end
-
-  defp map_types(0, _key_type, _value_types), do: []
 
   # https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding
   dynamic_types = [
@@ -1369,22 +1375,82 @@ defmodule Ch.RowBinary do
       {:array, inner_type} ->
         decode_array_decode_rows(bin, inner_type, types_rest, row, rows, types)
 
-      {:array_over, original_row} ->
-        decode_rows(types_rest, bin, [:lists.reverse(row) | original_row], rows, types)
+      {:array_items, 0, _inner_type, array_acc, original_row} ->
+        [value] = row
+        array = :lists.reverse([value | array_acc])
+        decode_rows(types_rest, bin, [array | original_row], rows, types)
+
+      {:array_items, remaining, inner_type, array_acc, original_row} ->
+        [value] = row
+
+        decode_rows(
+          [
+            inner_type,
+            {:array_items, remaining - 1, inner_type, [value | array_acc], original_row}
+            | types_rest
+          ],
+          bin,
+          [],
+          rows,
+          types
+        )
 
       {:map, key_type, value_type} ->
         decode_map_decode_rows(bin, key_type, value_type, types_rest, row, rows, types)
 
-      {:map_over, original_row} ->
-        map = row |> Enum.chunk_every(2) |> Enum.map(fn [v, k] -> {k, v} end) |> Map.new()
+      {:map_items, 0, _key_type, _value_type, map, original_row} ->
+        [value, key] = row
+        map = Map.put(map, key, value)
         decode_rows(types_rest, bin, [map | original_row], rows, types)
 
-      {:tuple, tuple_types} ->
-        decode_rows(tuple_types ++ [{:tuple_over, row} | types_rest], bin, [], rows, types)
+      {:map_items, remaining, key_type, value_type, map, original_row} ->
+        [value, key] = row
 
-      {:tuple_over, original_row} ->
-        tuple = row |> :lists.reverse() |> List.to_tuple()
+        decode_rows(
+          [
+            key_type,
+            value_type,
+            {:map_items, remaining - 1, key_type, value_type, Map.put(map, key, value),
+             original_row}
+            | types_rest
+          ],
+          bin,
+          [],
+          rows,
+          types
+        )
+
+      {:tuple, []} ->
+        decode_rows(types_rest, bin, [{} | row], rows, types)
+
+      {:tuple, [tuple_type | remaining_types]} ->
+        decode_rows(
+          [tuple_type, {:tuple_items, remaining_types, [], row} | types_rest],
+          bin,
+          [],
+          rows,
+          types
+        )
+
+      {:tuple_items, [], tuple_acc, original_row} ->
+        [value] = row
+        tuple = [value | tuple_acc] |> :lists.reverse() |> List.to_tuple()
         decode_rows(types_rest, bin, [tuple | original_row], rows, types)
+
+      {:tuple_items, [tuple_type | remaining_types], tuple_acc, original_row} ->
+        [value] = row
+
+        decode_rows(
+          [
+            tuple_type,
+            {:tuple_items, remaining_types, [value | tuple_acc], original_row}
+            | types_rest
+          ],
+          bin,
+          [],
+          rows,
+          types
+        )
 
       {:variant, variant_types} ->
         case bin do
