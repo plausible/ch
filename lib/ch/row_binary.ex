@@ -1,6 +1,22 @@
 defmodule Ch.RowBinary do
   @moduledoc "Helpers for working with ClickHouse [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) format."
 
+  defmodule Schema do
+    @moduledoc false
+
+    @enforce_keys [:types, :encoding_types]
+    defstruct [:names, :types, :encoding_types, :names_and_types]
+
+    @type t :: %__MODULE__{
+            names: [String.t()] | nil,
+            types: [String.t()],
+            encoding_types: [term()],
+            names_and_types: iodata() | nil
+          }
+  end
+
+  @opaque schema :: Schema.t()
+
   # @compile {:bin_opt_info, true}
   @dialyzer :no_improper_lists
 
@@ -8,6 +24,114 @@ defmodule Ch.RowBinary do
 
   @epoch_gregorian_seconds 62_167_219_200
   @epoch_gregorian_days 719_528
+
+  @doc """
+  Builds a reusable RowBinary schema.
+
+  ClickHouse type names and atoms for simple types are accepted. Types are
+  parsed once when the schema is built and reused when rows are encoded.
+
+  Pass `:names` to also build a `RowBinaryWithNamesAndTypes` header.
+
+  Examples:
+
+      iex> schema = schema(types: ["UInt64", :string])
+      iex> encode_rows(schema, [[1, "one"], [2, "two"]])
+      [<<1, 0, 0, 0, 0, 0, 0, 0>>, [3 | "one"], <<2, 0, 0, 0, 0, 0, 0, 0>>, [3 | "two"]]
+
+      iex> schema = schema(names: ["id", "text"], types: ["UInt64", :string])
+      iex> IO.iodata_to_binary(encode_names_and_types(schema))
+      <<2, 2, "id", 4, "text", 6, "UInt64", 6, "String">>
+
+  """
+  @spec schema(keyword()) :: schema()
+  def schema(options) when is_list(options) do
+    unless Keyword.keyword?(options) do
+      raise ArgumentError, "expected schema options to be a keyword list"
+    end
+
+    case Keyword.keys(options) -- [:names, :types] do
+      [] -> :ok
+      unknown -> raise ArgumentError, "unknown schema options: #{inspect(unknown)}"
+    end
+
+    types =
+      case Keyword.fetch(options, :types) do
+        {:ok, types} when is_list(types) ->
+          types
+
+        {:ok, types} ->
+          raise ArgumentError, "expected schema :types to be a list, got: #{inspect(types)}"
+
+        :error ->
+          raise ArgumentError, "missing required schema option :types"
+      end
+
+    {types, encoding_types} =
+      Enum.map(types, &schema_type/1)
+      |> Enum.unzip()
+
+    names = Keyword.get(options, :names)
+    validate_schema_names!(names, length(types))
+
+    names_and_types =
+      if names do
+        encode_names_and_types(names, types)
+      end
+
+    %Schema{
+      names: names,
+      types: types,
+      encoding_types: encoding_types,
+      names_and_types: names_and_types
+    }
+  end
+
+  def schema(options) do
+    raise ArgumentError, "expected schema options to be a keyword list, got: #{inspect(options)}"
+  end
+
+  defp schema_type(type) when is_binary(type), do: {type, encoding_type(type)}
+
+  defp schema_type(type) when is_atom(type) do
+    encoding_type = encoding_type(type)
+    {IO.iodata_to_binary(Ch.Types.encode(type)), encoding_type}
+  end
+
+  defp schema_type(type) do
+    raise ArgumentError,
+          "expected schema types to be ClickHouse type strings or atoms, got: #{inspect(type)}"
+  end
+
+  defp validate_schema_names!(nil, _type_count), do: :ok
+
+  defp validate_schema_names!(names, type_count) when is_list(names) do
+    unless Enum.all?(names, &is_binary/1) do
+      raise ArgumentError,
+            "expected schema :names to contain only strings, got: #{inspect(names)}"
+    end
+
+    if length(names) != type_count do
+      raise ArgumentError,
+            "schema names and types must have the same length, got #{length(names)} names and #{type_count} types"
+    end
+  end
+
+  defp validate_schema_names!(names, _type_count) do
+    raise ArgumentError, "expected schema :names to be a list of strings, got: #{inspect(names)}"
+  end
+
+  @doc """
+  Returns the encoded names and types header for a schema.
+
+  The schema must have been built with the `:names` option.
+  """
+  @spec encode_names_and_types(schema()) :: iodata()
+  def encode_names_and_types(%Schema{names_and_types: nil}) do
+    raise ArgumentError, "can't encode names and types for a schema without names"
+  end
+
+  def encode_names_and_types(%Schema{names_and_types: names_and_types}), do: names_and_types
 
   @doc false
   def encode_names_and_types(names, types) do
@@ -41,6 +165,12 @@ defmodule Ch.RowBinary do
       [3, [5 | "hello"]]
 
   """
+  @spec encode_row(schema(), list()) :: iodata()
+  @spec encode_row(list(), [term()]) :: iodata()
+  def encode_row(%Schema{encoding_types: types}, row) do
+    _encode_row(row, types)
+  end
+
   def encode_row(row, types) do
     _encode_row(row, encoding_types(types))
   end
@@ -63,6 +193,12 @@ defmodule Ch.RowBinary do
       [3, [5 | "hello"], 4, [2 | "hi"]]
 
   """
+  @spec encode_rows(schema(), [list()]) :: iodata()
+  @spec encode_rows([list()], [term()]) :: iodata()
+  def encode_rows(%Schema{encoding_types: types}, rows) do
+    _encode_rows(rows, types)
+  end
+
   def encode_rows(rows, types) do
     _encode_rows(rows, encoding_types(types))
   end

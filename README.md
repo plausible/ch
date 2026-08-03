@@ -56,14 +56,18 @@ Ch.query!(
   settings: %{"session_id" => session_id}
 )
 
-names = ["id", "text"]
-types = ["UInt64", "String"]
 rows = [[1, "one"], [2, "two"]]
+
+schema =
+  Ch.RowBinary.schema(
+    names: ["id", "text"],
+    types: ["UInt64", :string]
+  )
 
 insert = [
   "insert into demo format RowBinaryWithNamesAndTypes\n",
-  Ch.RowBinary.encode_names_and_types(names, types)
-  | Ch.RowBinary.encode_rows(rows, types)
+  Ch.RowBinary.encode_names_and_types(schema)
+  | Ch.RowBinary.encode_rows(schema, rows)
 ]
 
 Ch.query!(

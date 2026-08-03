@@ -108,6 +108,58 @@ defmodule Ch.RowBinaryTest do
     end
   end
 
+  describe "schema/1" do
+    test "prepares types for encoding rows" do
+      schema = schema(types: ["UInt64", :string, "Array(UInt8)"])
+      rows = [[1, "one", [2, 3]], [4, "two", []]]
+
+      assert IO.iodata_to_binary(encode_rows(schema, rows)) ==
+               IO.iodata_to_binary(encode_rows(rows, ["UInt64", "String", "Array(UInt8)"]))
+
+      assert IO.iodata_to_binary(encode_row(schema, hd(rows))) ==
+               IO.iodata_to_binary(encode_row(hd(rows), ["UInt64", "String", "Array(UInt8)"]))
+    end
+
+    test "pre-encodes a names and types header" do
+      schema = schema(names: ["id", "text"], types: ["UInt64", :string])
+
+      assert IO.iodata_to_binary(encode_names_and_types(schema)) ==
+               <<2, 2, "id", 4, "text", 6, "UInt64", 6, "String">>
+    end
+
+    test "requires names to encode a names and types header" do
+      schema = schema(types: ["UInt64"])
+
+      assert_raise ArgumentError,
+                   "can't encode names and types for a schema without names",
+                   fn -> encode_names_and_types(schema) end
+    end
+
+    test "validates options" do
+      assert_raise ArgumentError, "missing required schema option :types", fn -> schema([]) end
+
+      assert_raise ArgumentError, "unknown schema options: [:unknown]", fn ->
+        schema(types: [], unknown: true)
+      end
+
+      assert_raise ArgumentError, "expected schema :types to be a list, got: \"UInt8\"", fn ->
+        schema(types: "UInt8")
+      end
+
+      assert_raise ArgumentError,
+                   "schema names and types must have the same length, got 1 names and 2 types",
+                   fn -> schema(names: ["id"], types: ["UInt64", "String"]) end
+
+      assert_raise ArgumentError,
+                   "expected schema :names to contain only strings, got: [\"id\", :text]",
+                   fn -> schema(names: ["id", :text], types: ["UInt64", "String"]) end
+
+      assert_raise ArgumentError,
+                   "expected schema types to be ClickHouse type strings or atoms, got: {:array, :u8}",
+                   fn -> schema(types: [{:array, :u8}]) end
+    end
+  end
+
   describe "encode/2" do
     test "names and atom types" do
       assert IO.iodata_to_binary(encode_names_and_types(["answer"], [:u8])) ==
