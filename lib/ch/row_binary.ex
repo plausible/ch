@@ -140,13 +140,9 @@ defmodule Ch.RowBinary do
   defp encoding_type({:nullable = n, t}), do: {n, encoding_type(t)}
   defp encoding_type({:low_cardinality, t}), do: encoding_type(t)
 
-  defp encoding_type({:decimal, p, s}) do
-    case decimal_size(p) do
-      32 -> {:decimal32, s}
-      64 -> {:decimal64, s}
-      128 -> {:decimal128, s}
-      256 -> {:decimal256, s}
-    end
+  defp encoding_type({:decimal, precision, scale} = type) do
+    validate_decimal_type!(precision, scale)
+    type
   end
 
   defp encoding_type({d, _scale} = t)
@@ -164,6 +160,7 @@ defmodule Ch.RowBinary do
   defp encoding_type({:time64 = t, p}), do: {t, time_unit(p)}
 
   defp encoding_type({e, mappings}) when e in [:enum8, :enum16] do
+    Ch.Types.encode({e, mappings})
     {e, Map.new(mappings)}
   end
 
@@ -258,47 +255,52 @@ defmodule Ch.RowBinary do
     end
   end
 
-  for size <- [32, 64] do
+  for {size, max} <- [{32, 3.4028234663852886e38}, {64, 1.7976931348623157e308}] do
     type = :"f#{size}"
 
-    def encode(unquote(type), f) when is_number(f) do
+    def encode(unquote(type), f) when is_number(f) and f >= -unquote(max) and f <= unquote(max) do
       <<f::unquote(size)-little-signed-float>>
     end
 
     def encode(unquote(type), nil), do: <<0::unquote(size)>>
+
+    def encode(unquote(type), term) do
+      raise ArgumentError, "invalid Float#{unquote(size)}: #{inspect(term)}"
+    end
   end
 
-  def encode({:decimal, precision, scale}, decimal) do
-    type =
-      case decimal_size(precision) do
-        32 -> :decimal32
-        64 -> :decimal64
-        128 -> :decimal128
-        256 -> :decimal256
-      end
+  def encode({:decimal, precision, scale}, %Decimal{} = decimal) do
+    validate_decimal_type!(precision, scale)
+    size = decimal_size(precision)
+    coefficient = decimal_coefficient!(decimal, scale, size)
 
-    encode({type, scale}, decimal)
+    if abs(coefficient) >= Integer.pow(10, precision) do
+      raise ArgumentError,
+            "Decimal value #{Decimal.to_string(decimal)} exceeds precision #{precision}"
+    end
+
+    encode_decimal!(decimal, coefficient, size, scale)
+  end
+
+  def encode({:decimal, precision, scale}, nil) do
+    validate_decimal_type!(precision, scale)
+    <<0::size(decimal_size(precision))>>
   end
 
   for size <- [32, 64, 128, 256] do
     type = :"decimal#{size}"
+    precision = %{32 => 9, 64 => 18, 128 => 38, 256 => 76}[size]
 
-    def encode({unquote(type), scale} = t, %Decimal{sign: sign, coef: coef, exp: exp} = d) do
-      cond do
-        scale == -exp ->
-          i = sign * coef
-          <<i::unquote(size)-little>>
-
-        exp >= 0 ->
-          i = sign * coef * Integer.pow(10, exp + scale)
-          <<i::unquote(size)-little>>
-
-        true ->
-          encode(t, Decimal.round(d, scale))
-      end
+    def encode({unquote(type), scale}, %Decimal{} = decimal) do
+      validate_decimal_scale!(unquote(type), scale, unquote(precision))
+      coefficient = decimal_coefficient!(decimal, scale, unquote(size))
+      encode_decimal!(decimal, coefficient, unquote(size), scale)
     end
 
-    def encode({unquote(type), _scale}, nil), do: <<0::unquote(size)>>
+    def encode({unquote(type), scale}, nil) do
+      validate_decimal_scale!(unquote(type), scale, unquote(precision))
+      <<0::unquote(size)>>
+    end
   end
 
   def encode(:boolean, true), do: 1
@@ -346,29 +348,36 @@ defmodule Ch.RowBinary do
 
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     {seconds, _micros} = NaiveDateTime.to_gregorian_seconds(datetime)
-    <<seconds - @epoch_gregorian_seconds::32-little>>
+    encode_fixed_integer!(seconds - @epoch_gregorian_seconds, 32, :unsigned, "DateTime")
   end
 
   def encode(:datetime, %DateTime{} = datetime) do
-    <<DateTime.to_unix(datetime, :second)::32-little>>
+    datetime
+    |> DateTime.to_unix(:second)
+    |> encode_fixed_integer!(32, :unsigned, "DateTime")
   end
 
   def encode(:datetime, nil), do: <<0::32>>
 
   def encode({:datetime64, time_unit}, %NaiveDateTime{} = datetime) do
     {seconds, micros} = NaiveDateTime.to_gregorian_seconds(datetime)
-
-    <<(seconds - @epoch_gregorian_seconds) * time_unit + div(micros * time_unit, 1_000_000)::64-little-signed>>
+    ticks = (seconds - @epoch_gregorian_seconds) * time_unit + div(micros * time_unit, 1_000_000)
+    encode_fixed_integer!(ticks, 64, :signed, "DateTime64")
   end
 
   def encode({:datetime64, time_unit}, %DateTime{} = datetime) do
-    <<DateTime.to_unix(datetime, time_unit)::64-little-signed>>
+    datetime
+    |> DateTime.to_unix(time_unit)
+    |> encode_fixed_integer!(64, :signed, "DateTime64")
   end
 
   def encode({:datetime64, _time_unit}, nil), do: <<0::64>>
 
   def encode(:date, %Date{} = date) do
-    <<Date.to_gregorian_days(date) - @epoch_gregorian_days::16-little>>
+    date
+    |> Date.to_gregorian_days()
+    |> Kernel.-(@epoch_gregorian_days)
+    |> encode_fixed_integer!(16, :unsigned, "Date")
   end
 
   def encode(:date, nil), do: <<0::16>>
@@ -420,11 +429,27 @@ defmodule Ch.RowBinary do
 
   def encode(:uuid, nil), do: <<0::128>>
 
-  def encode(:ipv4, {a, b, c, d}), do: [d, c, b, a]
+  def encode(:ipv4, {a, b, c, d})
+      when is_integer(a) and a in 0..255 and is_integer(b) and b in 0..255 and is_integer(c) and
+             c in 0..255 and is_integer(d) and d in 0..255,
+      do: [d, c, b, a]
+
+  def encode(:ipv4, {_, _, _, _} = address) do
+    raise ArgumentError, "invalid IPv4 address: #{inspect(address)}"
+  end
+
   def encode(:ipv4, nil), do: <<0::32>>
 
-  def encode(:ipv6, {b1, b2, b3, b4, b5, b6, b7, b8}) do
+  def encode(:ipv6, {b1, b2, b3, b4, b5, b6, b7, b8})
+      when is_integer(b1) and b1 in 0..65_535 and is_integer(b2) and b2 in 0..65_535 and
+             is_integer(b3) and b3 in 0..65_535 and is_integer(b4) and b4 in 0..65_535 and
+             is_integer(b5) and b5 in 0..65_535 and is_integer(b6) and b6 in 0..65_535 and
+             is_integer(b7) and b7 in 0..65_535 and is_integer(b8) and b8 in 0..65_535 do
     <<b1::16, b2::16, b3::16, b4::16, b5::16, b6::16, b7::16, b8::16>>
+  end
+
+  def encode(:ipv6, {_, _, _, _, _, _, _, _} = address) do
+    raise ArgumentError, "invalid IPv6 address: #{inspect(address)}"
   end
 
   def encode(:ipv6, <<_::128>> = encoded), do: encoded
@@ -1475,6 +1500,86 @@ defmodule Ch.RowBinary do
   @compile inline: [to_be_continued: 4]
   defp to_be_continued(rows, bin, types_rest, row) do
     {:lists.reverse(rows), bin, {:cont, types_rest, row}}
+  end
+
+  defp decimal_coefficient!(decimal, scale, size) do
+    unless is_integer(decimal.coef) do
+      raise ArgumentError, "ClickHouse Decimal values must be finite"
+    end
+
+    %Decimal{sign: sign, coef: coefficient, exp: exponent} = decimal
+    shift = exponent + scale
+    max_digits = size |> then(&((1 <<< (&1 - 1)) - 1)) |> Integer.digits() |> length()
+
+    cond do
+      coefficient == 0 ->
+        0
+
+      shift >= 0 and length(Integer.digits(coefficient)) + shift > max_digits ->
+        raise ArgumentError,
+              "Decimal#{size}(#{scale}) value #{Decimal.to_string(decimal)} is out of range"
+
+      shift >= 0 ->
+        sign * coefficient * Integer.pow(10, shift)
+
+      -shift > length(Integer.digits(coefficient)) ->
+        0
+
+      true ->
+        divisor = Integer.pow(10, -shift)
+        quotient = div(coefficient, divisor)
+        remainder = rem(coefficient, divisor)
+        rounded = if remainder * 2 >= divisor, do: quotient + 1, else: quotient
+        sign * rounded
+    end
+  end
+
+  defp encode_decimal!(decimal, coefficient, size, scale) do
+    encode_fixed_integer!(
+      coefficient,
+      size,
+      :signed,
+      "Decimal#{size}(#{scale}) value #{Decimal.to_string(decimal)}"
+    )
+  end
+
+  defp validate_decimal_type!(precision, scale)
+       when is_integer(precision) and precision in 1..76 and is_integer(scale) and scale >= 0 and
+              scale <= precision,
+       do: :ok
+
+  defp validate_decimal_type!(precision, scale) do
+    raise ArgumentError,
+          "invalid Decimal precision and scale: precision=#{inspect(precision)}, scale=#{inspect(scale)}"
+  end
+
+  defp validate_decimal_scale!(_type, scale, precision)
+       when is_integer(scale) and scale >= 0 and scale <= precision,
+       do: :ok
+
+  defp validate_decimal_scale!(type, scale, precision) do
+    raise ArgumentError,
+          "invalid #{decimal_type_name(type)} scale #{inspect(scale)}; expected 0..#{precision}"
+  end
+
+  defp decimal_type_name(type) do
+    type |> Atom.to_string() |> String.replace_prefix("decimal", "Decimal")
+  end
+
+  defp encode_fixed_integer!(integer, size, :unsigned, _type)
+       when is_integer(integer) and integer >= 0 and integer < 1 <<< size do
+    <<integer::little-unsigned-size(size)>>
+  end
+
+  defp encode_fixed_integer!(integer, size, :signed, _type)
+       when is_integer(integer) and integer >= -(1 <<< (size - 1)) and
+              integer < 1 <<< (size - 1) do
+    <<integer::little-signed-size(size)>>
+  end
+
+  defp encode_fixed_integer!(integer, size, signedness, type) do
+    raise ArgumentError,
+          "#{type} is out of range for a #{size}-bit #{signedness} integer: #{inspect(integer)}"
   end
 
   @compile inline: [decimal_size: 1]

@@ -29,7 +29,10 @@ defmodule Ch.SelectTest do
     end
   end
 
-  test "decodes edge case selected values", %{pool: pool} do
+  test "selects heterogeneous parameter values as one RowBinary stream", %{pool: pool} do
+    uuid_text = "417ddc5d-e556-4d27-95dd-a34d84e46a50"
+    uuid = Base.decode16!("417DDC5DE5564D2795DDA34D84E46A50")
+
     assert %{names: names, rows: [row], data: data} =
              Ch.query!(
                pool,
@@ -37,7 +40,16 @@ defmodule Ch.SelectTest do
                SELECT
                  {empty:String} AS empty_string,
                  {special:String} AS special_string,
+                 {signed:Int64} AS signed,
+                 {unsigned:UInt64} AS unsigned,
+                 {float:Float64} AS float,
+                 {decimal:Decimal(18, 4)} AS decimal,
+                 {active:Bool} AS active,
+                 {fixed:FixedString(4)} AS fixed,
                  {nil:Nullable(String)} AS nil_string,
+                 {uuid:UUID} AS uuid,
+                 {date:Date} AS date,
+                 {datetime:DateTime64(6, 'UTC')} AS datetime,
                  {ints:Array(Int16)} AS ints,
                  {map:Map(String, UInt8)} AS map,
                  {tuple:Tuple(Int8, String)} AS tuple
@@ -45,7 +57,16 @@ defmodule Ch.SelectTest do
                %{
                  "empty" => "",
                  "special" => "line\n tab\t ampersand& equals= quote'",
+                 "signed" => -9_223_372_036_854_775_808,
+                 "unsigned" => 18_446_744_073_709_551_615,
+                 "float" => 1.5,
+                 "decimal" => Decimal.new("12.3400"),
+                 "active" => true,
+                 "fixed" => "AB",
                  "nil" => nil,
+                 "uuid" => uuid_text,
+                 "date" => ~D[2024-02-29],
+                 "datetime" => ~U[2024-02-29 12:34:56.123456Z],
                  "ints" => [-2, -1, 0, 1, 2],
                  "map" => %{"a" => 1, "b" => 2},
                  "tuple" => {-8, "tuple-value"}
@@ -55,7 +76,16 @@ defmodule Ch.SelectTest do
     assert names == [
              "empty_string",
              "special_string",
+             "signed",
+             "unsigned",
+             "float",
+             "decimal",
+             "active",
+             "fixed",
              "nil_string",
+             "uuid",
+             "date",
+             "datetime",
              "ints",
              "map",
              "tuple"
@@ -64,7 +94,16 @@ defmodule Ch.SelectTest do
     assert row == [
              "",
              "line\n tab\t ampersand& equals= quote'",
+             -9_223_372_036_854_775_808,
+             18_446_744_073_709_551_615,
+             1.5,
+             Decimal.new("12.3400"),
+             true,
+             "AB" <> <<0, 0>>,
              nil,
+             uuid,
+             ~D[2024-02-29],
+             ~U[2024-02-29 12:34:56.123456Z],
              [-2, -1, 0, 1, 2],
              %{"a" => 1, "b" => 2},
              {-8, "tuple-value"}

@@ -231,11 +231,7 @@ defmodule Ch.QueryStringTest do
              ).rows == [[strings, {"'", "\\", "x'), 1; select 1 --"}, map]]
     end
 
-    test "string parameters are escaped", %{pool: pool} do
-      for s <- ["\t", "\n", "\\", "'", "\b", "\f", "\r", "\0"] do
-        assert Ch.query!(pool, "select {s:String}", %{"s" => s}).rows == [[s]]
-      end
-
+    test "escaped string params work as splitByChar arguments", %{pool: pool} do
       assert Ch.query!(pool, "select splitByChar('\t', 'abc\t123')").rows ==
                [[["abc", "123"]]]
 

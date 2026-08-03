@@ -12,6 +12,16 @@ defmodule Ch.RowBinaryStringTest do
     {:ok, pool: start_supervised!(Ch)}
   end
 
+  property "FixedString params are padded to their declared size", %{pool: pool} do
+    check all size <- integer(1..12),
+              value <- string(:alphanumeric, max_length: size) do
+      padding = :binary.copy(<<0>>, size - byte_size(value))
+
+      assert Ch.query!(pool, "SELECT {value:FixedString(#{size})}", %{"value" => value}).rows ==
+               [[value <> padding]]
+    end
+  end
+
   property "String values inserted as RowBinary round-trip through ClickHouse", %{pool: pool} do
     Help.query!("CREATE TABLE #{@string_table}(id UInt8, s String) ENGINE Memory")
     on_exit(fn -> Help.query!("DROP TABLE #{@string_table}") end)

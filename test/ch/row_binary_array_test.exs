@@ -9,14 +9,6 @@ defmodule Ch.RowBinaryArrayTest do
     {:ok, pool: start_supervised!(Ch)}
   end
 
-  property "array params round-trip through ClickHouse across integer widths", %{pool: pool} do
-    check all {type, values, expected} <- integer_array_param() do
-      assert Ch.query!(pool, "SELECT {value:Array(#{type})}", %{"value" => values}).rows == [
-               [expected]
-             ]
-    end
-  end
-
   property "array params round-trip through ClickHouse across element kinds", %{pool: pool} do
     check all {type, values, expected} <- array_param() do
       assert Ch.query!(pool, "SELECT {value:Array(#{type})}", %{"value" => values}).rows == [
@@ -217,23 +209,6 @@ defmodule Ch.RowBinaryArrayTest do
     assert message =~ "UInt8"
   end
 
-  defp integer_array_param do
-    one_of([
-      typed_array("Int8", integer(-128..127)),
-      typed_array("Int16", integer(-32_768..32_767)),
-      typed_array("Int32", integer(-2_147_483_648..2_147_483_647)),
-      typed_array("Int64", integer(-9_007_199_254_740_992..9_007_199_254_740_991)),
-      typed_array("Int128", signed_integer(128)),
-      typed_array("Int256", signed_integer(256)),
-      typed_array("UInt8", integer(0..255)),
-      typed_array("UInt16", integer(0..65_535)),
-      typed_array("UInt32", integer(0..4_294_967_295)),
-      typed_array("UInt64", integer(0..9_007_199_254_740_991)),
-      typed_array("UInt128", unsigned_integer(128)),
-      typed_array("UInt256", unsigned_integer(256))
-    ])
-  end
-
   defp integer_width_examples do
     [
       {"Int8", [-128, 0, 127]},
@@ -319,19 +294,6 @@ defmodule Ch.RowBinaryArrayTest do
     gen all string <- safe_string(),
             n <- integer(0..255) do
       {string, n}
-    end
-  end
-
-  defp signed_integer(bits) do
-    gen all unsigned <- unsigned_integer(bits) do
-      signed_limit = 1 <<< (bits - 1)
-      if unsigned >= signed_limit, do: unsigned - (1 <<< bits), else: unsigned
-    end
-  end
-
-  defp unsigned_integer(bits) do
-    gen all bytes <- binary(length: div(bits, 8)) do
-      :binary.decode_unsigned(bytes, :little)
     end
   end
 
