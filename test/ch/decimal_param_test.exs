@@ -2,6 +2,8 @@ defmodule Ch.DecimalParamTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
+  alias Ch.RowBinary
+
   setup do
     {:ok, pool: start_supervised!(Ch), query_options: []}
   end
@@ -71,6 +73,37 @@ defmodule Ch.DecimalParamTest do
 
   test "decimal parameters below declared scale round to zero", ctx do
     assert_decimal_param(ctx, Decimal.new(1, 1, -77), "Decimal(76, 76)", Decimal.new("0E-76"))
+  end
+
+  test "decodes every RowBinary decimal width", %{pool: pool} do
+    assert Ch.query!(pool, """
+           SELECT
+             toDecimal32(2, 4),
+             toDecimal64(2, 4),
+             toDecimal128(2, 4),
+             toDecimal256(2, 4)
+           """).rows == [
+             List.duplicate(Decimal.new("2.0000"), 4)
+           ]
+  end
+
+  test "RowBinary decimal inserts apply scale and rounding", %{pool: pool} do
+    Help.query!("CREATE TABLE decimal_param_rowbinary(d Decimal32(4)) ENGINE Memory")
+    on_exit(fn -> Help.query!("DROP TABLE decimal_param_rowbinary") end)
+
+    rowbinary =
+      RowBinary.encode_rows(
+        [[Decimal.new("2.66")], [Decimal.new("2.6666")], [Decimal.new("2.66666")]],
+        ["Decimal32(4)"]
+      )
+
+    Ch.query!(pool, ["INSERT INTO decimal_param_rowbinary FORMAT RowBinary\n" | rowbinary])
+
+    assert Ch.query!(pool, "SELECT * FROM decimal_param_rowbinary").rows == [
+             [Decimal.new("2.6600")],
+             [Decimal.new("2.6666")],
+             [Decimal.new("2.6667")]
+           ]
   end
 
   property "compact exponent Decimal integer params round-trip", ctx do

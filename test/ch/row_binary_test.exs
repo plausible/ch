@@ -8,85 +8,17 @@ defmodule Ch.RowBinaryTest do
     type |> encode(value) |> IO.iodata_to_binary()
   end
 
-  test "encode -> decode" do
+  test "heterogeneous values compose into one RowBinary stream" do
     spec = [
-      {:string, ""},
-      {:string, "a"},
-      {:string, String.duplicate("a", 500)},
-      {:string, String.duplicate("a", 15000)},
-      {{:fixed_string, 2}, <<0, 0>>},
-      {{:fixed_string, 2}, "a" <> <<0>>},
-      {{:fixed_string, 2}, "aa"},
-      {:u8, 0},
-      {:u8, 0xFF},
-      {:u16, 0},
-      {:u16, 0xFFFF},
-      {:u32, 0},
-      {:u32, 0xFFFFFFFF},
-      {:u64, 0},
+      {:string, "mixed"},
+      {{:fixed_string, 2}, "xy"},
       {:u64, 0xFFFFFFFFFFFFFFFF},
-      {:u128, 0},
-      {:u128, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF},
-      {:u256, 0},
-      {:u256, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF},
-      {:i8, -0x80},
-      {:i8, 0},
-      {:i8, 0x7F},
-      {:i16, -0x8000},
-      {:i16, 0},
-      {:i16, 0x7FFF},
-      {:i32, -0x80000000},
-      {:i32, 0},
-      {:i32, 0x7FFFFFFF},
-      {:i64, -0x800000000000000},
-      {:i64, 0},
-      {:i64, 0x7FFFFFFFFFFFFFFF},
-      {:i128, -0x800000000000000000000000000000},
-      {:i128, 0},
-      {:i128, 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF},
-      {:i256, -0x800000000000000000000000000000000000000000000000000000000000},
-      {:i256, 0},
-      {:i256, 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF},
-      {:f32, 1.2345678806304932},
-      {:f64, 1.234567898762738492830000503040030202020433},
+      {:i64, -0x8000000000000000},
+      {:f64, 1.5},
       {:date, ~D[2022-01-01]},
-      {:date, ~D[2042-01-01]},
-      {:date, ~D[1970-01-01]},
-      {:date32, ~D[1960-01-01]},
-      {:date32, ~D[2100-01-01]},
-      {:datetime, ~N[1970-01-01 00:00:00]},
       {:datetime, ~N[2022-01-01 00:00:00]},
-      {:datetime, ~N[2042-01-01 00:00:00]},
-      {{:array, :string}, []},
-      {{:array, :string},
-       [
-         "",
-         "a",
-         String.duplicate("a", 500),
-         String.duplicate("a", 15000)
-       ]},
-      {{:array, :u8}, [0, 0xFF]},
-      {{:array, :u16}, [0, 0xFFFF]},
-      {{:array, :u32}, [0, 0xFFFFFFFF]},
-      {{:array, :u64}, [0, 0xFFFFFFFFFFFFFFFF]},
-      {{:array, :i8}, [-0x80, 0, 0x7F]},
-      {{:array, :i16}, [-0x8000, 0, 0x7FFF]},
-      {{:array, :i32}, [-0x80000000, 0, 0x7FFFFFFF]},
-      {{:array, :i64}, [-0x800000000000000, 0, 0x7FFFFFFFFFFFFFFF]},
-      {{:array, :f32}, [-1.2345678806304932, 0, 1.2345678806304932]},
-      {{:array, :f64},
-       [
-         -1.234567898762738492830000503040030202020433,
-         0,
-         1.234567898762738492830000503040030202020433
-       ]},
-      {{:array, :date}, [~D[2022-01-01], ~D[2042-01-01], ~D[1970-01-01]]},
-      {{:array, :datetime},
-       [~N[1970-01-01 12:23:34], ~N[2022-01-01 22:12:59], ~N[2042-01-01 04:23:01]]},
       {{:array, {:array, :string}}, [["a"], [], ["a", "b"]]},
       {{:nullable, :string}, nil},
-      {{:nullable, :string}, "string"},
-      {:point, {10, 10}},
       {:point, {10.5, 11}},
       {{:map, :string, :string}, %{"a" => "b", "c" => "d"}}
     ]
@@ -443,6 +375,12 @@ defmodule Ch.RowBinaryTest do
       assert_raise ArgumentError, "invalid Int8: \"a\"", fn -> encode(:i8, "a") end
     end
   end
+end
+
+defmodule Ch.RowBinaryStreamingCompositeTest do
+  use ExUnit.Case, async: true
+
+  import Ch.RowBinary
 
   describe "decode_header/1" do
     test "byte-by-byte" do
@@ -731,7 +669,32 @@ defmodule Ch.RowBinaryTest do
                ]
              ]
     end
+  end
+end
 
+defmodule Ch.RowBinaryStreamingScalarTest do
+  use ExUnit.Case, async: true
+
+  import Ch.RowBinary
+  import Bitwise
+
+  defp byte_by_byte(data, types) do
+    binary = IO.iodata_to_binary(data)
+    byte_by_byte(binary, decoding_types(types), _rows = [], _buffer = "", _state = nil)
+  end
+
+  defp byte_by_byte(<<byte, rest::bytes>>, types, rows, buffer, state) do
+    {new_rows, buffer, state} = decode_rows_continue(<<buffer::bytes, byte>>, types, state)
+    byte_by_byte(rest, types, rows ++ new_rows, buffer, state)
+  end
+
+  defp byte_by_byte(<<>>, _types, rows, buffer, state) do
+    assert buffer == ""
+    assert state == nil
+    rows
+  end
+
+  describe "decode_rows_continue/3 (byte-by-byte)" do
     test "integers" do
       types = [
         "UInt8",

@@ -24,6 +24,16 @@ defmodule Ch.RowBinaryIntegerTest do
     i256: 256
   ]
 
+  setup do
+    {:ok, pool: start_supervised!(Ch)}
+  end
+
+  property "params round-trip through ClickHouse across integer widths", %{pool: pool} do
+    check all {type, value} <- integer_param() do
+      assert Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}).rows == [[value]]
+    end
+  end
+
   describe "unsigned integers" do
     property "encode and decode all bit patterns as little-endian values" do
       check all {type, bits, bytes, value} <- uint_value() do
@@ -107,6 +117,23 @@ defmodule Ch.RowBinaryIntegerTest do
             bytes <- binary(length: div(bits, 8)) do
       {type, bits, bytes, :binary.decode_unsigned(bytes, :little)}
     end
+  end
+
+  defp integer_param do
+    one_of([
+      typed_integer("Int8", -128..127),
+      typed_integer("Int16", -32_768..32_767),
+      typed_integer("Int32", -2_147_483_648..2_147_483_647),
+      typed_integer("Int64", -9_007_199_254_740_992..9_007_199_254_740_991),
+      typed_integer("UInt8", 0..255),
+      typed_integer("UInt16", 0..65_535),
+      typed_integer("UInt32", 0..4_294_967_295),
+      typed_integer("UInt64", 0..9_007_199_254_740_991)
+    ])
+  end
+
+  defp typed_integer(type, range) do
+    gen(all value <- integer(range), do: {type, value})
   end
 
   defp int_value do
