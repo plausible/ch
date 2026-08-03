@@ -19,6 +19,28 @@ defmodule Ch.FaultsTest do
     assert reason in [:econnrefused, :closed]
   end
 
+  test "closes a connection when its first checkout is cancelled", %{
+    listen: listen,
+    port: port
+  } do
+    {:ok, pool} =
+      Ch.start_link(
+        url: "http://localhost:#{port}",
+        pool_size: 1
+      )
+
+    {:ok, query} =
+      Task.start(fn ->
+        Ch.query(pool, "select 1", %{}, timeout: :infinity)
+      end)
+
+    {:ok, socket} = :gen_tcp.accept(listen)
+    assert_receive {:tcp, ^socket, _request}, 1_000
+
+    Process.exit(query, :kill)
+    assert_receive {:tcp_closed, ^socket}, 1_000
+  end
+
   test "removes a timed out connection and reconnects on the next query", ctx do
     %{port: port, listen: listen} = ctx
     {:ok, pool} = Ch.start_link(url: "http://localhost:#{port}")

@@ -234,8 +234,8 @@ defmodule Ch do
       NimblePool.checkout!(
         pool,
         :request,
-        fn {pid, _ref}, conn_or_template ->
-          with {:ok, conn} <- connect(conn_or_template, pid, deadline),
+        fn from, conn_or_template ->
+          with {:ok, conn} <- connect(conn_or_template, from, deadline),
                {:ok, conn, status, headers, data} <-
                  request(conn, "POST", path, headers, statement, deadline) do
             {{:ok, status, headers, data}, checkin(conn)}
@@ -284,6 +284,11 @@ defmodule Ch do
   end
 
   @impl NimblePool
+  def handle_update({:connected, %Mint.HTTP1{} = conn}, :template, config) do
+    {:ok, conn, config}
+  end
+
+  @impl NimblePool
   def handle_checkin({:ok, conn}, _from, _prev, config) do
     {:ok, conn, config}
   end
@@ -307,11 +312,13 @@ defmodule Ch do
     {:ok, config}
   end
 
-  defp connect({:template, scheme, host, port}, owner, deadline) do
+  defp connect({:template, scheme, host, port}, {owner, _ref} = from, deadline) do
     timeout = Ch.HTTP.to_timeout(deadline)
 
     case Mint.HTTP1.connect(scheme, host, port, mode: :passive, timeout: timeout) do
       {:ok, conn} ->
+        :ok = NimblePool.update(from, {:connected, conn})
+
         case Mint.HTTP1.controlling_process(conn, owner) do
           {:ok, _conn} = ok ->
             ok
@@ -326,7 +333,7 @@ defmodule Ch do
     end
   end
 
-  defp connect({:ok, _conn} = ok, _owner, _deadline), do: ok
+  defp connect({:ok, _conn} = ok, _from, _deadline), do: ok
 
   defp request(conn, method, path, headers, body, deadline) do
     result =
