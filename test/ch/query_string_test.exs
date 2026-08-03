@@ -173,6 +173,45 @@ defmodule Ch.QueryStringTest do
       end
     end
 
+    test "DateTime parameters around the Unix epoch round-trip through ClickHouse", %{pool: pool} do
+      datetimes = [
+        ~U[1969-12-31 23:59:58.500000Z],
+        ~U[1969-12-31 23:59:59Z],
+        ~U[1969-12-31 23:59:59.000001Z],
+        ~U[1969-12-31 23:59:59.1Z],
+        ~U[1969-12-31 23:59:59.500Z],
+        ~U[1969-12-31 23:59:59.999999Z],
+        ~U[1970-01-01 00:00:00Z],
+        ~U[1970-01-01 00:00:00.000001Z],
+        ~U[1970-01-01 00:00:00.5Z],
+        ~U[1970-01-01 00:00:00.999999Z],
+        ~U[1970-01-01 00:00:01.000000Z],
+        DateTime.shift_zone!(~U[1969-12-31 23:59:59.500000Z], "America/New_York"),
+        DateTime.shift_zone!(~U[1970-01-01 00:00:00.500000Z], "Europe/Moscow")
+      ]
+
+      expected_datetimes =
+        Enum.map(datetimes, fn datetime ->
+          datetime
+          |> DateTime.to_unix(:microsecond)
+          |> DateTime.from_unix!(:microsecond)
+        end)
+
+      for {datetime, expected} <- Enum.zip(datetimes, expected_datetimes) do
+        assert Ch.query!(
+                 pool,
+                 "select {datetime:DateTime64(6, 'UTC')}",
+                 %{"datetime" => datetime}
+               ).rows == [[expected]]
+      end
+
+      assert Ch.query!(
+               pool,
+               "select {datetimes:Array(DateTime64(6, 'UTC'))}",
+               %{"datetimes" => datetimes}
+             ).rows == [[expected_datetimes]]
+    end
+
     test "DateTime parameters in arrays are parsed as timestamps instead of DateTime64 ticks", %{
       pool: pool
     } do
@@ -363,19 +402,12 @@ defmodule Ch.QueryStringTest do
   defp expected_param(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
   defp expected_param(%Time{} = value), do: Time.to_iso8601(value)
 
-  defp expected_param(%DateTime{microsecond: {val, precision}} = value)
-       when val > 0 and precision > 0 do
-    size = round(:math.pow(10, precision))
-    unix = DateTime.to_unix(value, size)
-    seconds = div(unix, size)
-    fractional = rem(unix, size)
-
-    Integer.to_string(seconds) <>
-      "." <> String.pad_leading(Integer.to_string(fractional), precision, "0")
+  defp expected_param(%DateTime{} = value) do
+    value
+    |> DateTime.shift_zone!("Etc/UTC")
+    |> DateTime.to_naive()
+    |> NaiveDateTime.to_iso8601()
   end
-
-  defp expected_param(%DateTime{} = value),
-    do: value |> DateTime.to_unix(:second) |> Integer.to_string()
 
   defp expected_param(value) when is_binary(value) do
     value
