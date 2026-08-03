@@ -313,20 +313,10 @@ defmodule Ch.RowBinary do
   end
 
   def encode({:map, k, v}, m) when is_map(m) do
-    case map_size(m) do
-      0 ->
-        0
-
-      size ->
-        encoded =
-          :maps.fold(
-            fn key, value, acc -> [encode(k, key), encode(v, value) | acc] end,
-            [],
-            m
-          )
-
-        [encode(:varint, size) | encoded]
-    end
+    [
+      encode(:varint, map_size(m))
+      | :maps.fold(fn key, value, acc -> [encode(k, key), encode(v, value) | acc] end, [], m)
+    ]
   end
 
   def encode({:map, _k, _v}, []), do: 0
