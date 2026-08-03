@@ -465,6 +465,65 @@ defmodule Ch.RowBinaryTest do
       assert {rows, "", nil} = decode_rows_continue(rest, types, nil)
       assert rows == [[1, "a", 100], [2, "b", 101]]
     end
+
+    test "incremental continuation does not require the previous input" do
+      header =
+        IO.iodata_to_binary([
+          encode(:varint, 2),
+          encode(:string, "a"),
+          encode(:string, String.duplicate("column", 100)),
+          encode(:string, "UInt8"),
+          encode(:string, "String")
+        ])
+
+      rows = IO.iodata_to_binary([encode(:u8, 7), encode(:string, "value")])
+      prefix = binary_part(header, 0, byte_size(header) - 1)
+      last = binary_part(header, byte_size(header) - 1, 1)
+      chunks = for <<byte <- prefix>>, do: <<byte>>
+
+      state =
+        Enum.reduce(chunks, nil, fn chunk, state ->
+          assert {:more, state} = decode_header_continue(chunk, state)
+          state
+        end)
+
+      assert {:ok, ["a", long_name], [:u8, :string], ^rows} =
+               decode_header_continue(last <> rows, state)
+
+      assert long_name == String.duplicate("column", 100)
+    end
+
+    test "copies header strings out of their input buffer" do
+      header = IO.iodata_to_binary([1, encode(:string, "name"), encode(:string, "UInt8")])
+      backing = <<header::bytes, 0::size(1_000_000 * 8)>>
+      input = binary_part(backing, 0, byte_size(header))
+
+      assert {:ok, [name], [:u8], ""} = decode_header(input)
+      assert name == "name"
+      assert :binary.referenced_byte_size(name) == byte_size(name)
+    end
+  end
+
+  describe "streaming strings" do
+    test "continuation consumes the length prefix and collected bytes once" do
+      assert {[], "", {:cont, [{:string, 3, ["he"]}], []} = state} =
+               decode_rows_continue(<<5, "he">>, [:string], nil)
+
+      assert {[["hello"]], "", nil} = decode_rows_continue("llo", [:string], state)
+    end
+
+    test "copy_strings detaches decoded binaries from their input" do
+      string = String.duplicate("x", 100)
+      backing = <<100, string::bytes, 0::size(1_000_000 * 8)>>
+      input = binary_part(backing, 0, 101)
+
+      assert [[shared]] = decode_rows(input, [:string])
+      assert [[copied]] = decode_rows(input, [:string], copy_strings: true)
+
+      assert :binary.referenced_byte_size(shared) > byte_size(shared)
+      assert :binary.referenced_byte_size(copied) == byte_size(copied)
+      assert shared == copied
+    end
   end
 
   describe "decode_rows_continue/3 (byte-by-byte)" do
