@@ -1177,87 +1177,6 @@ defmodule Ch.RowBinary do
   end
 
   simple_types = %{
-    u8: %{pattern: quote(do: <<u>>), value: quote(do: u)},
-    u16: %{pattern: quote(do: <<u::16-little>>), value: quote(do: u)},
-    u32: %{pattern: quote(do: <<u::32-little>>), value: quote(do: u)},
-    u64: %{pattern: quote(do: <<u::64-little>>), value: quote(do: u)},
-    u128: %{pattern: quote(do: <<u::128-little>>), value: quote(do: u)},
-    u256: %{pattern: quote(do: <<u::256-little>>), value: quote(do: u)},
-    i8: %{pattern: quote(do: <<i::signed>>), value: quote(do: i)},
-    i16: %{pattern: quote(do: <<i::16-little-signed>>), value: quote(do: i)},
-    i32: %{pattern: quote(do: <<i::32-little-signed>>), value: quote(do: i)},
-    i64: %{pattern: quote(do: <<i::64-little-signed>>), value: quote(do: i)},
-    i128: %{pattern: quote(do: <<i::128-little-signed>>), value: quote(do: i)},
-    i256: %{pattern: quote(do: <<i::256-little-signed>>), value: quote(do: i)},
-    f32: [
-      %{pattern: quote(do: <<f::32-little-float>>), value: quote(do: f)},
-      %{pattern: quote(do: <<_nan_or_inf::32>>), value: quote(do: nil)}
-    ],
-    f64: [
-      %{pattern: quote(do: <<f::64-little-float>>), value: quote(do: f)},
-      %{pattern: quote(do: <<_nan_or_inf::64>>), value: quote(do: nil)}
-    ],
-    uuid: %{
-      pattern: quote(do: <<u1::64-little, u2::64-little>>),
-      value: quote(do: <<u1::64, u2::64>>)
-    },
-    date: %{
-      pattern: quote(do: <<d::16-little>>),
-      value: quote(do: Date.from_gregorian_days(d + @epoch_gregorian_days))
-    },
-    date32: %{
-      pattern: quote(do: <<d::32-little-signed>>),
-      value: quote(do: Date.from_gregorian_days(d + @epoch_gregorian_days))
-    },
-    time: %{
-      pattern: quote(do: <<s::32-little-signed>>),
-      value: quote(do: time_after_midnight(s, 1))
-    },
-    boolean: [
-      %{pattern: quote(do: <<0>>), value: quote(do: false)},
-      %{pattern: quote(do: <<1>>), value: quote(do: true)},
-      %{pattern: quote(do: <<b>>), value: quote(do: raise("invalid boolean value: #{b}"))}
-    ],
-    ipv4: %{
-      pattern: quote(do: <<b4, b3, b2, b1>>),
-      value: quote(do: {b1, b2, b3, b4})
-    },
-    ipv6: %{
-      pattern: quote(do: <<b1::16, b2::16, b3::16, b4::16, b5::16, b6::16, b7::16, b8::16>>),
-      value: quote(do: {b1, b2, b3, b4, b5, b6, b7, b8})
-    },
-    point: %{
-      pattern: quote(do: <<x::64-little-float, y::64-little-float>>),
-      value: quote(do: {x, y})
-    }
-  }
-
-  for {type, clauses} <- simple_types do
-    fun = :"decode_#{type}_decode_rows"
-    @compile inline: [{fun, 5}]
-
-    for %{pattern: pattern, value: value} <- List.wrap(clauses) do
-      defp unquote(fun)(<<unquote(pattern), rest::bytes>>, types_rest, row, rows, types) do
-        decode_rows(types_rest, rest, [unquote(value) | row], rows, types)
-      end
-    end
-
-    defp unquote(fun)(<<bin::bytes>>, types_rest, row, rows, _types) do
-      to_be_continued(rows, bin, [unquote(type) | types_rest], row)
-    end
-  end
-
-  @compile inline: [
-             decode_array_items: 8,
-             decode_one_type?: 1,
-             decode_one: 2
-           ]
-
-  defp decode_array_items(bin, _type, 0, acc, types_rest, original_row, rows, types) do
-    decode_rows(types_rest, bin, [:lists.reverse(acc) | original_row], rows, types)
-  end
-
-  fixed_array_types = %{
     u8: %{size: 1, pattern: quote(do: <<u>>), value: quote(do: u)},
     u16: %{size: 2, pattern: quote(do: <<u::16-little>>), value: quote(do: u)},
     u32: %{size: 4, pattern: quote(do: <<u::32-little>>), value: quote(do: u)},
@@ -1324,7 +1243,32 @@ defmodule Ch.RowBinary do
     }
   }
 
-  for {type, clauses} <- fixed_array_types do
+  for {type, clauses} <- simple_types do
+    fun = :"decode_#{type}_decode_rows"
+    @compile inline: [{fun, 5}]
+
+    for %{pattern: pattern, value: value} <- List.wrap(clauses) do
+      defp unquote(fun)(<<unquote(pattern), rest::bytes>>, types_rest, row, rows, types) do
+        decode_rows(types_rest, rest, [unquote(value) | row], rows, types)
+      end
+    end
+
+    defp unquote(fun)(<<bin::bytes>>, types_rest, row, rows, _types) do
+      to_be_continued(rows, bin, [unquote(type) | types_rest], row)
+    end
+  end
+
+  @compile inline: [
+             decode_array_items: 8,
+             decode_one_type?: 1,
+             decode_one: 2
+           ]
+
+  defp decode_array_items(bin, _type, 0, acc, types_rest, original_row, rows, types) do
+    decode_rows(types_rest, bin, [:lists.reverse(acc) | original_row], rows, types)
+  end
+
+  for {type, clauses} <- simple_types do
     fun = :"decode_array_#{type}_items"
     chunk_fun = :"decode_array_#{type}_chunk"
     item_size = clauses |> List.wrap() |> hd() |> Map.fetch!(:size)
@@ -1438,16 +1382,6 @@ defmodule Ch.RowBinary do
   defp decode_one(:string, <<_bin::bytes>>), do: :more
   defp decode_one(:json, <<_bin::bytes>>), do: :more
   defp decode_one(:nothing, <<bin::bytes>>), do: {:ok, nil, bin}
-
-  for {type, clauses} <- simple_types do
-    for %{pattern: pattern, value: value} <- List.wrap(clauses) do
-      defp decode_one(unquote(type), <<unquote(pattern), rest::bytes>>) do
-        {:ok, unquote(value), rest}
-      end
-    end
-
-    defp decode_one(unquote(type), <<_bin::bytes>>), do: :more
-  end
 
   defp decode_one({:fixed_string, size}, <<bin::bytes>>) do
     case bin do
