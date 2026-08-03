@@ -167,7 +167,9 @@ defmodule Ch.RowBinaryTest do
 
     test "map" do
       assert encode({:map, :string, :string}, []) == 0
-      assert encode({:map, :string, :string}, %{}) == 0
+
+      assert encode({:map, :string, :string}, %{})
+             |> IO.iodata_to_binary() == <<0>>
 
       assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
                encode({:map, :string, :string}, [{"hello", "world"}])
