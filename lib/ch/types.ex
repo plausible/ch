@@ -673,14 +673,9 @@ defmodule Ch.Types do
   defp encode_mapping([] = empty), do: empty
 
   defp encode_string(string) do
-    string
-    |> String.replace("\\", "\\\\")
-    |> String.replace("'", "\\'")
-    |> String.replace(<<0>>, "\\0")
-    |> String.replace("\b", "\\b")
-    |> String.replace("\f", "\\f")
-    |> String.replace("\n", "\\n")
-    |> String.replace("\r", "\\r")
-    |> String.replace("\t", "\\t")
+    String.replace(string, ["\\", "'"], fn
+      "\\" -> "\\\\"
+      "'" -> "\\'"
+    end)
   end
 end

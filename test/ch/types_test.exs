@@ -1,6 +1,8 @@
 defmodule Ch.TypesTest do
   use ExUnit.Case, async: true
+  use ExUnitProperties
 
+  import StreamData, except: [boolean: 0, date: 0, map: 2, nullable: 1, tuple: 1]
   import Ch.Types, only: [decode: 1, encode: 1]
 
   doctest Ch.Types, import: true
@@ -228,13 +230,6 @@ defmodule Ch.TypesTest do
       end
     end
   end
-end
-
-defmodule Ch.TypesPropertyTest do
-  use ExUnit.Case, async: true
-  use ExUnitProperties
-
-  import Ch.Types, only: [decode: 1, encode: 1]
 
   @scalar_types [
     :string,
@@ -379,39 +374,41 @@ defmodule Ch.TypesPropertyTest do
     end
     |> bind(fn
       :array ->
-        map(type_gen, &{:array, &1})
+        StreamData.map(type_gen, &{:array, &1})
 
       :tuple ->
-        map(list_of(type_gen, max_length: 6), &{:tuple, &1})
+        StreamData.map(list_of(type_gen, max_length: 6), &{:tuple, &1})
 
       :variant ->
-        map(list_of(type_gen, min_length: 1, max_length: 6), &{:variant, &1})
+        StreamData.map(list_of(type_gen, min_length: 1, max_length: 6), &{:variant, &1})
 
       :map ->
-        map({type_gen, type_gen}, fn {key_type, value_type} -> {:map, key_type, value_type} end)
+        StreamData.map({type_gen, type_gen}, fn {key_type, value_type} ->
+          {:map, key_type, value_type}
+        end)
 
       :nullable ->
-        map(type_gen, &{:nullable, &1})
+        StreamData.map(type_gen, &{:nullable, &1})
 
       :low_cardinality ->
-        map(type_gen, &{:low_cardinality, &1})
+        StreamData.map(type_gen, &{:low_cardinality, &1})
 
       :fixed_string ->
-        map(integer(1..1024), &{:fixed_string, &1})
+        StreamData.map(integer(1..1024), &{:fixed_string, &1})
 
       :datetime ->
-        map(timezone_gen(), &{:datetime, &1})
+        StreamData.map(timezone_gen(), &{:datetime, &1})
 
       :datetime64 ->
         one_of([
-          map(integer(0..9), &{:datetime64, &1}),
-          map({integer(0..9), timezone_gen()}, fn {precision, timezone} ->
+          StreamData.map(integer(0..9), &{:datetime64, &1}),
+          StreamData.map({integer(0..9), timezone_gen()}, fn {precision, timezone} ->
             {:datetime64, precision, timezone}
           end)
         ])
 
       :time64 ->
-        map(integer(0..9), &{:time64, &1})
+        StreamData.map(integer(0..9), &{:time64, &1})
 
       :decimal ->
         gen all precision <- integer(1..76),
