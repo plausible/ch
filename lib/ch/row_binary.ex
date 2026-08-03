@@ -319,10 +319,13 @@ defmodule Ch.RowBinary do
 
       size ->
         encoded =
-          Enum.reduce(m, [], fn {key, value}, acc ->
-            [encode(v, value), encode(k, key) | acc]
-          end)
-          |> :lists.reverse()
+          :maps.fold(
+            fn key, value, acc ->
+              [encode(k, key), encode(v, value) | acc]
+            end,
+            [],
+            m
+          )
 
         [encode(:varint, size) | encoded]
     end
