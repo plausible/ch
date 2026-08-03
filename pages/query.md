@@ -122,7 +122,9 @@ decoded_rows = Ch.RowBinary.decode_rows(IO.iodata_to_binary(rowbinary), plan)
 ### Generated Encoders
 
 For fixed schemas on hot insert paths, `Ch.RowBinary.Encoder.define_encoder/1`
-generates direct encoding code for common types at compile time:
+generates direct encoding code for common types at compile time. It bypasses
+generic type dispatch while using the same type-specific helpers as the generic
+codec:
 
 ```elixir
 defmodule EventInsert do
@@ -150,9 +152,10 @@ are added; use `Ch.RowBinary.prepare/1` for lower-complexity reuse.
 
 Run `mix run dev/row_binary_encoder_benchmark.exs` to compare generated and
 generic encoders and report generated-module compile time and BEAM size. Set the
-`ROWS` environment variable to change the default one-million-row workload. The
-list-row cases use identical inputs and a prepared generic plan, isolating codec
-dispatch; map-field extraction is reported separately.
+`ROWS` and `ITERATIONS` environment variables to change the default
+one-million-row workload and three samples. The list-row cases use identical
+inputs and a prepared generic plan, isolating codec dispatch; map-field
+extraction is reported separately.
 
 ## Compressed Inserts
 

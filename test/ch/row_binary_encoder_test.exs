@@ -129,6 +129,25 @@ defmodule Ch.RowBinaryEncoderTest do
       assert binary(MixedTypeEncoder.encode(row)) == binary(RowBinary.encode_row(row, types))
     end
 
+    test "generic dispatch delegates to the shared type helpers" do
+      assert RowBinary.encode(:u64, 42) == RowBinary.encode_u64(42)
+      assert RowBinary.encode(:string, "one") == RowBinary.encode_string("one")
+      assert RowBinary.encode(:boolean, true) == RowBinary.encode_boolean(true)
+
+      assert RowBinary.encode(:datetime, ~N[2026-08-02 12:34:56]) ==
+               RowBinary.encode_datetime(~N[2026-08-02 12:34:56])
+    end
+
+    test "shared Array(UInt8) helper preserves element validation" do
+      assert_raise ArgumentError, "invalid UInt8: 256", fn ->
+        RowBinary.encode({:array, :u8}, [1, 256])
+      end
+
+      assert_raise ArgumentError, ~s(invalid UInt8: <<1>>), fn ->
+        ListRowEncoder.encode([[1, "one", [<<1>>]]])
+      end
+    end
+
     test "builds a complete insert body with a validated table identifier" do
       rows = [%{id: 1, text: "one"}, %{id: 2, text: "two"}]
 

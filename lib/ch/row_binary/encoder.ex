@@ -2,10 +2,11 @@ defmodule Ch.RowBinary.Encoder do
   @moduledoc """
   Compile-time RowBinary encoders for fixed, performance-sensitive schemas.
 
-  Generated encoders inline common type encodings and fall back to
-  `Ch.RowBinary.encode/2` for uncommon types. Each schema duplicates encoder
-  code in the caller, so use this for hot paths and prefer
-  `Ch.RowBinary.prepare/1` when compile-time specialization is unnecessary.
+  Generated encoders call the same type-specific helpers as the generic codec,
+  bypassing `Ch.RowBinary.encode/2` dispatch for common types without duplicating
+  encoding semantics. Each schema duplicates schema wiring in the caller, so
+  use this for hot paths and prefer `Ch.RowBinary.prepare/1` when compile-time
+  specialization is unnecessary.
 
   Schema order is significant. List schemas preserve their declared order;
   map schemas are sorted by their column names to make their otherwise
@@ -31,16 +32,7 @@ defmodule Ch.RowBinary.Encoder do
   contain dot-separated unquoted ClickHouse identifier components only.
   """
 
-  import Bitwise
-
-  @epoch_gregorian_seconds 62_167_219_200
-  @epoch_gregorian_days 719_528
   @identifier ~r/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/
-
-  # Keeps the compiler from carrying the outer non-nil case refinement into a
-  # nested specialized expression whose standalone form also handles nil.
-  @doc false
-  def non_nil(value), do: value
 
   defmacro define_encoder(opts_ast) do
     opts = compile_time_value!(opts_ast, __CALLER__, :options)
@@ -236,241 +228,78 @@ defmodule Ch.RowBinary.Encoder do
   end
 
   defp row_iodata(columns) do
+    # Keeping helper results as iodata avoids copying fixed-width fields into a
+    # new binary. A generated coalesced bitstring was slower in fixed-only and
+    # mixed-schema benchmarks on BEAM.
     Enum.map(columns, fn {_, _, _, type, variable} -> encoder_expr(type, variable) end)
   end
 
   defp encoder_expr(:string, value) do
-    quote do
-      case unquote(value) do
-        string when is_binary(string) ->
-          [Ch.RowBinary.encode_varint(byte_size(string)) | string]
-
-        iodata when is_list(iodata) ->
-          [Ch.RowBinary.encode_varint(IO.iodata_length(iodata)) | iodata]
-
-        nil ->
-          0
-      end
-    end
-  end
-
-  defp encoder_expr(:boolean, value) do
-    quote do
-      case unquote(value) do
-        true -> 1
-        false -> 0
-        nil -> 0
-      end
-    end
-  end
-
-  defp encoder_expr(:u8, value) do
-    quote do
-      case unquote(value) do
-        integer when is_integer(integer) and integer >= 0 and integer <= 255 -> integer
-        nil -> 0
-        term -> raise ArgumentError, "invalid UInt8: #{inspect(term)}"
-      end
-    end
-  end
-
-  defp encoder_expr(:i8, value) do
-    quote do
-      case unquote(value) do
-        integer when is_integer(integer) and integer >= 0 and integer <= 127 ->
-          integer
-
-        integer when is_integer(integer) and integer < 0 and integer >= -128 ->
-          <<integer::signed>>
-
-        nil ->
-          0
-
-        term ->
-          raise ArgumentError, "invalid Int8: #{inspect(term)}"
-      end
-    end
-  end
-
-  for size <- [16, 32, 64, 128, 256] do
-    unsigned = :"u#{size}"
-    signed = :"i#{size}"
-    unsigned_max = (1 <<< size) - 1
-    signed_min = -(1 <<< (size - 1))
-    signed_max = (1 <<< (size - 1)) - 1
-
-    defp encoder_expr(unquote(unsigned), value) do
-      size = unquote(size)
-      unsigned_max = unquote(unsigned_max)
-
-      quote do
-        case unquote(value) do
-          integer
-          when is_integer(integer) and integer >= 0 and integer <= unquote(unsigned_max) ->
-            <<integer::unquote(size)-little>>
-
-          nil ->
-            <<0::unquote(size)>>
-
-          term ->
-            raise ArgumentError, "invalid UInt#{unquote(size)}: #{inspect(term)}"
-        end
-      end
-    end
-
-    defp encoder_expr(unquote(signed), value) do
-      size = unquote(size)
-      signed_min = unquote(signed_min)
-      signed_max = unquote(signed_max)
-
-      quote do
-        case unquote(value) do
-          integer
-          when is_integer(integer) and integer >= unquote(signed_min) and
-                 integer <= unquote(signed_max) ->
-            <<integer::unquote(size)-little-signed>>
-
-          nil ->
-            <<0::unquote(size)>>
-
-          term ->
-            raise ArgumentError, "invalid Int#{unquote(size)}: #{inspect(term)}"
-        end
-      end
-    end
-  end
-
-  for size <- [32, 64] do
-    type = :"f#{size}"
-
-    defp encoder_expr(unquote(type), value) do
-      size = unquote(size)
-
-      quote do
-        case unquote(value) do
-          number when is_number(number) -> <<number::unquote(size)-little-signed-float>>
-          nil -> <<0::unquote(size)>>
-        end
-      end
-    end
-  end
-
-  defp encoder_expr({:fixed_string, size} = type, value) do
-    quote do
-      case unquote(value) do
-        string when is_binary(string) and byte_size(string) == unquote(size) ->
-          string
-
-        string when is_binary(string) and byte_size(string) < unquote(size) ->
-          [string | <<0::size((unquote(size) - byte_size(string)) * 8)>>]
-
-        nil ->
-          <<0::size(unquote(size) * 8)>>
-
-        term ->
-          Ch.RowBinary.encode(unquote(Macro.escape(type)), term)
-      end
-    end
+    quote do: Ch.RowBinary.encode_string(unquote(value))
   end
 
   defp encoder_expr({:array, :u8}, value) do
     quote do: Ch.RowBinary.encode_u8_array(unquote(value))
   end
 
-  defp encoder_expr({:nullable, type}, value) do
-    present = Macro.unique_var(:present, __MODULE__)
-    present_for_encoding = Macro.unique_var(:present_for_encoding, __MODULE__)
-    encoded = Macro.unique_var(:encoded, __MODULE__)
-    expression = encoder_expr(type, present_for_encoding)
+  defp encoder_expr(:u8, value) do
+    quote do: Ch.RowBinary.encode_u8(unquote(value))
+  end
 
-    quote do
-      case unquote(value) do
-        nil ->
-          1
+  defp encoder_expr(:i8, value) do
+    quote do: Ch.RowBinary.encode_i8(unquote(value))
+  end
 
-        unquote(present) ->
-          unquote(present_for_encoding) = Ch.RowBinary.Encoder.non_nil(unquote(present))
+  for size <- [16, 32, 64, 128, 256], prefix <- ["u", "i"] do
+    type = :"#{prefix}#{size}"
+    helper = :"encode_#{type}"
 
-          case unquote(expression) do
-            unquote(encoded) when is_list(unquote(encoded)) or is_binary(unquote(encoded)) ->
-              [0 | unquote(encoded)]
-
-            unquote(encoded) ->
-              [0, unquote(encoded)]
-          end
-      end
+    defp encoder_expr(unquote(type), value) do
+      helper = unquote(helper)
+      quote do: Ch.RowBinary.unquote(helper)(unquote(value))
     end
+  end
+
+  for size <- [32, 64] do
+    type = :"f#{size}"
+    helper = :"encode_#{type}"
+
+    defp encoder_expr(unquote(type), value) do
+      helper = unquote(helper)
+      quote do: Ch.RowBinary.unquote(helper)(unquote(value))
+    end
+  end
+
+  defp encoder_expr(:boolean, value) do
+    quote do: Ch.RowBinary.encode_boolean(unquote(value))
+  end
+
+  defp encoder_expr({:fixed_string, size}, value) do
+    quote do: Ch.RowBinary.encode_fixed_string(unquote(value), unquote(size))
   end
 
   defp encoder_expr(:datetime, value) do
-    quote do
-      case unquote(value) do
-        %NaiveDateTime{} = datetime ->
-          {seconds, _micros} = NaiveDateTime.to_gregorian_seconds(datetime)
-          <<seconds - unquote(@epoch_gregorian_seconds)::32-little>>
-
-        %DateTime{} = datetime ->
-          <<DateTime.to_unix(datetime, :second)::32-little>>
-
-        nil ->
-          <<0::32>>
-      end
-    end
+    quote do: Ch.RowBinary.encode_datetime(unquote(value))
   end
 
   defp encoder_expr({:datetime64, time_unit}, value) do
-    quote do
-      case unquote(value) do
-        %NaiveDateTime{} = datetime ->
-          {seconds, micros} = NaiveDateTime.to_gregorian_seconds(datetime)
-
-          <<(seconds - unquote(@epoch_gregorian_seconds)) * unquote(time_unit) +
-              div(micros * unquote(time_unit), 1_000_000)::64-little-signed>>
-
-        %DateTime{} = datetime ->
-          <<DateTime.to_unix(datetime, unquote(time_unit))::64-little-signed>>
-
-        nil ->
-          <<0::64>>
-      end
-    end
+    quote do: Ch.RowBinary.encode_datetime64(unquote(value), unquote(time_unit))
   end
 
   defp encoder_expr(:date, value) do
-    quote do
-      case unquote(value) do
-        %Date{} = date ->
-          <<Date.to_gregorian_days(date) - unquote(@epoch_gregorian_days)::16-little>>
-
-        nil ->
-          <<0::16>>
-      end
-    end
+    quote do: Ch.RowBinary.encode_date(unquote(value))
   end
 
   defp encoder_expr(:date32, value) do
-    quote do
-      case unquote(value) do
-        %Date{} = date ->
-          <<Date.to_gregorian_days(date) - unquote(@epoch_gregorian_days)::32-little-signed>>
-
-        nil ->
-          <<0::32>>
-      end
-    end
+    quote do: Ch.RowBinary.encode_date32(unquote(value))
   end
 
   defp encoder_expr(:time, value) do
-    quote do
-      case unquote(value) do
-        %Time{} = time ->
-          {seconds, _micros} = Time.to_seconds_after_midnight(time)
-          <<seconds::32-little-signed>>
+    quote do: Ch.RowBinary.encode_time(unquote(value))
+  end
 
-        nil ->
-          <<0::32>>
-      end
-    end
+  defp encoder_expr({:time64, time_unit}, value) do
+    quote do: Ch.RowBinary.encode_time64(unquote(value), unquote(time_unit))
   end
 
   defp encoder_expr(type, value) do

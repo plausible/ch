@@ -107,9 +107,20 @@ defmodule Ch.RowBinary do
   def encode_varint(i) when is_integer(i), do: encode_varint_cont(i)
 
   @doc false
-  def encode_u8_array([_ | _] = bytes), do: [encode_varint(length(bytes)) | bytes]
+  def encode_u8_array([_ | _] = bytes) do
+    [encode_varint(u8_array_length(bytes, 0)) | bytes]
+  end
+
   def encode_u8_array([]), do: 0
   def encode_u8_array(nil), do: 0
+
+  defp u8_array_length([byte | bytes], length)
+       when is_integer(byte) and byte >= 0 and byte <= 255 do
+    u8_array_length(bytes, length + 1)
+  end
+
+  defp u8_array_length([invalid | _bytes], _length), do: encode_u8(invalid)
+  defp u8_array_length([], length), do: length
 
   @doc false
   def encoding_types([type | types]) do
@@ -212,11 +223,7 @@ defmodule Ch.RowBinary do
   end
 
   @doc false
-  def encode(type, value)
-
-  def encode(:varint, i), do: encode_varint(i)
-
-  def encode(:string, str) do
+  def encode_string(str) do
     case str do
       _ when is_binary(str) -> [encode(:varint, byte_size(str)) | str]
       _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
@@ -224,38 +231,29 @@ defmodule Ch.RowBinary do
     end
   end
 
-  def encode(:json, json) do
-    # assuming it can be sent as text and not "native" binary JSON
-    # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
-    # TODO
-    encode(:string, JSON.encode_to_iodata!(json))
+  @doc false
+  def encode_fixed_string(str, size) when is_binary(str) and byte_size(str) == size, do: str
+
+  def encode_fixed_string(str, size) when is_binary(str) and byte_size(str) < size do
+    [str | <<0::size((size - byte_size(str)) * 8)>>]
   end
 
-  def encode({:fixed_string, size}, str) when byte_size(str) == size do
-    str
-  end
+  def encode_fixed_string(nil, size), do: <<0::size(size * 8)>>
 
-  def encode({:fixed_string, size}, str) when byte_size(str) < size do
-    to_pad = size - byte_size(str)
-    [str | <<0::size(to_pad * 8)>>]
-  end
+  @doc false
+  def encode_u8(u) when is_integer(u) and u >= 0 and u <= 255, do: u
+  def encode_u8(nil), do: 0
 
-  def encode({:fixed_string, size}, nil), do: <<0::size(size * 8)>>
-
-  # UInt8 — [0 : 255]
-  def encode(:u8, u) when is_integer(u) and u >= 0 and u <= 255, do: u
-  def encode(:u8, nil), do: 0
-
-  def encode(:u8, term) do
+  def encode_u8(term) do
     raise ArgumentError, "invalid UInt8: #{inspect(term)}"
   end
 
-  # Int8 — [-128 : 127]
-  def encode(:i8, i) when is_integer(i) and i >= 0 and i <= 127, do: i
-  def encode(:i8, i) when is_integer(i) and i < 0 and i >= -128, do: <<i::signed>>
-  def encode(:i8, nil), do: 0
+  @doc false
+  def encode_i8(i) when is_integer(i) and i >= 0 and i <= 127, do: i
+  def encode_i8(i) when is_integer(i) and i < 0 and i >= -128, do: <<i::signed>>
+  def encode_i8(nil), do: 0
 
-  def encode(:i8, term) do
+  def encode_i8(term) do
     raise ArgumentError, "invalid Int8: #{inspect(term)}"
   end
 
@@ -265,36 +263,147 @@ defmodule Ch.RowBinary do
     signed_max = (1 <<< (size - 1)) - 1
     uint = :"u#{size}"
     int = :"i#{size}"
+    encode_uint = :"encode_#{uint}"
+    encode_int = :"encode_#{int}"
 
-    def encode(unquote(uint), u) when is_integer(u) and u >= 0 and u <= unquote(unsigned_max) do
+    @doc false
+    def unquote(encode_uint)(u)
+        when is_integer(u) and u >= 0 and u <= unquote(unsigned_max) do
       <<u::unquote(size)-little>>
     end
 
-    def encode(unquote(int), i)
+    def unquote(encode_uint)(nil), do: <<0::unquote(size)>>
+
+    def unquote(encode_uint)(term) do
+      raise ArgumentError, "invalid UInt#{unquote(size)}: #{inspect(term)}"
+    end
+
+    @doc false
+    def unquote(encode_int)(i)
         when is_integer(i) and i >= unquote(signed_min) and i <= unquote(signed_max) do
       <<i::unquote(size)-little-signed>>
     end
 
-    def encode(unquote(uint), nil), do: <<0::unquote(size)>>
-    def encode(unquote(int), nil), do: <<0::unquote(size)>>
+    def unquote(encode_int)(nil), do: <<0::unquote(size)>>
 
-    def encode(unquote(uint), term) do
-      raise ArgumentError, "invalid UInt#{unquote(size)}: #{inspect(term)}"
-    end
-
-    def encode(unquote(int), term) do
+    def unquote(encode_int)(term) do
       raise ArgumentError, "invalid Int#{unquote(size)}: #{inspect(term)}"
     end
   end
 
   for size <- [32, 64] do
     type = :"f#{size}"
+    helper = :"encode_#{type}"
 
-    def encode(unquote(type), f) when is_number(f) do
-      <<f::unquote(size)-little-signed-float>>
-    end
+    @doc false
+    def unquote(helper)(f) when is_number(f),
+      do: <<f::unquote(size)-little-signed-float>>
 
-    def encode(unquote(type), nil), do: <<0::unquote(size)>>
+    def unquote(helper)(nil), do: <<0::unquote(size)>>
+  end
+
+  @doc false
+  def encode_boolean(true), do: 1
+  def encode_boolean(false), do: 0
+  def encode_boolean(nil), do: 0
+
+  @doc false
+  def encode_datetime(%NaiveDateTime{} = datetime) do
+    {seconds, _micros} = NaiveDateTime.to_gregorian_seconds(datetime)
+    <<seconds - @epoch_gregorian_seconds::32-little>>
+  end
+
+  def encode_datetime(%DateTime{} = datetime),
+    do: <<DateTime.to_unix(datetime, :second)::32-little>>
+
+  def encode_datetime(nil), do: <<0::32>>
+
+  @doc false
+  def encode_datetime64(%NaiveDateTime{} = datetime, time_unit) do
+    {seconds, micros} = NaiveDateTime.to_gregorian_seconds(datetime)
+
+    <<(seconds - @epoch_gregorian_seconds) * time_unit +
+        div(micros * time_unit, 1_000_000)::64-little-signed>>
+  end
+
+  def encode_datetime64(%DateTime{} = datetime, time_unit),
+    do: <<DateTime.to_unix(datetime, time_unit)::64-little-signed>>
+
+  def encode_datetime64(nil, _time_unit), do: <<0::64>>
+
+  @doc false
+  def encode_date(%Date{} = date),
+    do: <<Date.to_gregorian_days(date) - @epoch_gregorian_days::16-little>>
+
+  def encode_date(nil), do: <<0::16>>
+
+  @doc false
+  def encode_date32(%Date{} = date),
+    do: <<Date.to_gregorian_days(date) - @epoch_gregorian_days::32-little-signed>>
+
+  def encode_date32(nil), do: <<0::32>>
+
+  @doc false
+  def encode_time(%Time{} = time) do
+    {seconds, _micros} = Time.to_seconds_after_midnight(time)
+    <<seconds::32-little-signed>>
+  end
+
+  def encode_time(nil), do: <<0::32>>
+
+  @doc false
+  def encode_time64(%Time{} = time, time_unit) do
+    {seconds, micros} = Time.to_seconds_after_midnight(time)
+
+    micros_as_ticks =
+      cond do
+        time_unit < 1_000_000 -> div(micros, div(1_000_000, time_unit))
+        time_unit == 1_000_000 -> micros
+        true -> micros * div(time_unit, 1_000_000)
+      end
+
+    <<seconds * time_unit + micros_as_ticks::64-little-signed>>
+  end
+
+  def encode_time64(nil, _time_unit), do: <<0::64>>
+
+  @doc false
+  def encode(type, value)
+
+  def encode(:varint, i), do: encode_varint(i)
+
+  def encode(:string, str), do: encode_string(str)
+
+  def encode(:json, json) do
+    # assuming it can be sent as text and not "native" binary JSON
+    # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
+    # TODO
+    encode(:string, JSON.encode_to_iodata!(json))
+  end
+
+  def encode({:fixed_string, size}, str), do: encode_fixed_string(str, size)
+
+  # UInt8 — [0 : 255]
+  def encode(:u8, value), do: encode_u8(value)
+
+  # Int8 — [-128 : 127]
+  def encode(:i8, value), do: encode_i8(value)
+
+  for size <- [16, 32, 64, 128, 256] do
+    uint = :"u#{size}"
+    int = :"i#{size}"
+    encode_uint = :"encode_#{uint}"
+    encode_int = :"encode_#{int}"
+
+    def encode(unquote(uint), value), do: unquote(encode_uint)(value)
+    def encode(unquote(int), value), do: unquote(encode_int)(value)
+  end
+
+  for size <- [32, 64] do
+    type = :"f#{size}"
+    helper = :"encode_#{type}"
+
+    def encode(unquote(type), value), do: unquote(helper)(value)
   end
 
   def encode({:decimal, precision, scale}, decimal) do
@@ -330,9 +439,9 @@ defmodule Ch.RowBinary do
     def encode({unquote(type), _scale}, nil), do: <<0::unquote(size)>>
   end
 
-  def encode(:boolean, true), do: 1
-  def encode(:boolean, false), do: 0
-  def encode(:boolean, nil), do: 0
+  def encode(:boolean, value), do: encode_boolean(value)
+
+  def encode({:array, :u8}, value), do: encode_u8_array(value)
 
   def encode({:array, type}, [_ | _] = l) do
     [encode(:varint, length(l)) | encode_many(l, type)]
@@ -367,63 +476,17 @@ defmodule Ch.RowBinary do
     try_encode_variant(types, 0, value)
   end
 
-  def encode(:datetime, %NaiveDateTime{} = datetime) do
-    {seconds, _micros} = NaiveDateTime.to_gregorian_seconds(datetime)
-    <<seconds - @epoch_gregorian_seconds::32-little>>
-  end
+  def encode(:datetime, value), do: encode_datetime(value)
 
-  def encode(:datetime, %DateTime{} = datetime) do
-    <<DateTime.to_unix(datetime, :second)::32-little>>
-  end
+  def encode({:datetime64, time_unit}, value), do: encode_datetime64(value, time_unit)
 
-  def encode(:datetime, nil), do: <<0::32>>
+  def encode(:date, value), do: encode_date(value)
 
-  def encode({:datetime64, time_unit}, %NaiveDateTime{} = datetime) do
-    {seconds, micros} = NaiveDateTime.to_gregorian_seconds(datetime)
+  def encode(:date32, value), do: encode_date32(value)
 
-    <<(seconds - @epoch_gregorian_seconds) * time_unit + div(micros * time_unit, 1_000_000)::64-little-signed>>
-  end
+  def encode(:time, value), do: encode_time(value)
 
-  def encode({:datetime64, time_unit}, %DateTime{} = datetime) do
-    <<DateTime.to_unix(datetime, time_unit)::64-little-signed>>
-  end
-
-  def encode({:datetime64, _time_unit}, nil), do: <<0::64>>
-
-  def encode(:date, %Date{} = date) do
-    <<Date.to_gregorian_days(date) - @epoch_gregorian_days::16-little>>
-  end
-
-  def encode(:date, nil), do: <<0::16>>
-
-  def encode(:date32, %Date{} = date) do
-    <<Date.to_gregorian_days(date) - @epoch_gregorian_days::32-little-signed>>
-  end
-
-  def encode(:date32, nil), do: <<0::32>>
-
-  def encode(:time, %Time{} = time) do
-    {s, _micros} = Time.to_seconds_after_midnight(time)
-    <<s::32-little-signed>>
-  end
-
-  def encode(:time, nil), do: <<0::32>>
-
-  def encode({:time64, time_unit}, %Time{} = time) do
-    {s, micros} = Time.to_seconds_after_midnight(time)
-
-    micros_as_ticks =
-      cond do
-        time_unit < 1_000_000 -> div(micros, div(1_000_000, time_unit))
-        time_unit == 1_000_000 -> micros
-        true -> micros * div(time_unit, 1_000_000)
-      end
-
-    ticks = s * time_unit + micros_as_ticks
-    <<ticks::64-little-signed>>
-  end
-
-  def encode({:time64, _time_unit}, nil), do: <<0::64>>
+  def encode({:time64, time_unit}, value), do: encode_time64(value, time_unit)
 
   def encode(:uuid, <<u1::64, u2::64>>), do: <<u1::64-little, u2::64-little>>
 
