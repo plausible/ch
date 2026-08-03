@@ -851,6 +851,74 @@ defmodule Ch.RowBinary do
     end
   end
 
+  # Container state stays as separate function arguments at runtime. These macros only keep
+  # decoder clauses from repeating that plumbing for every successful or partial value.
+  defmacrop decode_next(types_rest, bin, row) do
+    quote do
+      decode_rows(
+        unquote(types_rest),
+        unquote(bin),
+        unquote(row),
+        var!(rows),
+        var!(types),
+        var!(kind),
+        var!(schema),
+        var!(left),
+        var!(outer)
+      )
+    end
+  end
+
+  defmacrop decode_more(bin, types_rest, row) do
+    quote do
+      to_be_continued(
+        var!(rows),
+        unquote(bin),
+        unquote(types_rest),
+        unquote(row),
+        var!(types),
+        var!(kind),
+        var!(schema),
+        var!(left),
+        var!(outer)
+      )
+    end
+  end
+
+  defmacrop dynamic_next(rest, dynamic, types_rest, row) do
+    quote do
+      decode_dynamic_continue(
+        unquote(rest),
+        unquote(dynamic),
+        unquote(types_rest),
+        unquote(row),
+        var!(rows),
+        var!(types),
+        var!(kind),
+        var!(schema),
+        var!(left),
+        var!(outer)
+      )
+    end
+  end
+
+  defmacrop dynamic_decode(rest, dynamic, types_rest, row) do
+    quote do
+      decode_dynamic(
+        unquote(rest),
+        unquote(dynamic),
+        unquote(types_rest),
+        unquote(row),
+        var!(rows),
+        var!(types),
+        var!(kind),
+        var!(schema),
+        var!(left),
+        var!(outer)
+      )
+    end
+  end
+
   @compile inline: [decode_string_decode_rows: 9]
 
   for {pattern, size} <- varints do
@@ -865,7 +933,7 @@ defmodule Ch.RowBinary do
            left,
            outer
          ) do
-      decode_rows(types_rest, bin, [s | row], rows, types, kind, schema, left, outer)
+      decode_next(types_rest, bin, [s | row])
     end
   end
 
@@ -880,17 +948,7 @@ defmodule Ch.RowBinary do
          left,
          outer
        ) do
-    to_be_continued(
-      rows,
-      bin,
-      [:string | types_rest],
-      row,
-      types,
-      kind,
-      schema,
-      left,
-      outer
-    )
+    decode_more(bin, [:string | types_rest], row)
   end
 
   @compile inline: [decode_string_json_decode_rows: 9]
@@ -907,17 +965,7 @@ defmodule Ch.RowBinary do
            left,
            outer
          ) do
-      decode_rows(
-        types_rest,
-        bin,
-        [JSON.decode!(s) | row],
-        rows,
-        types,
-        kind,
-        schema,
-        left,
-        outer
-      )
+      decode_next(types_rest, bin, [JSON.decode!(s) | row])
     end
   end
 
@@ -932,17 +980,7 @@ defmodule Ch.RowBinary do
          left,
          outer
        ) do
-    to_be_continued(
-      rows,
-      bin,
-      [:json | types_rest],
-      row,
-      types,
-      kind,
-      schema,
-      left,
-      outer
-    )
+    decode_more(bin, [:json | types_rest], row)
   end
 
   @compile inline: [decode_array_decode_rows: 10]
@@ -958,7 +996,7 @@ defmodule Ch.RowBinary do
          left,
          outer
        ) do
-    decode_rows(types_rest, bin, [[] | row], rows, types, kind, schema, left, outer)
+    decode_next(types_rest, bin, [[] | row])
   end
 
   for {pattern, size} <- varints do
@@ -1002,17 +1040,7 @@ defmodule Ch.RowBinary do
          left,
          outer
        ) do
-    to_be_continued(
-      rows,
-      bin,
-      [{:array, type} | types_rest],
-      row,
-      types,
-      kind,
-      schema,
-      left,
-      outer
-    )
+    decode_more(bin, [{:array, type} | types_rest], row)
   end
 
   @compile inline: [decode_map_decode_rows: 11]
@@ -1029,7 +1057,7 @@ defmodule Ch.RowBinary do
          left,
          outer
        ) do
-    decode_rows(types_rest, bin, [%{} | row], rows, types, kind, schema, left, outer)
+    decode_next(types_rest, bin, [%{} | row])
   end
 
   for {pattern, size} <- varints do
@@ -1075,17 +1103,7 @@ defmodule Ch.RowBinary do
          left,
          outer
        ) do
-    to_be_continued(
-      rows,
-      bin,
-      [{:map, key_type, value_type} | types_rest],
-      row,
-      types,
-      kind,
-      schema,
-      left,
-      outer
-    )
+    decode_more(bin, [{:map, key_type, value_type} | types_rest], row)
   end
 
   # https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding
@@ -1129,18 +1147,7 @@ defmodule Ch.RowBinary do
            left,
            outer
          ) do
-      decode_dynamic_continue(
-        rest,
-        [unquote(type) | dynamic],
-        types_rest,
-        row,
-        rows,
-        types,
-        kind,
-        schema,
-        left,
-        outer
-      )
+      dynamic_next(rest, [unquote(type) | dynamic], types_rest, row)
     end
   end
 
@@ -1157,18 +1164,7 @@ defmodule Ch.RowBinary do
          left,
          outer
        ) do
-    decode_dynamic_continue(
-      rest,
-      [{:datetime, nil} | dynamic],
-      types_rest,
-      row,
-      rows,
-      types,
-      kind,
-      schema,
-      left,
-      outer
-    )
+    dynamic_next(rest, [{:datetime, nil} | dynamic], types_rest, row)
   end
 
   # DateTime(time_zone) 0x12 <var_uint_time_zone_name_size><time_zone_name_data>
@@ -1185,18 +1181,7 @@ defmodule Ch.RowBinary do
            left,
            outer
          ) do
-      decode_dynamic_continue(
-        rest,
-        [{:datetime, tz} | dynamic],
-        types_rest,
-        row,
-        rows,
-        types,
-        kind,
-        schema,
-        left,
-        outer
-      )
+      dynamic_next(rest, [{:datetime, tz} | dynamic], types_rest, row)
     end
   end
 
@@ -1213,17 +1198,11 @@ defmodule Ch.RowBinary do
          left,
          outer
        ) do
-    decode_dynamic_continue(
+    dynamic_next(
       rest,
       [decoding_type({:datetime64, precision}) | dynamic],
       types_rest,
-      row,
-      rows,
-      types,
-      kind,
-      schema,
-      left,
-      outer
+      row
     )
   end
 
@@ -1241,17 +1220,11 @@ defmodule Ch.RowBinary do
            left,
            outer
          ) do
-      decode_dynamic_continue(
+      dynamic_next(
         rest,
         [decoding_type({:datetime64, precision, tz}) | dynamic],
         types_rest,
-        row,
-        rows,
-        types,
-        kind,
-        schema,
-        left,
-        outer
+        row
       )
     end
   end
@@ -1302,18 +1275,7 @@ defmodule Ch.RowBinary do
            left,
            outer
          ) do
-      decode_dynamic_continue(
-        rest,
-        [{:decimal, unquote(size), scale} | dynamic],
-        types_rest,
-        row,
-        rows,
-        types,
-        kind,
-        schema,
-        left,
-        outer
-      )
+      dynamic_next(rest, [{:decimal, unquote(size), scale} | dynamic], types_rest, row)
     end
   end
 
@@ -1333,18 +1295,7 @@ defmodule Ch.RowBinary do
            left,
            outer
          ) do
-      decode_dynamic_continue(
-        rest,
-        [unquote(wrapper) | dynamic],
-        types_rest,
-        row,
-        rows,
-        types,
-        kind,
-        schema,
-        left,
-        outer
-      )
+      dynamic_next(rest, [unquote(wrapper) | dynamic], types_rest, row)
     end
   end
 
@@ -1412,17 +1363,7 @@ defmodule Ch.RowBinary do
          left,
          outer
        ) do
-    to_be_continued(
-      rows,
-      bin,
-      [{:dynamic, dynamic} | types_rest],
-      row,
-      types,
-      kind,
-      schema,
-      left,
-      outer
-    )
+    decode_more(bin, [{:dynamic, dynamic} | types_rest], row)
   end
 
   @compile inline: [decode_dynamic_continue: 10]
@@ -1448,21 +1389,10 @@ defmodule Ch.RowBinary do
       end
 
     if continue? do
-      decode_dynamic(rest, dynamic, types_rest, row, rows, types, kind, schema, left, outer)
+      dynamic_decode(rest, dynamic, types_rest, row)
     else
       type = build_dynamic_type(:lists.reverse(dynamic))
-
-      decode_rows(
-        [type | types_rest],
-        rest,
-        row,
-        rows,
-        types,
-        kind,
-        schema,
-        left,
-        outer
-      )
+      decode_next([type | types_rest], rest, row)
     end
   end
 
@@ -1573,17 +1503,7 @@ defmodule Ch.RowBinary do
            left,
            outer
          ) do
-      to_be_continued(
-        rows,
-        bin,
-        [unquote(type) | types_rest],
-        row,
-        types,
-        kind,
-        schema,
-        left,
-        outer
-      )
+      decode_more(bin, [unquote(type) | types_rest], row)
     end
   end
 
@@ -1663,39 +1583,18 @@ defmodule Ch.RowBinary do
         )
 
       :dynamic ->
-        decode_dynamic(
-          bin,
-          _dynamic = [],
-          types_rest,
-          row,
-          rows,
-          types,
-          kind,
-          schema,
-          left,
-          outer
-        )
+        dynamic_decode(bin, _dynamic = [], types_rest, row)
 
       {:dynamic, dynamic} ->
-        decode_dynamic(bin, dynamic, types_rest, row, rows, types, kind, schema, left, outer)
+        dynamic_decode(bin, dynamic, types_rest, row)
 
       {:fixed_string, size} ->
         case bin do
           <<s::size(^size)-bytes, rest::bytes>> ->
-            decode_rows(types_rest, rest, [s | row], rows, types, kind, schema, left, outer)
+            decode_next(types_rest, rest, [s | row])
 
           _ ->
-            to_be_continued(
-              rows,
-              bin,
-              [type | types_rest],
-              row,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_more(bin, [type | types_rest], row)
         end
 
       :boolean ->
@@ -1717,20 +1616,10 @@ defmodule Ch.RowBinary do
         case bin do
           <<ticks::64-little-signed, bin::bytes>> ->
             time = time_after_midnight(ticks, time_unit)
-            decode_rows(types_rest, bin, [time | row], rows, types, kind, schema, left, outer)
+            decode_next(types_rest, bin, [time | row])
 
           _ ->
-            to_be_continued(
-              rows,
-              bin,
-              [type | types_rest],
-              row,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_more(bin, [type | types_rest], row)
         end
 
       {:datetime, timezone} ->
@@ -1745,20 +1634,10 @@ defmodule Ch.RowBinary do
                 _ -> DateTime.shift_zone!(dt, timezone)
               end
 
-            decode_rows(types_rest, bin, [dt | row], rows, types, kind, schema, left, outer)
+            decode_next(types_rest, bin, [dt | row])
 
           _ ->
-            to_be_continued(
-              rows,
-              bin,
-              [type | types_rest],
-              row,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_more(bin, [type | types_rest], row)
         end
 
       {:decimal, size, scale} ->
@@ -1766,20 +1645,10 @@ defmodule Ch.RowBinary do
           <<val::size(^size)-little-signed, bin::bytes>> ->
             sign = if val < 0, do: -1, else: 1
             d = Decimal.new(sign, abs(val), -scale)
-            decode_rows(types_rest, bin, [d | row], rows, types, kind, schema, left, outer)
+            decode_next(types_rest, bin, [d | row])
 
           _ ->
-            to_be_continued(
-              rows,
-              bin,
-              [type | types_rest],
-              row,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_more(bin, [type | types_rest], row)
         end
 
       {:nullable, inner_type} ->
@@ -1787,38 +1656,18 @@ defmodule Ch.RowBinary do
           <<b, bin::bytes>> ->
             case b do
               0 ->
-                decode_rows(
-                  [inner_type | types_rest],
-                  bin,
-                  row,
-                  rows,
-                  types,
-                  kind,
-                  schema,
-                  left,
-                  outer
-                )
+                decode_next([inner_type | types_rest], bin, row)
 
               1 ->
-                decode_rows(types_rest, bin, [nil | row], rows, types, kind, schema, left, outer)
+                decode_next(types_rest, bin, [nil | row])
             end
 
           _ ->
-            to_be_continued(
-              rows,
-              bin,
-              [type | types_rest],
-              row,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_more(bin, [type | types_rest], row)
         end
 
       :nothing ->
-        decode_rows(types_rest, bin, [nil | row], rows, types, kind, schema, left, outer)
+        decode_next(types_rest, bin, [nil | row])
 
       {:array, inner_type} ->
         decode_array_decode_rows(
@@ -1850,7 +1699,7 @@ defmodule Ch.RowBinary do
         )
 
       {:tuple, []} ->
-        decode_rows(types_rest, bin, [{} | row], rows, types, kind, schema, left, outer)
+        decode_next(types_rest, bin, [{} | row])
 
       {:tuple, tuple_types} ->
         decode_rows(
@@ -1869,40 +1718,20 @@ defmodule Ch.RowBinary do
         case bin do
           <<255, bin::bytes>> ->
             # 255 is the variant type index for "nothing"
-            decode_rows(types_rest, bin, [nil | row], rows, types, kind, schema, left, outer)
+            decode_next(types_rest, bin, [nil | row])
 
           # TODO varint?
           <<variant_type_index::8, bin::bytes>>
           when variant_type_index < tuple_size(variant_types) ->
             variant_type = elem(variant_types, variant_type_index)
 
-            decode_rows(
-              [variant_type | types_rest],
-              bin,
-              row,
-              rows,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_next([variant_type | types_rest], bin, row)
 
           <<variant_type_index::8, _bin::bytes>> ->
             raise ArgumentError, "invalid Variant type index: #{variant_type_index}"
 
           _ ->
-            to_be_continued(
-              rows,
-              bin,
-              [type | types_rest],
-              row,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_more(bin, [type | types_rest], row)
         end
 
       {:datetime64, time_unit, timezone} ->
@@ -1917,78 +1746,28 @@ defmodule Ch.RowBinary do
                 _ -> DateTime.shift_zone!(dt, timezone)
               end
 
-            decode_rows(types_rest, bin, [dt | row], rows, types, kind, schema, left, outer)
+            decode_next(types_rest, bin, [dt | row])
 
           _ ->
-            to_be_continued(
-              rows,
-              bin,
-              [type | types_rest],
-              row,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_more(bin, [type | types_rest], row)
         end
 
       {:enum8, mapping} ->
         case bin do
           <<v::signed, bin::bytes>> ->
-            decode_rows(
-              types_rest,
-              bin,
-              [Map.fetch!(mapping, v) | row],
-              rows,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_next(types_rest, bin, [Map.fetch!(mapping, v) | row])
 
           _ ->
-            to_be_continued(
-              rows,
-              bin,
-              [type | types_rest],
-              row,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_more(bin, [type | types_rest], row)
         end
 
       {:enum16, mapping} ->
         case bin do
           <<v::16-little-signed, bin::bytes>> ->
-            decode_rows(
-              types_rest,
-              bin,
-              [Map.fetch!(mapping, v) | row],
-              rows,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_next(types_rest, bin, [Map.fetch!(mapping, v) | row])
 
           _ ->
-            to_be_continued(
-              rows,
-              bin,
-              [type | types_rest],
-              row,
-              types,
-              kind,
-              schema,
-              left,
-              outer
-            )
+            decode_more(bin, [type | types_rest], row)
         end
 
       :ipv4 ->
