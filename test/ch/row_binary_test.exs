@@ -4,6 +4,10 @@ defmodule Ch.RowBinaryTest do
   import Ch.RowBinary
   import Bitwise
 
+  defp encode_to_binary(type, value) do
+    type |> encode(value) |> IO.iodata_to_binary()
+  end
+
   test "encode -> decode" do
     spec = [
       {:string, ""},
@@ -167,7 +171,8 @@ defmodule Ch.RowBinaryTest do
 
     test "map" do
       assert encode({:map, :string, :string}, []) == 0
-      assert encode({:map, :string, :string}, %{}) == 0
+
+      assert encode_to_binary({:map, :string, :string}, %{}) == <<0>>
 
       assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
                encode({:map, :string, :string}, [{"hello", "world"}])
@@ -237,7 +242,7 @@ defmodule Ch.RowBinaryTest do
 
   test "strings preserve raw bytes" do
     value = "\x61\xF0\x80\x80\x80b"
-    str = IO.iodata_to_binary(encode(:string, value))
+    str = encode_to_binary(:string, value)
 
     assert decode_rows(str, [:string]) == [[value]]
 
@@ -300,6 +305,7 @@ defmodule Ch.RowBinaryTest do
         {"Array(LowCardinality(String))", {:array, :string}},
         {"Array(Enum8('hello' = 2, 'world' = 3))",
          {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
+        {"Variant(String, UInt32)", {:variant, {:string, :u32}}},
         {"Array(Nothing)", {:array, :nothing}},
         {"Nullable(String)", {:nullable, :string}},
         {"Nullable(Float64)", {:nullable, :f64}},
@@ -410,11 +416,21 @@ defmodule Ch.RowBinaryTest do
         decode_rows(<<0>>, [:unsupported])
       end
     end
+
+    test "rejects invalid Variant type indexes" do
+      assert_raise ArgumentError, "invalid Variant type index: 2", fn ->
+        decode_rows(<<2>>, ["Variant(String, UInt32)"])
+      end
+    end
   end
 
   # TODO maybe use stream_data?
   describe "invalid arguments" do
     # https://github.com/plausible/ch/issues/166
+    test "for varint" do
+      assert_raise ArgumentError, "invalid varint: -1", fn -> encode(:varint, -1) end
+    end
+
     test "for UInt8" do
       assert_raise ArgumentError, "invalid UInt8: 256", fn -> encode(:u8, 256) end
       assert_raise ArgumentError, "invalid UInt8: -1", fn -> encode(:u8, -1) end

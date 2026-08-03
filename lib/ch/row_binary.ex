@@ -180,8 +180,12 @@ defmodule Ch.RowBinary do
   @doc false
   def encode(type, value)
 
-  def encode(:varint, i) when is_integer(i) and i < 128, do: i
-  def encode(:varint, i) when is_integer(i), do: encode_varint_cont(i)
+  def encode(:varint, i) when is_integer(i) and i >= 0 and i < 128, do: i
+  def encode(:varint, i) when is_integer(i) and i >= 0, do: encode_varint_cont(i)
+
+  def encode(:varint, i) when is_integer(i) do
+    raise ArgumentError, "invalid varint: #{inspect(i)}"
+  end
 
   def encode(:string, str) do
     case str do
@@ -312,7 +316,13 @@ defmodule Ch.RowBinary do
     [encode(:varint, length(m)) | encode_many_kv(m, k, v)]
   end
 
-  def encode({:map, _k, _v} = t, m) when is_map(m), do: encode(t, Map.to_list(m))
+  def encode({:map, k, v}, m) when is_map(m) do
+    [
+      encode(:varint, map_size(m))
+      | :maps.fold(fn key, value, acc -> [encode(k, key), encode(v, value) | acc] end, [], m)
+    ]
+  end
+
   def encode({:map, _k, _v}, []), do: 0
   def encode({:map, _k, _v}, nil), do: 0
 
@@ -767,7 +777,7 @@ defmodule Ch.RowBinary do
   end
 
   defp decoding_type({:variant = v, ts}) do
-    {v, Enum.map(ts, &decoding_type/1)}
+    {v, ts |> Enum.map(&decoding_type/1) |> List.to_tuple()}
   end
 
   defp decoding_type({:map = m, kt, vt}) do
@@ -1862,8 +1872,9 @@ defmodule Ch.RowBinary do
             decode_rows(types_rest, bin, [nil | row], rows, types, kind, schema, left, outer)
 
           # TODO varint?
-          <<variant_type_index::8, bin::bytes>> ->
-            variant_type = Enum.at(variant_types, variant_type_index)
+          <<variant_type_index::8, bin::bytes>>
+          when variant_type_index < tuple_size(variant_types) ->
+            variant_type = elem(variant_types, variant_type_index)
 
             decode_rows(
               [variant_type | types_rest],
@@ -1876,6 +1887,9 @@ defmodule Ch.RowBinary do
               left,
               outer
             )
+
+          <<variant_type_index::8, _bin::bytes>> ->
+            raise ArgumentError, "invalid Variant type index: #{variant_type_index}"
 
           _ ->
             to_be_continued(
