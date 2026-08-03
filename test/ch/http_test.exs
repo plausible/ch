@@ -21,8 +21,7 @@ defmodule Ch.HTTPTest do
       {:deadline, round_tripped_timestamp} =
         deadline |> Ch.HTTP.to_timeout() |> Ch.HTTP.to_deadline()
 
-      assert round_tripped_timestamp <= original_timestamp
-      assert round_tripped_timestamp >= original_timestamp - 50
+      assert_in_delta round_tripped_timestamp, original_timestamp, 50
     end
   end
 end

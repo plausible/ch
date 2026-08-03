@@ -55,6 +55,7 @@ defmodule Ch do
       Time a connection can stay idle before the pool closes it.
       Should be lower than ClickHouse's [`keep_alive_timeout`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#keep_alive_timeout)
       to avoid sending a request over a connection that would be closed by ClickHouse soon-ish.
+      Note: `:infinity` disables idle connection expiration.
       """,
       default: to_timeout(second: 5)
     ],
@@ -93,16 +94,25 @@ defmodule Ch do
   """
   @type query_params :: %{String.t() => term}
 
+  @typedoc "A ClickHouse setting name."
+  @type setting_key :: String.t() | atom
+
+  @typedoc "A ClickHouse setting value."
+  @type setting_value :: String.t() | number | boolean | atom
+
+  @typedoc "ClickHouse settings accepted by a query."
+  @type settings :: %{optional(setting_key) => setting_value} | [{setting_key, setting_value}]
+
   @typedoc """
   Query execution options.
 
   * `:timeout` - Request timeout, defaults to 30 seconds.
-  * `:settings` - An enumerable (usually a map or a keyword list) added to the URL query string.
+  * `:settings` - A map or list of pairs added to the URL query string.
   * `:headers` - Headers passed directly to Mint.
   """
   @type query_option ::
           {:timeout, timeout}
-          | {:settings, Enumerable.t()}
+          | {:settings, settings}
           | {:headers, Mint.Types.headers()}
 
   @typedoc """
@@ -138,8 +148,9 @@ defmodule Ch do
 
     name = Keyword.get(options, :name)
     pool_size = Keyword.fetch!(options, :pool_size)
-    worker_idle_timeout = Keyword.fetch!(options, :worker_idle_timeout)
     url = Keyword.fetch!(options, :url)
+
+    worker_idle_timeout = with :infinity <- Keyword.fetch!(options, :worker_idle_timeout), do: nil
 
     %URI{scheme: scheme, host: host, port: port} = URI.parse(url)
 
@@ -221,6 +232,7 @@ defmodule Ch do
     headers =
       options
       |> Keyword.get(:headers, [])
+      |> Enum.map(fn {k, v} -> {String.downcase(k), v} end)
       |> put_new_header("user-agent", @user_agent)
       |> put_new_header("x-clickhouse-format", "RowBinaryWithNamesAndTypes")
 
@@ -328,7 +340,7 @@ defmodule Ch do
   defp request(conn, method, path, headers, body, deadline) do
     result =
       with {:ok, conn, _ref} <- Mint.HTTP1.request(conn, method, path, headers, body) do
-        recv_all(conn, nil, [], nil, deadline)
+        recv_all(conn, _status = nil, _headers = [], _data = nil, deadline)
       end
 
     with {:error, conn, reason} <- result do
@@ -353,8 +365,8 @@ defmodule Ch do
     end
   end
 
-  defp handle_responses([{:status, _ref, status} | rest], _prev_status = nil, headers, data) do
-    handle_responses(rest, status, headers, data)
+  defp handle_responses([{:status, _ref, status} | rest], _prev_status, _prev_headers, data) do
+    handle_responses(rest, status, _reset_headers = [], data)
   end
 
   defp handle_responses([{:headers, _ref, new_headers} | rest], status, prev_headers, data) do
@@ -432,7 +444,7 @@ defmodule Ch do
       |> response_body_to_binary()
 
     code =
-      if code = get_header(headers, "x-clickhouse-error-code") do
+      if code = get_header(headers, "x-clickhouse-exception-code") do
         String.to_integer(code)
       end
 

@@ -1,6 +1,13 @@
 defmodule Ch.QueryTest do
   use ExUnit.Case, async: true
 
+  describe "start_link/1" do
+    test "supports an infinite worker idle timeout" do
+      pool = start_supervised!({Ch, worker_idle_timeout: :infinity})
+      assert [[1]] = Ch.query!(pool, "SELECT 1").rows
+    end
+  end
+
   # adapted from https://github.com/elixir-ecto/postgrex/blob/master/test/query_test.exs
   describe "query" do
     setup do
@@ -38,12 +45,17 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT 42::numeric(10,10)", [], query_options).rows
     end
 
-    @tag skip: true
+    @tag :json
     test "decode json/jsonb", %{conn: conn, query_options: query_options} do
-      assert_raise ArgumentError, "Object('json') type is not supported", fn ->
-        assert [[%{"foo" => 42}]] ==
-                 Ch.query!(conn, "SELECT '{\"foo\": 42}'::json", [], query_options).rows
-      end
+      assert [[%{"foo" => 42}]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT '{\"foo\": 42}'::json",
+                 [],
+                 Keyword.merge(query_options,
+                   settings: [output_format_binary_write_json_as_string: true]
+                 )
+               ).rows
     end
 
     test "decode uuid", %{conn: conn, query_options: query_options} do
@@ -367,10 +379,31 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT {d:numeric(2,1)}", %{"d" => 1.0}, query_options).rows
     end
 
-    @tag skip: true
+    @tag :json
     test "encode json/jsonb", %{conn: conn, query_options: query_options} do
       json = %{"foo" => 42}
-      assert [[json]] == Ch.query!(conn, "SELECT {$0::json}", [json], query_options).rows
+
+      assert Ch.query!(
+               conn,
+               "SELECT {json:json}",
+               %{"json" => JSON.encode!(json)},
+               Keyword.merge(query_options,
+                 settings: [output_format_binary_write_json_as_string: true]
+               )
+             ).rows == [
+               [json]
+             ]
+
+      assert Ch.query!(
+               conn,
+               "SELECT {json:Map(String, Int64)}::json",
+               %{"json" => json},
+               Keyword.merge(query_options,
+                 settings: [output_format_binary_write_json_as_string: true]
+               )
+             ).rows == [
+               [json]
+             ]
     end
 
     test "encode uuid", %{conn: conn, query_options: query_options} do
@@ -468,11 +501,85 @@ defmodule Ch.QueryTest do
     end
 
     test "error code", %{conn: conn, query_options: query_options} do
-      assert {:error, %Ch.Error{code: code, message: message}} =
+      assert {:error,
+              %Ch.Error{
+                code: 62,
+                message: "Code: 62. DB::Exception: Syntax error: failed at position 1" <> _rest
+              }} =
                Ch.query(conn, "wat", [], query_options)
+    end
 
-      assert is_nil(code) or code == 62
-      assert message =~ "Code: 62"
+    test "handles ClickHouse 100 Continue response", %{conn: conn, query_options: query_options} do
+      assert {:ok, %Ch.Result{rows: [[1]], headers: headers_continue}} =
+               Ch.query(
+                 conn,
+                 "SELECT 1",
+                 [],
+                 Keyword.merge(query_options, headers: [{"expect", "100-continue"}])
+               )
+
+      assert {:ok, %Ch.Result{rows: [[1]], headers: headers_normal}} =
+               Ch.query(conn, "SELECT 1")
+
+      # ensure we haven't kept any keys from 100 response (even though it doesn't contain headers right now, but still, good check, I think)
+      assert :proplists.get_keys(headers_continue) == :proplists.get_keys(headers_normal)
+    end
+
+    test "mixed-case x-clickhouse-format overrides the default", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      for header_name <- [
+            "x-clickhouse-format",
+            "X-ClickHouse-Format",
+            "x-ClIcKhOuSe-FoRmAt"
+          ] do
+        assert %Ch.Result{data: "1\n", headers: headers, names: nil, rows: nil} =
+                 Ch.query!(
+                   conn,
+                   "SELECT 1",
+                   %{},
+                   Keyword.merge(query_options, headers: [{header_name, "CSV"}])
+                 )
+
+        assert :proplists.get_value("x-clickhouse-format", headers) == "CSV"
+      end
+    end
+
+    test "mixed-case user-agent overrides the default", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      assert %Ch.Result{rows: [["custom-agent/ABC"]]} =
+               Ch.query!(
+                 conn,
+                 "SELECT getClientHTTPHeader('user-agent')",
+                 %{},
+                 Keyword.merge(query_options,
+                   headers: [{"User-Agent", "custom-agent/ABC"}],
+                   settings: [allow_get_client_http_header: 1]
+                 )
+               )
+    end
+
+    test "first x-clickhouse-format header wins regardless of case", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      assert %Ch.Result{data: "1\n", headers: headers} =
+               Ch.query!(
+                 conn,
+                 "SELECT 1",
+                 %{},
+                 Keyword.merge(query_options,
+                   headers: [
+                     {"X-ClickHouse-Format", "CSV"},
+                     {"x-clickhouse-format", "JSONEachRow"}
+                   ]
+                 )
+               )
+
+      assert :proplists.get_value("x-clickhouse-format", headers) == "CSV"
     end
 
     test "connection works after failure in execute", %{conn: conn, query_options: query_options} do
