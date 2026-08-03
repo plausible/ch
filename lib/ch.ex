@@ -35,6 +35,10 @@ defmodule Ch do
 
   @query_timeout to_timeout(second: 30)
   @user_agent "ch/#{Ch.MixProject.version()}"
+  @exception_marker "__exception__"
+  @exception_tag_length 16
+  @max_exception_size 16 * 1024
+  @max_exception_length_digits 8
 
   @start_options_schema [
     name: [
@@ -351,6 +355,12 @@ defmodule Ch do
           {:error, reason} -> {:error, conn, reason}
         end
 
+      {:error, conn, %Mint.TransportError{reason: :closed} = reason, _responses} ->
+        case decode_clickhouse_exception(data, headers) do
+          {:ok, error} -> {:error, conn, error}
+          :error -> {:error, conn, reason}
+        end
+
       {:error, conn, reason, _responses} ->
         {:error, conn, reason}
     end
@@ -413,15 +423,21 @@ defmodule Ch do
           {:ok, %Ch.Result{headers: headers, data: body}}
 
         decoded_data ->
-          [names | rows] = Ch.RowBinary.decode_names_and_rows(decoded_data)
+          case extract_clickhouse_exception(decoded_data, headers) do
+            {:ok, error} ->
+              {:error, error}
 
-          {:ok,
-           %Ch.Result{
-             names: names,
-             rows: rows,
-             headers: headers,
-             data: body
-           }}
+            :error ->
+              [names | rows] = Ch.RowBinary.decode_names_and_rows(decoded_data)
+
+              {:ok,
+               %Ch.Result{
+                 names: names,
+                 rows: rows,
+                 headers: headers,
+                 data: body
+               }}
+          end
       end
     else
       {:ok, %Ch.Result{headers: headers, data: body}}
@@ -444,6 +460,82 @@ defmodule Ch do
 
   defp response_body_to_binary(nil), do: ""
   defp response_body_to_binary(body), do: IO.iodata_to_binary(body)
+
+  defp decode_clickhouse_exception(body, headers) do
+    try do
+      body
+      |> maybe_decompress(headers)
+      |> response_body_to_binary()
+      |> extract_clickhouse_exception(headers)
+    rescue
+      _ -> :error
+    end
+  end
+
+  defp extract_clickhouse_exception(body, headers) do
+    with tag when is_binary(tag) and byte_size(tag) == @exception_tag_length <-
+           get_header(headers, "x-clickhouse-exception-tag"),
+         {:ok, message} <- extract_exception_message(body, tag) do
+      {:ok, %Ch.Error{code: exception_code(message), message: message}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp extract_exception_message(body, tag) do
+    opening = "\r\n#{@exception_marker}\r\n#{tag}\r\n"
+    closing = " #{tag}\r\n#{@exception_marker}\r\n"
+    body_size = byte_size(body)
+    closing_size = byte_size(closing)
+    closing_start = body_size - closing_size
+
+    with true <- closing_start >= 0,
+         ^closing <- binary_part(body, closing_start, closing_size),
+         {:ok, length_start} <- trailing_decimal_start(body, closing_start),
+         {message_length, ""} <-
+           body |> binary_part(length_start, closing_start - length_start) |> Integer.parse(),
+         message_start = length_start - message_length,
+         opening_start = message_start - byte_size(opening),
+         true <- opening_start >= 0,
+         true <- body_size - opening_start <= @max_exception_size,
+         ^opening <- binary_part(body, opening_start, byte_size(opening)),
+         message <- binary_part(body, message_start, message_length),
+         true <- String.ends_with?(message, "\n") do
+      {:ok, message}
+    else
+      _ -> :error
+    end
+  end
+
+  defp trailing_decimal_start(body, index), do: trailing_decimal_start(body, index, 0)
+
+  defp trailing_decimal_start(body, index, digits) when index > 0 do
+    case :binary.at(body, index - 1) do
+      digit when digit in ?0..?9 and digits < @max_exception_length_digits ->
+        trailing_decimal_start(body, index - 1, digits + 1)
+
+      digit when digit in ?0..?9 ->
+        :error
+
+      _other when digits > 0 ->
+        {:ok, index}
+
+      _other ->
+        :error
+    end
+  end
+
+  defp trailing_decimal_start(_body, 0, digits) when digits > 0, do: {:ok, 0}
+  defp trailing_decimal_start(_body, 0, 0), do: :error
+
+  defp exception_code(<<"Code: ", rest::binary>>) do
+    case Integer.parse(rest) do
+      {code, <<".", _rest::binary>>} -> code
+      _ -> nil
+    end
+  end
+
+  defp exception_code(_message), do: nil
 
   @compile inline: [get_header: 2]
   defp get_header(headers, name) do

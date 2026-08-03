@@ -517,7 +517,7 @@ defmodule Ch.QueryTest do
 
       # Older ClickHouse versions in the CI matrix do not emit tagged exception blocks.
       if List.keyfind(probe.headers, "x-clickhouse-exception-tag", 0) do
-        assert {:error, %Ch.Error{message: message}} =
+        assert {:error, %Ch.Error{code: 395, message: message}} =
                  Ch.query(
                    conn,
                    """
