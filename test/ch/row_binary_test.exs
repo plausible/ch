@@ -1,5 +1,6 @@
 defmodule Ch.RowBinaryTest do
   use ExUnit.Case, async: true
+  use ExUnitProperties
   doctest Ch.RowBinary, import: true
   import Ch.RowBinary
   import Bitwise
@@ -669,8 +670,8 @@ defmodule Ch.RowBinaryTest do
              ]
     end
 
-    test "naive datetime matches Unix conversion at its boundaries" do
-      for seconds <- [0, 1, 86_399, 86_400, 0xFFFFFFFF] do
+    property "naive datetime matches Unix conversion" do
+      check all seconds <- uint32_seconds() do
         expected = seconds |> DateTime.from_unix!() |> DateTime.to_naive()
 
         assert decode_rows(<<seconds::32-little>>, ["DateTime"]) == [[expected]]
@@ -732,30 +733,13 @@ defmodule Ch.RowBinaryTest do
                [[~N[1969-12-31 23:59:59.999999]]]
     end
 
-    test "naive datetime64 matches Unix conversion across all precisions" do
-      for precision <- 0..9 do
+    property "naive datetime64 matches Unix conversion across all precisions" do
+      check all {precision, ticks} <- datetime64_ticks(), max_runs: 250 do
         time_unit = Integer.pow(10, precision)
         type = "DateTime64(#{precision})"
+        expected = ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_naive()
 
-        ticks = [
-          -time_unit - 1,
-          -time_unit,
-          -time_unit + 1,
-          -1,
-          0,
-          1,
-          time_unit - 1,
-          time_unit,
-          time_unit + 1,
-          1_700_000_000 * time_unit + div(123_456_789 * time_unit, 1_000_000_000)
-        ]
-
-        for ticks <- ticks do
-          expected = ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_naive()
-
-          assert decode_rows(<<ticks::64-little-signed>>, [type]) == [[expected]],
-                 "precision #{precision}, ticks #{ticks}"
-        end
+        assert decode_rows(<<ticks::64-little-signed>>, [type]) == [[expected]]
       end
     end
 
@@ -909,6 +893,31 @@ defmodule Ch.RowBinaryTest do
                [long_string, long_byte_string],
                [long_string <> "b", long_byte_string <> <<0xB>>]
              ]
+    end
+  end
+
+  defp uint32_seconds do
+    one_of([
+      member_of([0, 1, 86_399, 86_400, 0xFFFFFFFF]),
+      integer(0..0xFFFFFFFF)
+    ])
+  end
+
+  defp datetime64_ticks do
+    gen all precision <- integer(0..9),
+            seconds <-
+              one_of([
+                member_of([-2_208_988_800, -2, -1, 0, 1, 4_102_444_800]),
+                integer(-2_208_988_800..4_102_444_800)
+              ]),
+            nanoseconds <-
+              one_of([
+                member_of([0, 1, 999, 1_000, 999_999, 1_000_000, 999_999_999]),
+                integer(0..999_999_999)
+              ]) do
+      time_unit = Integer.pow(10, precision)
+      ticks = seconds * time_unit + div(nanoseconds * time_unit, 1_000_000_000)
+      {precision, ticks}
     end
   end
 end
