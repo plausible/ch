@@ -110,6 +110,50 @@ Ch.query!(pool, [
 ])
 ```
 
+If the same types are used repeatedly, prepare them once to avoid reparsing and
+normalizing the schema for every batch:
+
+```elixir
+plan = Ch.RowBinary.prepare(["UInt8", "String"])
+rowbinary = Ch.RowBinary.encode_rows(rows, plan)
+decoded_rows = Ch.RowBinary.decode_rows(IO.iodata_to_binary(rowbinary), plan)
+```
+
+### Generated Encoders
+
+For fixed schemas on hot insert paths, `Ch.RowBinary.Encoder.define_encoder/1`
+generates direct encoding code for common types at compile time:
+
+```elixir
+defmodule EventInsert do
+  require Ch.RowBinary.Encoder
+
+  Ch.RowBinary.Encoder.define_encoder(
+    name: :encode,
+    schema: [id: "UInt64", name: "String"],
+    table: "events"
+  )
+end
+
+Ch.query!(pool, EventInsert.encode([%{id: 1, name: "one"}]))
+```
+
+List schemas preserve their declared column order. Map schemas are sorted by
+column name. This order controls encoded fields and the names/types header.
+Map/struct rows are the default; set `row: :list` for list rows in schema order.
+Set `rows: true` for batches without an insert header. A `table:` option implies
+batch encoding and accepts only dot-separated unquoted identifiers.
+
+Generated code is duplicated in every caller module for every schema. Reserve
+it for measured hot paths and track caller BEAM size and compile time as schemas
+are added; use `Ch.RowBinary.prepare/1` for lower-complexity reuse.
+
+Run `mix run dev/row_binary_encoder_benchmark.exs` to compare generated and
+generic encoders and report generated-module compile time and BEAM size. Set the
+`ROWS` environment variable to change the default one-million-row workload. The
+list-row cases use identical inputs and a prepared generic plan, isolating codec
+dispatch; map-field extraction is reported separately.
+
 ## Compressed Inserts
 
 ClickHouse accepts compressed request bodies when the `content-encoding` header is set. Compress the entire SQL plus data body:

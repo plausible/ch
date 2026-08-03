@@ -27,6 +27,27 @@ defmodule Ch.RowBinary do
   defp encode_types([] = done), do: done
 
   @doc """
+  Prepares ClickHouse types for reuse by the RowBinary row encoder and decoder.
+
+  Preparing a schema avoids parsing and normalizing its types on every call.
+
+  ## Example
+
+      iex> plan = prepare(["UInt8", "String"])
+      iex> encoded = encode_rows([[1, "one"], [2, "two"]], plan)
+      iex> decode_rows(IO.iodata_to_binary(encoded), plan)
+      [[1, "one"], [2, "two"]]
+
+  """
+  @spec prepare([binary() | term()]) :: Ch.RowBinary.Plan.t()
+  def prepare(types) when is_list(types) do
+    %Ch.RowBinary.Plan{
+      encoding_types: encoding_types(types),
+      decoding_types: decoding_types(types)
+    }
+  end
+
+  @doc """
   Encodes a single row to [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) as iodata.
 
   Examples:
@@ -63,6 +84,10 @@ defmodule Ch.RowBinary do
       [3, [5 | "hello"], 4, [2 | "hi"]]
 
   """
+  def encode_rows(rows, %Ch.RowBinary.Plan{encoding_types: types}) do
+    _encode_rows(rows, types)
+  end
+
   def encode_rows(rows, types) do
     _encode_rows(rows, encoding_types(types))
   end
@@ -76,6 +101,15 @@ defmodule Ch.RowBinary do
   end
 
   defp _encode_rows([], [], rows, types), do: _encode_rows(rows, types)
+
+  @doc false
+  def encode_varint(i) when is_integer(i) and i < 128, do: i
+  def encode_varint(i) when is_integer(i), do: encode_varint_cont(i)
+
+  @doc false
+  def encode_u8_array([_ | _] = bytes), do: [encode_varint(length(bytes)) | bytes]
+  def encode_u8_array([]), do: 0
+  def encode_u8_array(nil), do: 0
 
   @doc false
   def encoding_types([type | types]) do
@@ -180,8 +214,7 @@ defmodule Ch.RowBinary do
   @doc false
   def encode(type, value)
 
-  def encode(:varint, i) when is_integer(i) and i < 128, do: i
-  def encode(:varint, i) when is_integer(i), do: encode_varint_cont(i)
+  def encode(:varint, i), do: encode_varint(i)
 
   def encode(:string, str) do
     case str do
@@ -660,6 +693,10 @@ defmodule Ch.RowBinary do
   """
   def decode_rows(row_binary, types)
   def decode_rows(<<>>, _types), do: []
+
+  def decode_rows(<<data::bytes>>, %Ch.RowBinary.Plan{decoding_types: types}) do
+    decode_rows!(data, types)
+  end
 
   def decode_rows(<<data::bytes>>, types) do
     decode_rows!(data, decoding_types(types))

@@ -74,3 +74,27 @@ Ch.query!(
   headers: [{"content-encoding", "zstd"}]
 )
 ```
+
+For a schema reused across batches, prepare its types once:
+
+```elixir
+plan = Ch.RowBinary.prepare(["UInt64", "String"])
+encoded = Ch.RowBinary.encode_rows([[1, "one"], [2, "two"]], plan)
+rows = Ch.RowBinary.decode_rows(IO.iodata_to_binary(encoded), plan)
+```
+
+For fixed schemas on hot insert paths, generate a specialized encoder:
+
+```elixir
+defmodule DemoInsert do
+  require Ch.RowBinary.Encoder
+
+  Ch.RowBinary.Encoder.define_encoder(
+    name: :encode_insert,
+    schema: [id: "UInt64", text: "String"],
+    table: "demo"
+  )
+end
+
+Ch.query!(pool, DemoInsert.encode_insert([%{id: 1, text: "one"}]))
+```
