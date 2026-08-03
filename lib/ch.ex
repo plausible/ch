@@ -100,11 +100,8 @@ defmodule Ch do
   @typedoc "A ClickHouse setting value."
   @type setting_value :: String.t() | integer() | float() | boolean() | atom()
 
-  @typedoc "A ClickHouse setting key-value pair."
-  @type setting :: {setting_key(), setting_value()}
-
   @typedoc "ClickHouse settings accepted by a query."
-  @type settings :: %{optional(setting_key()) => setting_value()} | [setting()]
+  @type settings :: %{optional(setting_key) => setting_value} | [{setting_key, setting_value}]
 
   @typedoc """
   Query execution options.
