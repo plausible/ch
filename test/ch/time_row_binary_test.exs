@@ -45,12 +45,41 @@ defmodule Ch.TimeRowBinaryTest do
   end
 
   test "Time64 decoder rejects ClickHouse values outside Elixir's Time range" do
-    assert_raise ArgumentError, ~r/out of Elixir's Time range/, fn ->
-      RowBinary.decode_rows(<<-1::64-little-signed>>, ["Time64(6)"])
-    end
+    for precision <- 0..9 do
+      time_unit = Integer.pow(10, precision)
+      type = "Time64(#{precision})"
 
-    assert_raise ArgumentError, ~r/out of Elixir's Time range/, fn ->
-      RowBinary.decode_rows(<<86_400_000_000::64-little-signed>>, ["Time64(6)"])
+      assert_raise ArgumentError, ~r/out of Elixir's Time range/, fn ->
+        RowBinary.decode_rows(<<-1::64-little-signed>>, [type])
+      end
+
+      assert_raise ArgumentError, ~r/out of Elixir's Time range/, fn ->
+        RowBinary.decode_rows(<<86_400 * time_unit::64-little-signed>>, [type])
+      end
+    end
+  end
+
+  test "Time64 decoder matches Unix conversion across all precisions and boundaries" do
+    for precision <- 0..9 do
+      time_unit = Integer.pow(10, precision)
+      type = "Time64(#{precision})"
+
+      ticks = [
+        0,
+        1,
+        time_unit - 1,
+        time_unit,
+        time_unit + 1,
+        43_200 * time_unit + div(123_456_789 * time_unit, 1_000_000_000),
+        86_400 * time_unit - 1
+      ]
+
+      for ticks <- ticks do
+        expected = ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
+
+        assert RowBinary.decode_rows(<<ticks::64-little-signed>>, [type]) == [[expected]],
+               "precision #{precision}, ticks #{ticks}"
+      end
     end
   end
 

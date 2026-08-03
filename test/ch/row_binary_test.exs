@@ -669,6 +669,14 @@ defmodule Ch.RowBinaryTest do
              ]
     end
 
+    test "naive datetime matches Unix conversion at its boundaries" do
+      for seconds <- [0, 1, 86_399, 86_400, 0xFFFFFFFF] do
+        expected = seconds |> DateTime.from_unix!() |> DateTime.to_naive()
+
+        assert decode_rows(<<seconds::32-little>>, ["DateTime"]) == [[expected]]
+      end
+    end
+
     test "datetime64" do
       types = [
         "DateTime64(0)",
@@ -722,6 +730,33 @@ defmodule Ch.RowBinaryTest do
 
       assert decode_rows(<<-1::64-little-signed>>, ["DateTime64(9)"]) ==
                [[~N[1969-12-31 23:59:59.999999]]]
+    end
+
+    test "naive datetime64 matches Unix conversion across all precisions" do
+      for precision <- 0..9 do
+        time_unit = Integer.pow(10, precision)
+        type = "DateTime64(#{precision})"
+
+        ticks = [
+          -time_unit - 1,
+          -time_unit,
+          -time_unit + 1,
+          -1,
+          0,
+          1,
+          time_unit - 1,
+          time_unit,
+          time_unit + 1,
+          1_700_000_000 * time_unit + div(123_456_789 * time_unit, 1_000_000_000)
+        ]
+
+        for ticks <- ticks do
+          expected = ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_naive()
+
+          assert decode_rows(<<ticks::64-little-signed>>, [type]) == [[expected]],
+                 "precision #{precision}, ticks #{ticks}"
+        end
+      end
     end
 
     test "integers" do
