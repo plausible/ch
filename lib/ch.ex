@@ -360,6 +360,12 @@ defmodule Ch do
           {:error, reason} -> {:error, conn, reason}
         end
 
+      {:error, conn, %Mint.TransportError{reason: :closed} = reason, _responses} ->
+        case decode_row_binary_exception(data, headers) do
+          {:ok, error} -> {:error, conn, error}
+          :error -> {:error, conn, reason}
+        end
+
       {:error, conn, reason, _responses} ->
         {:error, conn, reason}
     end
@@ -422,15 +428,21 @@ defmodule Ch do
           {:ok, %Ch.Result{headers: headers, data: body}}
 
         decoded_data ->
-          [names | rows] = Ch.RowBinary.decode_names_and_rows(decoded_data)
+          exception_tag = get_header(headers, "x-clickhouse-exception-tag")
 
-          {:ok,
-           %Ch.Result{
-             names: names,
-             rows: rows,
-             headers: headers,
-             data: body
-           }}
+          case Ch.RowBinary.decode_names_and_rows(decoded_data, exception_tag) do
+            {:error, message} ->
+              {:error, %Ch.Error{code: exception_code(message), message: message}}
+
+            {:ok, [names | rows]} ->
+              {:ok,
+               %Ch.Result{
+                 names: names,
+                 rows: rows,
+                 headers: headers,
+                 data: body
+               }}
+          end
       end
     else
       {:ok, %Ch.Result{headers: headers, data: body}}
@@ -453,6 +465,30 @@ defmodule Ch do
 
   defp response_body_to_binary(nil), do: ""
   defp response_body_to_binary(body), do: IO.iodata_to_binary(body)
+
+  defp decode_row_binary_exception(body, headers) do
+    try do
+      with "RowBinaryWithNamesAndTypes" <- get_header(headers, "x-clickhouse-format"),
+           tag when is_binary(tag) <- get_header(headers, "x-clickhouse-exception-tag"),
+           decoded_body <- body |> maybe_decompress(headers) |> response_body_to_binary(),
+           {:ok, message} <- Ch.RowBinary.decode_exception(decoded_body, tag) do
+        {:ok, %Ch.Error{code: exception_code(message), message: message}}
+      else
+        _ -> :error
+      end
+    rescue
+      _ -> :error
+    end
+  end
+
+  defp exception_code(<<"Code: ", rest::binary>>) do
+    case Integer.parse(rest) do
+      {code, <<".", _rest::binary>>} -> code
+      _ -> nil
+    end
+  end
+
+  defp exception_code(_message), do: nil
 
   @compile inline: [get_header: 2]
   defp get_header(headers, name) do
