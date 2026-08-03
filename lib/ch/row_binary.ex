@@ -320,9 +320,7 @@ defmodule Ch.RowBinary do
       size ->
         encoded =
           :maps.fold(
-            fn key, value, acc ->
-              [encode(k, key), encode(v, value) | acc]
-            end,
+            fn key, value, acc -> [encode(k, key), encode(v, value) | acc] end,
             [],
             m
           )
