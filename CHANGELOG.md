@@ -19,6 +19,7 @@
 - Fix `Time64` RowBinary encoding for precisions below microseconds.
 - Fix RowBinary integer encoders to reject out-of-range `Int16`/`UInt16` and wider values instead of silently wrapping, with added property coverage through 256-bit integer types.
 - Fix `Ch.Types.encode/1` to reject empty `Enum8` and `Enum16` mappings instead of producing invalid type strings.
+- Fix RowBinary encoding for timezone-qualified `DateTime` and `DateTime64` values with non-UTC timezones.
 
 ## 0.8.3 (2026-05-12)
 

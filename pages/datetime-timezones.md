@@ -91,11 +91,12 @@ RowBinary does not send text for `DateTime` values. It sends Unix timestamps dir
 | `NaiveDateTime` | `DateTime64(P)` | treated as a UTC naive value and encoded as Unix ticks |
 | `DateTime` | `DateTime` | encoded as Unix seconds for the instant |
 | `DateTime` | `DateTime64(P)` | encoded as Unix ticks for the instant |
-| any | `DateTime('UTC')` | same as `DateTime` |
-| any | `DateTime64(P, 'UTC')` | same as `DateTime64(P)` |
-| any | non-UTC `DateTime(...)` / `DateTime64(...)` | not supported by `Ch.RowBinary.encode_rows/2` |
+| `NaiveDateTime` | `DateTime('Europe/Berlin')` | treated as Berlin wall time and encoded as Unix seconds |
+| `NaiveDateTime` | `DateTime64(P, 'Europe/Berlin')` | treated as Berlin wall time and encoded as Unix ticks |
+| `DateTime` | `DateTime('Europe/Berlin')` | encoded as Unix seconds for the instant |
+| `DateTime` | `DateTime64(P, 'Europe/Berlin')` | encoded as Unix ticks for the instant |
 
-Use query parameters for non-UTC textual interpretation, or normalize values to UTC before RowBinary insertion.
+For timezone-qualified `DateTime` and `DateTime64` types, `NaiveDateTime` values are interpreted in the timezone from the ClickHouse type. `DateTime` values already represent an instant, so their own timezone is normalized to Unix seconds or ticks before encoding.
 
 ## Practical Guidance
 
