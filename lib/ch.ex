@@ -94,16 +94,28 @@ defmodule Ch do
   """
   @type query_params :: %{String.t() => term}
 
+  @typedoc "A ClickHouse setting name."
+  @type setting_key :: String.t() | atom()
+
+  @typedoc "A ClickHouse setting value."
+  @type setting_value :: String.t() | integer() | float() | boolean() | atom()
+
+  @typedoc "A ClickHouse setting key-value pair."
+  @type setting :: {setting_key(), setting_value()}
+
+  @typedoc "ClickHouse settings accepted by a query."
+  @type settings :: %{optional(setting_key()) => setting_value()} | [setting()]
+
   @typedoc """
   Query execution options.
 
   * `:timeout` - Request timeout, defaults to 30 seconds.
-  * `:settings` - An enumerable (usually a map or a keyword list) added to the URL query string.
+  * `:settings` - A map or list of pairs added to the URL query string.
   * `:headers` - Headers passed directly to Mint.
   """
   @type query_option ::
           {:timeout, timeout}
-          | {:settings, Enumerable.t()}
+          | {:settings, settings()}
           | {:headers, Mint.Types.headers()}
 
   @typedoc """
