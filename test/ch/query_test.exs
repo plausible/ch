@@ -516,7 +516,7 @@ defmodule Ch.QueryTest do
       probe = Ch.query!(conn, "SELECT 1", %{}, query_options)
 
       # Older ClickHouse versions in the CI matrix do not emit tagged exception blocks.
-      if :proplists.get_value("x-clickhouse-exception-tag", probe.headers) do
+      if List.keyfind(probe.headers, "x-clickhouse-exception-tag", 0) do
         assert {:error, %Ch.Error{message: message}} =
                  Ch.query(
                    conn,
