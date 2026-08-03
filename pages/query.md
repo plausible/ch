@@ -87,8 +87,8 @@ RowBinary inserts are explicit. Encode rows with `Ch.RowBinary` and pass the SQL
 
 ```elixir
 rows = [[1, "one"], [2, "two"]]
-types = ["UInt8", "String"]
-rowbinary = Ch.RowBinary.encode_rows(rows, types)
+schema = Ch.RowBinary.schema(types: ["UInt8", :string])
+rowbinary = Ch.RowBinary.encode_rows(schema, rows)
 
 Ch.query!(pool, [
   "INSERT INTO events FORMAT RowBinary\n",
@@ -99,14 +99,18 @@ Ch.query!(pool, [
 For `RowBinaryWithNamesAndTypes`, include the encoded names and types header:
 
 ```elixir
-names = ["id", "name"]
-types = ["UInt8", "String"]
 rows = [[1, "one"], [2, "two"]]
+
+schema =
+  Ch.RowBinary.schema(
+    names: ["id", "name"],
+    types: ["UInt8", :string]
+  )
 
 Ch.query!(pool, [
   "INSERT INTO events FORMAT RowBinaryWithNamesAndTypes\n",
-  Ch.RowBinary.encode_names_and_types(names, types),
-  Ch.RowBinary.encode_rows(rows, types)
+  Ch.RowBinary.encode_names_and_types(schema),
+  Ch.RowBinary.encode_rows(schema, rows)
 ])
 ```
 
@@ -118,8 +122,8 @@ ClickHouse accepts compressed request bodies when the `content-encoding` header 
 payload =
   :zstd.compress([
     "INSERT INTO events FORMAT RowBinaryWithNamesAndTypes\n",
-    Ch.RowBinary.encode_names_and_types(names, types),
-    Ch.RowBinary.encode_rows(rows, types)
+    Ch.RowBinary.encode_names_and_types(schema),
+    Ch.RowBinary.encode_rows(schema, rows)
   ])
 
 Ch.query!(
