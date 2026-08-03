@@ -95,10 +95,10 @@ defmodule Ch do
   @type query_params :: %{String.t() => term}
 
   @typedoc "A ClickHouse setting name."
-  @type setting_key :: String.t() | atom()
+  @type setting_key :: String.t() | atom
 
   @typedoc "A ClickHouse setting value."
-  @type setting_value :: String.t() | integer() | float() | boolean() | atom()
+  @type setting_value :: String.t() | number | boolean | atom
 
   @typedoc "ClickHouse settings accepted by a query."
   @type settings :: %{optional(setting_key) => setting_value} | [{setting_key, setting_value}]
@@ -112,7 +112,7 @@ defmodule Ch do
   """
   @type query_option ::
           {:timeout, timeout}
-          | {:settings, settings()}
+          | {:settings, settings}
           | {:headers, Mint.Types.headers()}
 
   @typedoc """
