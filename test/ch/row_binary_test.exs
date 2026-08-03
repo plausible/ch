@@ -179,7 +179,12 @@ defmodule Ch.RowBinaryTest do
       assert encode(:date, nil) == <<0, 0>>
       assert encode(:date32, nil) == <<0, 0, 0, 0>>
       assert encode(:datetime, nil) == <<0, 0, 0, 0>>
+      assert encode({:datetime, "Europe/Vienna"}, nil) == <<0, 0, 0, 0>>
       assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+
+      assert encode({:datetime64, :microsecond, "Europe/Vienna"}, nil) ==
+               <<0, 0, 0, 0, 0, 0, 0, 0>>
+
       assert encode(:uuid, nil) == <<0::128>>
       assert encode({:decimal32, _scale = 4}, nil) == <<0::32>>
       assert encode({:decimal64, _scale = 4}, nil) == <<0::64>>
