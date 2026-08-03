@@ -23,8 +23,8 @@ exclude =
   if version >= "25" do
     []
   else
-    # Time, Variant, JSON, and Dynamic types are not supported in older ClickHouse versions we have in the CI
-    [:time, :variant, :json, :dynamic]
+    # These features are not supported in older ClickHouse versions we have in the CI.
+    [:time, :variant, :json, :dynamic, :exception]
   end
 
 assert_receive_timeout =

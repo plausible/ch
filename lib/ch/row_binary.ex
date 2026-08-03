@@ -8,6 +8,10 @@ defmodule Ch.RowBinary do
 
   @epoch_gregorian_seconds 62_167_219_200
   @epoch_gregorian_days 719_528
+  @exception_marker "__exception__"
+  @exception_tag_length 16
+  @max_exception_size 16 * 1024
+  @max_exception_length_digits 8
 
   @doc false
   def encode_names_and_types(names, types) do
@@ -648,6 +652,64 @@ defmodule Ch.RowBinary do
       decode_names(rest, unquote(value), unquote(value), _acc = [])
     end
   end
+
+  @doc false
+  def decode_names_and_rows(row_binary_with_names_and_types, exception_tag) do
+    case decode_exception(row_binary_with_names_and_types, exception_tag) do
+      {:ok, message} -> {:error, message}
+      :error -> {:ok, decode_names_and_rows(row_binary_with_names_and_types)}
+    end
+  end
+
+  @doc false
+  def decode_exception(body, tag)
+      when is_binary(tag) and byte_size(tag) == @exception_tag_length do
+    opening = "\r\n#{@exception_marker}\r\n#{tag}\r\n"
+    closing = " #{tag}\r\n#{@exception_marker}\r\n"
+    body_size = byte_size(body)
+    closing_size = byte_size(closing)
+    closing_start = body_size - closing_size
+
+    with true <- closing_start >= 0,
+         ^closing <- binary_part(body, closing_start, closing_size),
+         {:ok, length_start} <- trailing_decimal_start(body, closing_start),
+         {message_length, ""} <-
+           body |> binary_part(length_start, closing_start - length_start) |> Integer.parse(),
+         message_start = length_start - message_length,
+         opening_start = message_start - byte_size(opening),
+         true <- opening_start >= 0,
+         true <- body_size - opening_start <= @max_exception_size,
+         ^opening <- binary_part(body, opening_start, byte_size(opening)),
+         message <- binary_part(body, message_start, message_length),
+         true <- String.ends_with?(message, "\n") do
+      {:ok, message}
+    else
+      _ -> :error
+    end
+  end
+
+  def decode_exception(_body, _tag), do: :error
+
+  defp trailing_decimal_start(body, index), do: trailing_decimal_start(body, index, 0)
+
+  defp trailing_decimal_start(body, index, digits) when index > 0 do
+    case :binary.at(body, index - 1) do
+      digit when digit in ?0..?9 and digits < @max_exception_length_digits ->
+        trailing_decimal_start(body, index - 1, digits + 1)
+
+      digit when digit in ?0..?9 ->
+        :error
+
+      _other when digits > 0 ->
+        {:ok, index}
+
+      _other ->
+        :error
+    end
+  end
+
+  defp trailing_decimal_start(_body, 0, digits) when digits > 0, do: {:ok, 0}
+  defp trailing_decimal_start(_body, 0, 0), do: :error
 
   @doc """
   Decodes [RowBinary](https://clickhouse.com/docs/en/interfaces/formats/RowBinary) into rows.

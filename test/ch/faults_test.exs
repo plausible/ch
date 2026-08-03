@@ -83,42 +83,6 @@ defmodule Ch.FaultsTest do
     assert {:ok, %{rows: [[2]]}} = Task.await(select)
   end
 
-  test "detects a completed tagged exception before RowBinary decoding", ctx do
-    %{port: port, listen: listen} = ctx
-    {:ok, pool} = Ch.start_link(url: "http://localhost:#{port}")
-
-    select = Task.async(fn -> Ch.query(pool, "select 1", %{}, timeout: 1_000) end)
-    {:ok, mint} = :gen_tcp.accept(listen)
-    _request = read_packets(mint)
-
-    tag = "abcdefghijklmnop"
-    message = "Code: 395. DB::Exception: late exception\n"
-
-    body = [
-      "\r\n__exception__\r\n",
-      tag,
-      "\r\n",
-      message,
-      Integer.to_string(byte_size(message)),
-      " ",
-      tag,
-      "\r\n__exception__\r\n"
-    ]
-
-    response = [
-      "HTTP/1.1 200 OK\r\n",
-      "Content-Length: #{IO.iodata_length(body)}\r\n",
-      "X-ClickHouse-Format: RowBinaryWithNamesAndTypes\r\n",
-      "X-ClickHouse-Exception-Tag: #{tag}\r\n",
-      "\r\n",
-      body
-    ]
-
-    :ok = :gen_tcp.send(mint, response)
-
-    assert {:error, %Ch.Error{code: 395, message: ^message}} = Task.await(select)
-  end
-
   defp connect_clickhouse! do
     {:ok, clickhouse} = :gen_tcp.connect({127, 0, 0, 1}, 8123, @socket_opts)
     clickhouse
