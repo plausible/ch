@@ -1286,10 +1286,6 @@ defmodule Ch.RowBinary do
       unquote(fun)(bin, remaining, acc, types_rest, original_row, rows, types)
     end
 
-    defp unquote(fun)(bin, 0, acc, types_rest, original_row, rows, types) do
-      decode_rows(types_rest, bin, [:lists.reverse(acc) | original_row], rows, types)
-    end
-
     defp unquote(fun)(bin, remaining, acc, types_rest, original_row, rows, types)
          when byte_size(bin) >= remaining * unquote(item_size) do
       size = remaining * unquote(item_size)

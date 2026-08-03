@@ -529,6 +529,47 @@ defmodule Ch.RowBinaryTest do
       assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
+    test "fixed-width array split before the final items" do
+      types = decoding_types(["Array(UInt8)"])
+      data = IO.iodata_to_binary([encode(:varint, 4), <<1, 2>>])
+
+      assert {[], "", continuation = {:cont, [{:array_items, :u8, 2, [2, 1], []}], []}} =
+               decode_rows_continue(data, types, nil)
+
+      assert {[[[1, 2, 3, 4]]], "", nil} =
+               decode_rows_continue(<<3, 4>>, types, continuation)
+    end
+
+    test "parameterized scalar arrays" do
+      encodable_types = [
+        "Array(FixedString(2))",
+        "Array(Time64(3))",
+        "Array(DateTime('UTC'))",
+        "Array(Decimal32(2))",
+        "Array(DateTime64(3, 'UTC'))",
+        "Array(Enum8('one' = 1, 'two' = 2))",
+        "Array(Enum16('ten' = 10, 'twenty' = 20))",
+        "Array(JSON)"
+      ]
+
+      encodable_row = [
+        ["ab", "cd"],
+        [~T[12:34:56.789], ~T[23:45:01.123]],
+        [~U[2022-01-01 12:00:00Z]],
+        [Decimal.new("12.34"), Decimal.new("-56.78")],
+        [~U[2022-01-01 12:00:00.123Z]],
+        ["one", "two"],
+        ["ten", "twenty"],
+        [%{"answer" => 42}, [1, 2, 3]]
+      ]
+
+      types = encodable_types ++ ["Array(Nothing)"]
+      data = [encode_rows([encodable_row], encodable_types), encode(:varint, 2)]
+      expected = [encodable_row ++ [[nil, nil]]]
+
+      assert data |> IO.iodata_to_binary() |> byte_by_byte(types) == expected
+    end
+
     test "decimals" do
       types = [
         "Decimal32(4)",
