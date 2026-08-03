@@ -4,6 +4,10 @@ defmodule Ch.RowBinaryTest do
   import Ch.RowBinary
   import Bitwise
 
+  defp encode_to_binary(type, value) do
+    type |> encode(value) |> IO.iodata_to_binary()
+  end
+
   test "encode -> decode" do
     spec = [
       {:string, ""},
@@ -167,7 +171,8 @@ defmodule Ch.RowBinaryTest do
 
     test "map" do
       assert encode({:map, :string, :string}, []) == 0
-      assert encode({:map, :string, :string}, %{}) == 0
+
+      assert encode_to_binary({:map, :string, :string}, %{}) == <<0>>
 
       assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
                encode({:map, :string, :string}, [{"hello", "world"}])
@@ -237,7 +242,7 @@ defmodule Ch.RowBinaryTest do
 
   test "strings preserve raw bytes" do
     value = "\x61\xF0\x80\x80\x80b"
-    str = IO.iodata_to_binary(encode(:string, value))
+    str = encode_to_binary(:string, value)
 
     assert decode_rows(str, [:string]) == [[value]]
 
