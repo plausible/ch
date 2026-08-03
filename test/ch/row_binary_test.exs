@@ -4,6 +4,10 @@ defmodule Ch.RowBinaryTest do
   import Ch.RowBinary
   import Bitwise
 
+  defp encode_to_binary(type, value) do
+    type |> encode(value) |> IO.iodata_to_binary()
+  end
+
   test "encode -> decode" do
     spec = [
       {:string, ""},
@@ -105,7 +109,45 @@ defmodule Ch.RowBinaryTest do
   end
 
   describe "encode/2" do
+    test "names and atom types" do
+      assert IO.iodata_to_binary(encode_names_and_types(["answer"], [:u8])) ==
+               <<1, 6, "answer", 5, "UInt8">>
+    end
+
+    test "encoding type aliases" do
+      assert encoding_types([{:datetime, "UTC"}]) == [:datetime]
+      assert encoding_types([{:datetime64, 6}]) == [datetime64: 1_000_000]
+      assert encoding_types([{:datetime64, 3, "UTC"}]) == [datetime64: 1000]
+      assert encoding_types([{:decimal, 9, 4}]) == [decimal32: 4]
+      assert encoding_types([{:decimal, 18, 4}]) == [decimal64: 4]
+      assert encoding_types([{:decimal, 38, 4}]) == [decimal128: 4]
+      assert encoding_types([{:decimal, 76, 4}]) == [decimal256: 4]
+      assert encoding_types([{:simple_aggregate_function, "any", :u8}]) == [:u8]
+
+      # See https://github.com/plausible/ch/issues/353
+      assert_raise ArgumentError,
+                   "can't encode DateTime with non-UTC timezone: \"Europe/Vienna\"",
+                   fn ->
+                     encoding_types([{:datetime, "Europe/Vienna"}])
+                   end
+
+      assert_raise ArgumentError,
+                   "can't encode DateTime64 with non-UTC timezone: \"Europe/Vienna\"",
+                   fn ->
+                     encoding_types([{:datetime64, 3, "Europe/Vienna"}])
+                   end
+
+      assert_raise ArgumentError, "unsupported type for encoding: :unsupported", fn ->
+        encoding_types([:unsupported])
+      end
+    end
+
     test "decimal" do
+      assert encode({:decimal, 9, 4}, Decimal.new("2.66")) == <<26600::32-little>>
+      assert encode({:decimal, 18, 4}, Decimal.new("2.66")) == <<26600::64-little>>
+      assert encode({:decimal, 38, 4}, Decimal.new("2.66")) == <<26600::128-little>>
+      assert encode({:decimal, 76, 4}, Decimal.new("2.66")) == <<26600::256-little>>
+
       type = {:decimal32, _scale = 4}
       assert encode(type, Decimal.new("2")) == <<20000::32-little>>
       assert encode(type, Decimal.new("2.66")) == <<26600::32-little>>
@@ -121,11 +163,16 @@ defmodule Ch.RowBinaryTest do
 
       hex = "d2bd5ec9-fdc5-a53f-32b5-e852f63a5f09"
       assert encode(:uuid, hex) == encode(:uuid, uuid)
+
+      uppercase = "12345678-9ABC-DEF0-1234-56789ABCDEF0"
+      raw = Base.decode16!("123456789ABCDEF0123456789ABCDEF0")
+      assert encode(:uuid, uppercase) == encode(:uuid, raw)
     end
 
     test "map" do
       assert encode({:map, :string, :string}, []) == 0
-      assert encode({:map, :string, :string}, %{}) == 0
+
+      assert encode_to_binary({:map, :string, :string}, %{}) == <<0>>
 
       assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
                encode({:map, :string, :string}, [{"hello", "world"}])
@@ -151,22 +198,51 @@ defmodule Ch.RowBinaryTest do
       assert encode(:date32, nil) == <<0, 0, 0, 0>>
       assert encode(:datetime, nil) == <<0, 0, 0, 0>>
       assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+      assert encode(:time, nil) == <<0, 0, 0, 0>>
+      assert encode({:time64, 1_000}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
       assert encode(:uuid, nil) == <<0::128>>
       assert encode({:decimal32, _scale = 4}, nil) == <<0::32>>
       assert encode({:decimal64, _scale = 4}, nil) == <<0::64>>
       assert encode({:decimal128, _scale = 4}, nil) == <<0::128>>
       assert encode({:decimal256, _scale = 4}, nil) == <<0::256>>
+      assert encode(:ipv4, nil) == <<0::32>>
+      assert encode(:ipv6, nil) == <<0::128>>
       assert encode(:point, nil) == <<0::128>>
       assert encode(:ring, nil) == 0
       assert encode(:polygon, nil) == 0
       assert encode(:multipolygon, nil) == 0
       assert encode({:map, :string, :string}, nil) == 0
+      assert encode({:tuple, [:u8, :string]}, nil) == [0, 0]
+    end
+
+    test "ip addresses" do
+      assert encode(:ipv6, <<1::128>>) == <<1::128>>
+    end
+
+    test "dynamic empty list" do
+      assert encode(:dynamic, []) == [0x1E, 0x00]
+    end
+
+    test "enum missing value" do
+      assert_raise ArgumentError,
+                   ~s[enum value "missing" not found in mapping: %{"present" => 1}],
+                   fn -> encode({:enum8, %{"present" => 1}}, "missing") end
+    end
+
+    test "nullable scalar" do
+      assert encode({:nullable, :u8}, 1) == [0, 1]
+    end
+
+    test "variant without matching type" do
+      assert_raise ArgumentError, ~s[no matching type found for encoding "x" as Variant], fn ->
+        encode({:variant, [:u8]}, "x")
+      end
     end
   end
 
   test "strings preserve raw bytes" do
     value = "\x61\xF0\x80\x80\x80b"
-    str = IO.iodata_to_binary(encode(:string, value))
+    str = encode_to_binary(:string, value)
 
     assert decode_rows(str, [:string]) == [[value]]
 
@@ -229,6 +305,7 @@ defmodule Ch.RowBinaryTest do
         {"Array(LowCardinality(String))", {:array, :string}},
         {"Array(Enum8('hello' = 2, 'world' = 3))",
          {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
+        {"Variant(String, UInt32)", {:variant, {:string, :u32}}},
         {"Array(Nothing)", {:array, :nothing}},
         {"Nullable(String)", {:nullable, :string}},
         {"Nullable(Float64)", {:nullable, :f64}},
@@ -301,6 +378,13 @@ defmodule Ch.RowBinaryTest do
 
       assert decode_rows(payload) == [[nil, nil, 100.0]]
     end
+
+    test "returns continuation for incomplete enum rows" do
+      assert {[], "", {:cont, [{:enum8, %{1 => "one"}}], []}} =
+               decode_rows_continue("", [{:enum8, %{1 => "one"}}], nil)
+
+      assert {[], "", {:cont, [:u8], []}} = decode_rows_continue("", [:u8], nil)
+    end
   end
 
   describe "decode_rows/2" do
@@ -326,11 +410,27 @@ defmodule Ch.RowBinaryTest do
         decode_rows(<<1>>, [:u8, :u8])
       end
     end
+
+    test "rejects unsupported decoded types" do
+      assert_raise ArgumentError, "unsupported type for decoding: :unsupported", fn ->
+        decode_rows(<<0>>, [:unsupported])
+      end
+    end
+
+    test "rejects invalid Variant type indexes" do
+      assert_raise ArgumentError, "invalid Variant type index: 2", fn ->
+        decode_rows(<<2>>, ["Variant(String, UInt32)"])
+      end
+    end
   end
 
   # TODO maybe use stream_data?
   describe "invalid arguments" do
     # https://github.com/plausible/ch/issues/166
+    test "for varint" do
+      assert_raise ArgumentError, "invalid varint: -1", fn -> encode(:varint, -1) end
+    end
+
     test "for UInt8" do
       assert_raise ArgumentError, "invalid UInt8: 256", fn -> encode(:u8, 256) end
       assert_raise ArgumentError, "invalid UInt8: -1", fn -> encode(:u8, -1) end

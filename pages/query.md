@@ -139,9 +139,9 @@ Ch emits query telemetry events:
 - `[:ch, :query, :error]`
 
 Successful query stop events include native-time measurements such as
-`:duration`, `:queue_time`, `:query_time`, and `:decode_time`. Decoded responses
-also include `:num_rows`, `:num_columns`, and `:response_body_bytes` when
-available.
+`:duration`, `:encode_time`, `:queue_time`, `:query_time`, and `:decode_time`.
+Reused connections also include `:idle_time`. Decoded responses include
+`:num_columns` and `:response_body_bytes` when available.
 
 Connection lifecycle events use short names:
 

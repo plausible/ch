@@ -31,6 +31,8 @@ defmodule Ch do
   """
   @behaviour NimblePool
 
+  alias Ch.Telemetry
+
   @dialyzer :no_improper_lists
 
   @query_timeout to_timeout(second: 30)
@@ -55,6 +57,7 @@ defmodule Ch do
       Time a connection can stay idle before the pool closes it.
       Should be lower than ClickHouse's [`keep_alive_timeout`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#keep_alive_timeout)
       to avoid sending a request over a connection that would be closed by ClickHouse soon-ish.
+      Note: `:infinity` disables idle connection expiration.
       """,
       default: to_timeout(second: 5)
     ],
@@ -93,17 +96,26 @@ defmodule Ch do
   """
   @type query_params :: %{String.t() => term}
 
+  @typedoc "A ClickHouse setting name."
+  @type setting_key :: String.t() | atom
+
+  @typedoc "A ClickHouse setting value."
+  @type setting_value :: String.t() | number | boolean | atom
+
+  @typedoc "ClickHouse settings accepted by a query."
+  @type settings :: %{optional(setting_key) => setting_value} | [{setting_key, setting_value}]
+
   @typedoc """
   Query execution options.
 
   * `:timeout` - Request timeout, defaults to 30 seconds.
-  * `:settings` - An enumerable (usually a map or a keyword list) added to the URL query string.
+  * `:settings` - A map or list of pairs added to the URL query string.
   * `:headers` - Headers passed directly to Mint.
   * `:telemetry_metadata` - Extra metadata to include in telemetry events.
   """
   @type query_option ::
           {:timeout, timeout}
-          | {:settings, Enumerable.t()}
+          | {:settings, settings}
           | {:headers, Mint.Types.headers()}
           | {:telemetry_metadata, map}
 
@@ -140,8 +152,9 @@ defmodule Ch do
 
     name = Keyword.get(options, :name)
     pool_size = Keyword.fetch!(options, :pool_size)
-    worker_idle_timeout = Keyword.fetch!(options, :worker_idle_timeout)
     url = Keyword.fetch!(options, :url)
+
+    worker_idle_timeout = with :infinity <- Keyword.fetch!(options, :worker_idle_timeout), do: nil
 
     %URI{scheme: scheme, host: host, port: port} = URI.parse(url)
 
@@ -225,30 +238,33 @@ defmodule Ch do
     headers =
       options
       |> Keyword.get(:headers, [])
+      |> Enum.map(fn {k, v} -> {String.downcase(k), v} end)
       |> put_new_header("user-agent", @user_agent)
       |> put_new_header("x-clickhouse-format", "RowBinaryWithNamesAndTypes")
 
+    metadata =
+      Map.merge(telemetry_metadata, %{
+        pool: GenServer.whereis(pool),
+        settings: settings,
+        format: get_header(headers, "x-clickhouse-format")
+      })
+
+    {query_started, meter} = Telemetry.query_start(metadata)
     deadline = Ch.HTTP.to_deadline(timeout)
     path = Ch.HTTP.path(params, settings)
-    query_started = System.monotonic_time()
     checkout_started = System.monotonic_time()
 
-    metadata = %{
-      pool: pool,
-      telemetry_metadata: telemetry_metadata,
-      settings: settings,
-      format: get_header(headers, "x-clickhouse-format")
-    }
-
-    :telemetry.execute([:ch, :query, :start], %{system_time: System.system_time()}, metadata)
-
-    try do
-      result =
+    result =
+      try do
         NimblePool.checkout!(
           pool,
           :request,
           fn {pid, _ref}, conn_or_template ->
-            meter = [] |> past_event(:checkout, checkout_started) |> event(:query)
+            meter =
+              meter
+              |> Telemetry.maybe_checkin_event(conn_or_template)
+              |> Telemetry.past_event(:checkout, checkout_started)
+              |> Telemetry.event(:query)
 
             with {:ok, conn} <- connect(conn_or_template, pid, deadline, metadata),
                  {:ok, conn, status, headers, data} <-
@@ -261,68 +277,69 @@ defmodule Ch do
           end,
           timeout
         )
+      catch
+        kind, reason ->
+          stacktrace = __STACKTRACE__
 
-      case result do
-        {:ok, status, headers, data, meter} ->
-          meter = event(meter, :decode)
-
-          try do
-            case decode_query_response(status, headers, data) do
-              {:ok, result} ->
-                :telemetry.execute(
-                  [:ch, :query, :stop],
-                  telemetry_measurements(meter, query_started, result),
-                  telemetry_metadata(metadata, status, headers, result)
-                )
-
-                {:ok, result}
-
-              {:error, reason} ->
-                :telemetry.execute(
-                  [:ch, :query, :error],
-                  telemetry_measurements(meter, query_started, nil),
-                  telemetry_error_metadata(metadata, status, headers, reason, nil)
-                )
-
-                {:error, reason}
-            end
-          catch
-            kind, reason ->
-              stacktrace = __STACKTRACE__
-
-              :telemetry.execute(
-                [:ch, :query, :error],
-                telemetry_measurements(meter, query_started, nil),
-                telemetry_error_metadata(metadata, status, headers, reason, {kind, stacktrace})
-              )
-
-              :erlang.raise(kind, reason, stacktrace)
-          end
-
-        {:error, reason, meter} ->
-          :telemetry.execute(
-            [:ch, :query, :error],
-            telemetry_measurements(meter, query_started, nil),
-            telemetry_error_metadata(metadata, nil, [], reason, nil)
+          Telemetry.query_error(
+            Telemetry.past_event(meter, :checkout, checkout_started),
+            query_started,
+            Map.merge(metadata, %{
+              kind: kind,
+              reason: reason,
+              stacktrace: stacktrace
+            })
           )
 
-          {:error, reason}
+          :erlang.raise(kind, reason, stacktrace)
       end
-    catch
-      kind, reason ->
-        stacktrace = __STACKTRACE__
 
-        :telemetry.execute(
-          [:ch, :query, :error],
-          telemetry_measurements([], query_started, nil),
-          Map.merge(metadata, %{
-            kind: kind,
-            reason: reason,
-            stacktrace: stacktrace
-          })
+    case result do
+      {:ok, status, headers, data, meter} ->
+        meter = Telemetry.event(meter, :decode)
+
+        try do
+          case decode_query_response(status, headers, data) do
+            {:ok, result} ->
+              Telemetry.query_stop(
+                meter,
+                query_started,
+                result,
+                telemetry_metadata(metadata, status, headers, result)
+              )
+
+              {:ok, result}
+
+            {:error, reason} ->
+              Telemetry.query_error(
+                meter,
+                query_started,
+                telemetry_error_metadata(metadata, status, headers, reason, nil)
+              )
+
+              {:error, reason}
+          end
+        catch
+          kind, reason ->
+            stacktrace = __STACKTRACE__
+
+            Telemetry.query_error(
+              meter,
+              query_started,
+              telemetry_error_metadata(metadata, status, headers, reason, {kind, stacktrace})
+            )
+
+            :erlang.raise(kind, reason, stacktrace)
+        end
+
+      {:error, reason, meter} ->
+        Telemetry.query_error(
+          meter,
+          query_started,
+          telemetry_error_metadata(metadata, nil, [], reason, nil)
         )
 
-        :erlang.raise(kind, reason, stacktrace)
+        {:error, reason}
     end
   end
 
@@ -341,7 +358,7 @@ defmodule Ch do
 
   @impl NimblePool
   def init_pool(config) do
-    {:ok, config}
+    {:ok, Map.put(config, :pool, self())}
   end
 
   @impl NimblePool
@@ -385,7 +402,7 @@ defmodule Ch do
     end
 
     unless conn_or_template == :template do
-      emit_conn_event([:ch, :conn, :drop], %{}, conn_metadata(config, %{reason: reason}))
+      Telemetry.execute([:ch, :conn, :drop], %{}, conn_metadata(config, %{reason: reason}))
     end
 
     {:ok, config}
@@ -396,21 +413,26 @@ defmodule Ch do
     timeout = Ch.HTTP.to_timeout(deadline)
     metadata = conn_metadata(scheme, host, port, query_metadata)
 
-    emit_conn_event([:ch, :conn, :start], %{system_time: System.system_time()}, metadata)
+    Telemetry.execute([:ch, :conn, :start], %{system_time: System.system_time()}, metadata)
 
     case Mint.HTTP1.connect(scheme, host, port, mode: :passive, timeout: timeout) do
       {:ok, conn} ->
         case Mint.HTTP1.controlling_process(conn, owner) do
           {:ok, _conn} = ok ->
-            emit_conn_event([:ch, :conn, :stop], %{duration: duration(started)}, metadata)
+            Telemetry.execute(
+              [:ch, :conn, :stop],
+              %{duration: Telemetry.duration(started)},
+              metadata
+            )
+
             ok
 
           {:error, _reason} = error ->
             Mint.HTTP1.close(conn)
 
-            emit_conn_event(
+            Telemetry.execute(
               [:ch, :conn, :error],
-              %{duration: duration(started)},
+              %{duration: Telemetry.duration(started)},
               conn_error_metadata(metadata, error)
             )
 
@@ -418,9 +440,9 @@ defmodule Ch do
         end
 
       {:error, _reason} = error ->
-        emit_conn_event(
+        Telemetry.execute(
           [:ch, :conn, :error],
-          %{duration: duration(started)},
+          %{duration: Telemetry.duration(started)},
           conn_error_metadata(metadata, error)
         )
 
@@ -430,7 +452,13 @@ defmodule Ch do
 
   defp connect({:ok, _conn, checkin_time, conn_metadata} = ok, _owner, _deadline, query_metadata) do
     measurements = %{idle_time: max(System.monotonic_time() - checkin_time, 0)}
-    emit_conn_event([:ch, :conn, :reuse], measurements, Map.merge(conn_metadata, query_metadata))
+
+    Telemetry.execute(
+      [:ch, :conn, :reuse],
+      measurements,
+      Map.merge(conn_metadata, query_metadata)
+    )
+
     {:ok, elem(ok, 1)}
   end
 
@@ -439,7 +467,7 @@ defmodule Ch do
   defp request(conn, method, path, headers, body, deadline) do
     result =
       with {:ok, conn, _ref} <- Mint.HTTP1.request(conn, method, path, headers, body) do
-        recv_all(conn, nil, [], nil, deadline)
+        recv_all(conn, _status = nil, _headers = [], _data = nil, deadline)
       end
 
     with {:error, conn, reason} <- result do
@@ -464,8 +492,8 @@ defmodule Ch do
     end
   end
 
-  defp handle_responses([{:status, _ref, status} | rest], _prev_status = nil, headers, data) do
-    handle_responses(rest, status, headers, data)
+  defp handle_responses([{:status, _ref, status} | rest], _prev_status, _prev_headers, data) do
+    handle_responses(rest, status, _reset_headers = [], data)
   end
 
   defp handle_responses([{:headers, _ref, new_headers} | rest], status, prev_headers, data) do
@@ -543,54 +571,15 @@ defmodule Ch do
       |> response_body_to_binary()
 
     code =
-      headers
-      |> get_clickhouse_error_code()
-      |> maybe_string_to_integer()
+      if code = get_header(headers, "x-clickhouse-exception-code") do
+        String.to_integer(code)
+      end
 
     {:error, %Ch.Error{code: code, message: message}}
   end
 
   defp response_body_to_binary(nil), do: ""
   defp response_body_to_binary(body), do: IO.iodata_to_binary(body)
-
-  defp event(events, name), do: [{name, System.monotonic_time()} | events]
-
-  defp past_event(events, name, time), do: [{name, time} | events]
-
-  defp telemetry_measurements(events, query_started, result) do
-    stop = System.monotonic_time()
-
-    measurements =
-      events
-      |> Enum.reduce({stop, %{duration: stop - query_started}}, fn
-        {:decode, start}, {stop, measurements} ->
-          {start, Map.put(measurements, :decode_time, stop - start)}
-
-        {:query, start}, {stop, measurements} ->
-          {start, Map.put(measurements, :query_time, stop - start)}
-
-        {:checkout, start}, {stop, measurements} ->
-          {start, Map.put(measurements, :queue_time, stop - start)}
-
-        {:checkin, start}, {stop, measurements} ->
-          {stop, Map.put(measurements, :idle_time, max(stop - start, 0))}
-      end)
-      |> elem(1)
-
-    case result do
-      %Ch.Result{rows: rows, names: names, data: data} ->
-        measurements
-        |> maybe_put_measurement(:num_rows, rows && length(rows))
-        |> maybe_put_measurement(:num_columns, names && length(names))
-        |> maybe_put_measurement(:response_body_bytes, data && IO.iodata_length(data))
-
-      _ ->
-        measurements
-    end
-  end
-
-  defp maybe_put_measurement(measurements, _name, nil), do: measurements
-  defp maybe_put_measurement(measurements, name, value), do: Map.put(measurements, name, value)
 
   defp telemetry_metadata(metadata, status, headers, result) do
     Map.merge(metadata, %{
@@ -624,12 +613,8 @@ defmodule Ch do
   defp clickhouse_error_code(%Ch.Error{code: code}), do: code
   defp clickhouse_error_code(_reason), do: nil
 
-  defp emit_conn_event(event, measurements, metadata) do
-    :telemetry.execute(event, measurements, metadata)
-  end
-
-  defp conn_metadata(%{template: {:template, scheme, host, port}}, metadata) do
-    conn_metadata(scheme, host, port, metadata)
+  defp conn_metadata(%{template: {:template, scheme, host, port}, pool: pool}, metadata) do
+    conn_metadata(scheme, host, port, Map.put_new(metadata, :pool, pool))
   end
 
   defp conn_metadata(scheme, host, port, metadata) do
@@ -644,20 +629,10 @@ defmodule Ch do
     Map.merge(metadata, %{kind: :error, reason: reason})
   end
 
-  defp duration(started), do: System.monotonic_time() - started
-
   @compile inline: [get_header: 2]
   defp get_header(headers, name) do
     with {_, value} <- List.keyfind(headers, name, 0, nil), do: value
   end
-
-  defp get_clickhouse_error_code(headers) do
-    get_header(headers, "x-clickhouse-error-code") ||
-      get_header(headers, "x-clickhouse-exception-code")
-  end
-
-  defp maybe_string_to_integer(nil), do: nil
-  defp maybe_string_to_integer(value), do: String.to_integer(value)
 
   @compile inline: [put_new_header: 3]
   defp put_new_header(headers, name, value) do

@@ -34,38 +34,43 @@ defmodule Ch.TelemetryTest do
              Ch.query(pool, "SELECT 1", %{}, telemetry_metadata: %{source: :test})
 
     assert_receive {:telemetry_event, [:ch, :query, :start], %{system_time: system_time},
-                    %{telemetry_metadata: %{source: :test}, format: "RowBinaryWithNamesAndTypes"}}
+                    %{pool: ^pool, source: :test, format: "RowBinaryWithNamesAndTypes"}}
 
     assert is_integer(system_time)
 
     assert_receive {:telemetry_event, [:ch, :conn, :start], %{system_time: conn_system_time},
-                    %{scheme: :http, host: "localhost", port: 8123}}
+                    %{pool: ^pool, scheme: :http, host: "localhost", port: 8123}}
 
     assert is_integer(conn_system_time)
 
     assert_receive {:telemetry_event, [:ch, :conn, :stop], %{duration: conn_duration},
-                    %{scheme: :http, host: "localhost", port: 8123}}
+                    %{pool: ^pool, scheme: :http, host: "localhost", port: 8123}}
 
     assert is_integer(conn_duration)
     assert conn_duration >= 0
 
     assert_receive {:telemetry_event, [:ch, :query, :stop], measurements,
-                    %{status: 200, telemetry_metadata: %{source: :test}, result: %Ch.Result{}}}
+                    %{pool: ^pool, status: 200, source: :test, result: %Ch.Result{}}}
 
     assert measurements.duration >= 0
+    assert measurements.encode_time >= 0
     assert measurements.queue_time >= 0
     assert measurements.query_time >= 0
     assert measurements.decode_time >= 0
-    assert measurements.num_rows == 1
     assert measurements.num_columns == 1
     assert measurements.response_body_bytes > 0
 
     assert {:ok, %Ch.Result{rows: [[2]]}} = Ch.query(pool, "SELECT 2")
 
     assert_receive {:telemetry_event, [:ch, :conn, :reuse], %{idle_time: idle_time},
-                    %{scheme: :http, host: "localhost", port: 8123}}
+                    %{pool: ^pool, scheme: :http, host: "localhost", port: 8123}}
 
     assert idle_time >= 0
+
+    assert_receive {:telemetry_event, [:ch, :query, :stop], reused_measurements,
+                    %{pool: ^pool, status: 200}}
+
+    assert reused_measurements.idle_time >= 0
   end
 
   test "emits query error telemetry for ClickHouse errors", %{pool: pool} do
@@ -74,17 +79,38 @@ defmodule Ch.TelemetryTest do
     assert_receive {:telemetry_event, [:ch, :query, :error], measurements,
                     %{
                       kind: :error,
+                      pool: ^pool,
                       reason: ^error,
                       clickhouse_error_code: code,
                       status: status
                     }}
 
     assert measurements.duration >= 0
+    assert measurements.encode_time >= 0
     assert measurements.queue_time >= 0
     assert measurements.query_time >= 0
     assert measurements.decode_time >= 0
     assert is_integer(code)
     assert status != 200
+  end
+
+  test "emits connection error telemetry when opening a connection fails" do
+    stop_supervised(Ch)
+    pool = start_supervised!({Ch, url: "http://localhost:1"})
+
+    assert {:error, reason} = Ch.query(pool, "SELECT 1", %{}, timeout: 100)
+
+    assert_receive {:telemetry_event, [:ch, :conn, :error], %{duration: duration},
+                    %{pool: ^pool, kind: :error, reason: ^reason}}
+
+    assert duration >= 0
+  end
+
+  test "emits connection drop telemetry when a pooled connection is removed", %{pool: pool} do
+    assert {:ok, %Ch.Result{}} = Ch.query(pool, "SELECT 1")
+    assert :ok = stop_supervised(Ch)
+
+    assert_receive {:telemetry_event, [:ch, :conn, :drop], %{}, %{pool: ^pool, reason: _reason}}
   end
 
   def handle_event(event, measurements, metadata, test_pid) do

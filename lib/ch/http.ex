@@ -15,6 +15,22 @@ defmodule Ch.HTTP do
 
   @doc """
   Converts a relative timeout (milliseconds) to a `t:deadline/0`.
+
+  ### Examples
+
+      iex> {:deadline, deadline} = Ch.HTTP.to_deadline(1_000)
+      iex> is_integer(deadline)
+      true
+
+      iex> (Ch.HTTP.to_deadline(1_000) |> Ch.HTTP.to_timeout()) in 0..1_000
+      true
+
+      iex> Ch.HTTP.to_deadline(:infinity)
+      :infinity
+
+      iex> Ch.HTTP.to_deadline({:deadline, 123})
+      {:deadline, 123}
+
   """
   @spec to_deadline(timeout | deadline) :: deadline
   def to_deadline(:infinity = inf), do: inf
@@ -26,6 +42,22 @@ defmodule Ch.HTTP do
 
   @doc """
   Returns the remaining milliseconds until a `t:deadline/0`.
+
+  ### Examples
+
+      iex> Ch.HTTP.to_timeout({:deadline, System.monotonic_time(:millisecond) + 1_000}) in 0..1_000
+      true
+
+      iex> {:deadline, deadline} = Ch.HTTP.to_timeout({:deadline, System.monotonic_time(:millisecond) + 1_000}) |> Ch.HTTP.to_deadline()
+      iex> is_integer(deadline)
+      true
+
+      iex> Ch.HTTP.to_timeout(:infinity)
+      :infinity
+
+      iex> Ch.HTTP.to_timeout(123)
+      123
+
   """
   @spec to_timeout(timeout | deadline) :: timeout
   def to_timeout(:infinity = inf), do: inf
@@ -144,7 +176,10 @@ defmodule Ch.HTTP do
 
   defp encode_array_param(nil), do: "null"
 
-  defp encode_array_param(%s{} = param) when s in [Date, NaiveDateTime] do
+  # DateTime64 array literals parse unquoted numbers as scaled ticks, while
+  # scalar query params parse the same text as seconds. Quote DateTime values so
+  # ClickHouse uses timestamp parsing inside arrays, tuples, and maps too.
+  defp encode_array_param(%s{} = param) when s in [Date, NaiveDateTime, DateTime] do
     [?', encode_param(param), ?']
   end
 
