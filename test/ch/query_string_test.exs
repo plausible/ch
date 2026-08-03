@@ -87,6 +87,15 @@ defmodule Ch.QueryStringTest do
         assert decoded_param(map) == expected_param(map)
       end
     end
+
+    test "encodes fractional DateTime parameters as signed Unix decimals" do
+      assert decoded_param(~U[1969-12-31 23:59:59.500000Z]) == "-0.500000"
+      assert decoded_param(~U[1969-12-31 23:59:58.500000Z]) == "-1.500000"
+      assert decoded_param(~U[1969-12-31 23:59:59.999999Z]) == "-0.000001"
+      assert decoded_param(~U[1970-01-01 00:00:00.000000Z]) == "0.000000"
+
+      assert decoded_param([~U[1969-12-31 23:59:59.500000Z]]) == "['-0.500000']"
+    end
   end
 
   describe "ClickHouse round-trip" do
@@ -173,43 +182,67 @@ defmodule Ch.QueryStringTest do
       end
     end
 
-    test "DateTime parameters around the Unix epoch round-trip through ClickHouse", %{pool: pool} do
+    test "numeric DateTime parameters retain their instant across ClickHouse timezones", %{
+      pool: pool
+    } do
       datetimes = [
         ~U[1969-12-31 23:59:58.500000Z],
-        ~U[1969-12-31 23:59:59Z],
-        ~U[1969-12-31 23:59:59.000001Z],
-        ~U[1969-12-31 23:59:59.1Z],
-        ~U[1969-12-31 23:59:59.500Z],
-        ~U[1969-12-31 23:59:59.999999Z],
-        ~U[1970-01-01 00:00:00Z],
+        ~U[1969-12-31 23:59:58.999999Z],
+        ~U[1970-01-01 00:00:00.000000Z],
         ~U[1970-01-01 00:00:00.000001Z],
         ~U[1970-01-01 00:00:00.5Z],
         ~U[1970-01-01 00:00:00.999999Z],
         ~U[1970-01-01 00:00:01.000000Z],
-        DateTime.shift_zone!(~U[1969-12-31 23:59:59.500000Z], "America/New_York"),
+        DateTime.shift_zone!(~U[1969-12-31 23:59:58.500000Z], "America/New_York"),
         DateTime.shift_zone!(~U[1970-01-01 00:00:00.500000Z], "Europe/Moscow")
       ]
 
-      expected_datetimes =
-        Enum.map(datetimes, fn datetime ->
-          datetime
-          |> DateTime.to_unix(:microsecond)
-          |> DateTime.from_unix!(:microsecond)
-        end)
+      for datetime <- datetimes do
+        expected = DateTime.to_unix(datetime, :microsecond)
 
-      for {datetime, expected} <- Enum.zip(datetimes, expected_datetimes) do
         assert Ch.query!(
                  pool,
-                 "select {datetime:DateTime64(6, 'UTC')}",
-                 %{"datetime" => datetime}
-               ).rows == [[expected]]
+                 """
+                 select
+                   toUnixTimestamp64Micro({datetime:DateTime64(6, 'Europe/Moscow')}),
+                   toUnixTimestamp64Micro({implicit:DateTime64(6)})
+                 """,
+                 %{"datetime" => datetime, "implicit" => datetime},
+                 settings: [session_timezone: "Asia/Bangkok"]
+               ).rows == [[expected, expected]]
       end
+
+      array_datetimes = Enum.take(datetimes, 6)
+      expected_datetimes = Enum.map(array_datetimes, &DateTime.to_unix(&1, :microsecond))
 
       assert Ch.query!(
                pool,
-               "select {datetimes:Array(DateTime64(6, 'UTC'))}",
-               %{"datetimes" => datetimes}
+               """
+               select arrayMap(
+                 datetime -> toUnixTimestamp64Micro(datetime),
+                 {datetimes:Array(DateTime64(6, 'UTC'))}
+               )
+               """,
+               %{"datetimes" => array_datetimes}
              ).rows == [[expected_datetimes]]
+    end
+
+    test "ClickHouse treats negative fractional Unix timestamps above -1 as positive", %{
+      pool: pool
+    } do
+      cases = [
+        {"-0.000001", 1},
+        {"-0.500000", 500_000},
+        {"-0.999999", 999_999}
+      ]
+
+      for {numeric, parsed_unix} <- cases do
+        assert Ch.query!(
+                 pool,
+                 "select toUnixTimestamp64Micro({datetime:DateTime64(6, 'UTC')})",
+                 %{"datetime" => numeric}
+               ).rows == [[parsed_unix]]
+      end
     end
 
     test "DateTime parameters in arrays are parsed as timestamps instead of DateTime64 ticks", %{
@@ -402,12 +435,18 @@ defmodule Ch.QueryStringTest do
   defp expected_param(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
   defp expected_param(%Time{} = value), do: Time.to_iso8601(value)
 
-  defp expected_param(%DateTime{} = value) do
-    value
-    |> DateTime.shift_zone!("Etc/UTC")
-    |> DateTime.to_naive()
-    |> NaiveDateTime.to_iso8601()
+  defp expected_param(%DateTime{microsecond: {_value, precision}} = value)
+       when precision > 0 do
+    unix = DateTime.to_unix(value, Integer.pow(10, precision))
+    sign = if unix < 0, do: -1, else: 1
+
+    sign
+    |> Decimal.new(abs(unix), -precision)
+    |> Decimal.to_string(:normal)
   end
+
+  defp expected_param(%DateTime{} = value),
+    do: value |> DateTime.to_unix(:second) |> Integer.to_string()
 
   defp expected_param(value) when is_binary(value) do
     value
