@@ -526,7 +526,6 @@ defmodule Ch.QueryTest do
                    """,
                    %{},
                    Keyword.merge(query_options,
-                     headers: [{"x-clickhouse-format", "CSV"}],
                      settings: [
                        wait_end_of_query: 0,
                        http_response_buffer_size: 1,
