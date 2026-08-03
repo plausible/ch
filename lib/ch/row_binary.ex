@@ -564,55 +564,109 @@ defmodule Ch.RowBinary do
   @doc false
   @spec decode_header(binary()) ::
           {:ok, names :: [String.t()], types :: [term], rest :: binary} | :more
-  def decode_header(row_binary_with_names_and_types)
-
-  for {pattern, value} <- varints do
-    def decode_header(<<unquote(pattern), rest::bytes>>) do
-      decode_header_names(rest, unquote(value), unquote(value), _acc = [])
+  def decode_header(<<data::bytes>>) do
+    case decode_header_continue(data) do
+      {:ok, _names, _types, _rest} = ok -> ok
+      {:more, _state} -> :more
     end
   end
 
-  def decode_header(<<_bin::bytes>>) do
-    :more
+  @doc """
+  Incrementally decodes a RowBinaryWithNamesAndTypes header.
+
+  Unlike `decode_header/1`, each call accepts only the newly received bytes. When
+  the header is incomplete, the returned state retains the decoded prefix and can
+  be passed to the next call without reparsing earlier chunks.
+  """
+  @spec decode_header_continue(binary(), term) ::
+          {:ok, names :: [String.t()], types :: [term], rest :: binary}
+          | {:more, state :: term}
+  def decode_header_continue(data, state \\ nil)
+
+  def decode_header_continue(<<data::bytes>>, nil) do
+    decode_header_count(data, 0, 0)
   end
 
-  defp decode_header_names(<<rest::bytes>>, 0, count, names) do
-    decode_header_types(rest, count, _acc = [], :lists.reverse(names))
+  def decode_header_continue(<<data::bytes>>, {:count, value, shift}) do
+    decode_header_count(data, value, shift)
   end
 
-  for {pattern, value} <- varints do
-    defp decode_header_names(
-           <<unquote(pattern), name::size(unquote(value))-bytes, rest::bytes>>,
-           left,
-           count,
-           acc
-         ) do
-      decode_header_names(rest, left - 1, count, [name | acc])
+  def decode_header_continue(
+        <<data::bytes>>,
+        {:header, phase, left, count, acc, string_state}
+      ) do
+    decode_header_values(data, phase, left, count, acc, string_state)
+  end
+
+  defp decode_header_count(data, value, shift) do
+    case decode_varint_continue(data, value, shift) do
+      {:ok, count, rest} -> decode_header_values(rest, :names, count, count, [], :length)
+      {:more, value, shift} -> {:more, {:count, value, shift}}
     end
   end
 
-  defp decode_header_names(<<_bin::bytes>>, _left, _count, _acc) do
-    :more
+  defp decode_header_values(data, :names, 0, count, names, :length) do
+    decode_header_values(
+      data,
+      {:types, :lists.reverse(names)},
+      count,
+      count,
+      [],
+      :length
+    )
   end
 
-  defp decode_header_types(<<rest::bytes>>, 0, types, names) do
-    {:ok, names, decoding_types_reverse(types), rest}
+  defp decode_header_values(data, {:types, names}, 0, _count, types, :length) do
+    {:ok, names, decoding_types_reverse(types), data}
   end
 
-  for {pattern, value} <- varints do
-    defp decode_header_types(
-           <<unquote(pattern), type::size(unquote(value))-bytes, rest::bytes>>,
-           count,
-           acc,
-           names
-         ) do
-      decode_header_types(rest, count - 1, [type | acc], names)
+  defp decode_header_values(data, phase, left, count, acc, :length) do
+    decode_header_string_length(data, phase, left, count, acc, 0, 0)
+  end
+
+  defp decode_header_values(data, phase, left, count, acc, {:length, value, shift}) do
+    decode_header_string_length(data, phase, left, count, acc, value, shift)
+  end
+
+  defp decode_header_values(data, phase, left, count, acc, {:string, remaining, chunks}) do
+    decode_header_string(data, phase, left, count, acc, remaining, chunks)
+  end
+
+  defp decode_header_string_length(data, phase, left, count, acc, value, shift) do
+    case decode_varint_continue(data, value, shift) do
+      {:ok, length, rest} ->
+        decode_header_string(rest, phase, left, count, acc, length, [])
+
+      {:more, value, shift} ->
+        {:more, {:header, phase, left, count, acc, {:length, value, shift}}}
     end
   end
 
-  defp decode_header_types(<<_bin::bytes>>, _count, _acc, _names) do
-    :more
+  defp decode_header_string(data, phase, left, count, acc, remaining, chunks)
+       when byte_size(data) >= remaining do
+    <<last::size(^remaining)-bytes, rest::bytes>> = data
+    # Header values are small and long-lived relative to the response buffer.
+    string = finish_string(last, chunks, true)
+    decode_header_values(rest, phase, left - 1, count, [string | acc], :length)
   end
+
+  defp decode_header_string(data, phase, left, count, acc, remaining, chunks) do
+    chunks = if data == <<>>, do: chunks, else: [data | chunks]
+    state = {:string, remaining - byte_size(data), chunks}
+    {:more, {:header, phase, left, count, acc, state}}
+  end
+
+  defp decode_varint_continue(<<byte, rest::bytes>>, value, shift) do
+    value = value + ((byte &&& 0x7F) <<< shift)
+
+    if (byte &&& 0x80) == 0 do
+      {:ok, value, rest}
+    else
+      decode_varint_continue(rest, value, shift + 7)
+    end
+  end
+
+  defp decode_varint_continue(<<>>, value, shift), do: {:more, value, shift}
 
   @doc """
   Decodes [RowBinaryWithNamesAndTypes](https://clickhouse.com/docs/en/interfaces/formats/RowBinaryWithNamesAndTypes) into rows.
@@ -662,11 +716,25 @@ defmodule Ch.RowBinary do
   def decode_rows(<<>>, _types), do: []
 
   def decode_rows(<<data::bytes>>, types) do
-    decode_rows!(data, decoding_types(types))
+    decode_rows!(data, decoding_types(types), [])
   end
 
-  defp decode_rows!(data, types) do
-    {rows, remaining_data, state} = decode_rows(types, data, [], [], types)
+  @doc """
+  Decodes RowBinary rows with decoding options.
+
+  Set `:copy_strings` to `true` to copy decoded String and FixedString values
+  instead of returning sub-binaries that can retain the input binary.
+  """
+  @spec decode_rows(binary(), [term], copy_strings: boolean()) :: [list]
+  def decode_rows(<<>>, _types, _options), do: []
+
+  def decode_rows(<<data::bytes>>, types, options) do
+    decode_rows!(data, decoding_types(types), options)
+  end
+
+  defp decode_rows!(data, types, options) do
+    decoder = {types, Keyword.get(options, :copy_strings, false)}
+    {rows, remaining_data, state} = decode_rows(types, data, [], [], decoder)
 
     case state do
       nil ->
@@ -686,9 +754,16 @@ defmodule Ch.RowBinary do
 
   @doc false
   def decode_rows_continue(<<data::bytes>>, types, state) do
+    decode_rows_continue(data, types, state, [])
+  end
+
+  @doc false
+  def decode_rows_continue(<<data::bytes>>, types, state, options) do
+    decoder = {types, Keyword.get(options, :copy_strings, false)}
+
     case state do
-      {:cont, types_rest, row} -> decode_rows(types_rest, data, row, [], types)
-      nil -> decode_rows(types, data, [], [], types)
+      {:cont, types_rest, row} -> decode_rows(types_rest, data, row, [], decoder)
+      nil -> decode_rows(types, data, [], [], decoder)
     end
   end
 
@@ -811,7 +886,7 @@ defmodule Ch.RowBinary do
   defp decode_types(<<>>, 0, _types), do: []
 
   defp decode_types(<<rest::bytes>>, 0, types) do
-    decode_rows!(rest, decoding_types_reverse(types))
+    decode_rows!(rest, decoding_types_reverse(types), [])
   end
 
   for {pattern, value} <- varints do
@@ -834,7 +909,19 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [s | row], rows, types)
+      decode_rows(types_rest, bin, [maybe_copy_string(s, types) | row], rows, types)
+    end
+
+    defp decode_string_decode_rows(
+           <<unquote(pattern), s::bytes>>,
+           types_rest,
+           row,
+           rows,
+           _types
+         )
+         when byte_size(s) < unquote(size) do
+      string_state = {:string, unquote(size) - byte_size(s), chunk_list(s)}
+      to_be_continued(rows, <<>>, [string_state | types_rest], row)
     end
   end
 
@@ -853,6 +940,18 @@ defmodule Ch.RowBinary do
            types
          ) do
       decode_rows(types_rest, bin, [JSON.decode!(s) | row], rows, types)
+    end
+
+    defp decode_string_json_decode_rows(
+           <<unquote(pattern), s::bytes>>,
+           types_rest,
+           row,
+           rows,
+           _types
+         )
+         when byte_size(s) < unquote(size) do
+      string_state = {:json_string, unquote(size) - byte_size(s), chunk_list(s)}
+      to_be_continued(rows, <<>>, [string_state | types_rest], row)
     end
   end
 
@@ -1231,6 +1330,12 @@ defmodule Ch.RowBinary do
 
   defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
     case type do
+      {:string, remaining, chunks} ->
+        continue_string(bin, remaining, chunks, :string, types_rest, row, rows, types)
+
+      {:json_string, remaining, chunks} ->
+        continue_string(bin, remaining, chunks, :json, types_rest, row, rows, types)
+
       :u8 ->
         decode_u8_decode_rows(bin, types_rest, row, rows, types)
 
@@ -1291,7 +1396,7 @@ defmodule Ch.RowBinary do
       {:fixed_string, size} ->
         case bin do
           <<s::size(^size)-bytes, rest::bytes>> ->
-            decode_rows(types_rest, rest, [s | row], rows, types)
+            decode_rows(types_rest, rest, [maybe_copy_string(s, types) | row], rows, types)
 
           _ ->
             to_be_continued(rows, bin, [type | types_rest], row)
@@ -1453,10 +1558,42 @@ defmodule Ch.RowBinary do
     {rows, empty, _no_state = nil}
   end
 
-  defp decode_rows([], <<bin::bytes>>, row, rows, types) do
+  defp decode_rows([], <<bin::bytes>>, row, rows, {types, _copy_strings} = decoder) do
     row = :lists.reverse(row)
-    decode_rows(types, bin, [], [row | rows], types)
+    decode_rows(types, bin, [], [row | rows], decoder)
   end
+
+  defp continue_string(data, remaining, chunks, kind, types_rest, row, rows, decoder)
+       when byte_size(data) >= remaining do
+    <<last::size(^remaining)-bytes, rest::bytes>> = data
+    string = finish_string(last, chunks, copy_strings?(decoder))
+    value = if kind == :json, do: JSON.decode!(string), else: string
+    decode_rows(types_rest, rest, [value | row], rows, decoder)
+  end
+
+  defp continue_string(data, remaining, chunks, kind, types_rest, row, rows, _decoder) do
+    chunks = if data == <<>>, do: chunks, else: [data | chunks]
+    state = {string_state_tag(kind), remaining - byte_size(data), chunks}
+    to_be_continued(rows, <<>>, [state | types_rest], row)
+  end
+
+  defp string_state_tag(:string), do: :string
+  defp string_state_tag(:json), do: :json_string
+
+  defp chunk_list(<<>>), do: []
+  defp chunk_list(chunk), do: [chunk]
+
+  defp finish_string(last, [], copy?), do: maybe_copy_string(last, copy?)
+
+  defp finish_string(last, chunks, _copy?) do
+    chunks = if last == <<>>, do: chunks, else: [last | chunks]
+    chunks |> :lists.reverse() |> IO.iodata_to_binary()
+  end
+
+  defp maybe_copy_string(string, {_types, copy?}), do: maybe_copy_string(string, copy?)
+  defp maybe_copy_string(string, true), do: :binary.copy(string)
+  defp maybe_copy_string(string, false), do: string
+  defp copy_strings?({_types, copy?}), do: copy?
 
   @compile inline: [to_be_continued: 4]
   defp to_be_continued(rows, bin, types_rest, row) do
