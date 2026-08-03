@@ -50,10 +50,10 @@ defmodule Ch.RowBinaryTest do
       assert encoding_types([{:datetime, "UTC"}]) == [:datetime]
       assert encoding_types([{:datetime64, 6}]) == [datetime64: 1_000_000]
       assert encoding_types([{:datetime64, 3, "UTC"}]) == [datetime64: 1000]
-      assert encoding_types([{:decimal, 9, 4}]) == [decimal32: 4]
-      assert encoding_types([{:decimal, 18, 4}]) == [decimal64: 4]
-      assert encoding_types([{:decimal, 38, 4}]) == [decimal128: 4]
-      assert encoding_types([{:decimal, 76, 4}]) == [decimal256: 4]
+      assert encoding_types([{:decimal, 9, 4}]) == [{:decimal, 9, 4}]
+      assert encoding_types([{:decimal, 18, 4}]) == [{:decimal, 18, 4}]
+      assert encoding_types([{:decimal, 38, 4}]) == [{:decimal, 38, 4}]
+      assert encoding_types([{:decimal, 76, 4}]) == [{:decimal, 76, 4}]
       assert encoding_types([{:simple_aggregate_function, "any", :u8}]) == [:u8]
 
       # See https://github.com/plausible/ch/issues/353

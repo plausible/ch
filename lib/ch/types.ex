@@ -419,7 +419,7 @@ defmodule Ch.Types do
   end
 
   defp decode([:string | stack], <<?', rest::bytes>>, acc) do
-    decode_string(rest, 0, rest, stack, acc)
+    decode_string(rest, 0, rest, [], stack, acc)
   end
 
   defp decode([:int | stack], <<rest::bytes>>, acc) do
@@ -482,20 +482,28 @@ defmodule Ch.Types do
   defp build_type(:map = m, [v, k]), do: {m, k, v}
   defp build_type(:nullable = n, [t]), do: {n, t}
   defp build_type(:low_cardinality = l, [t]), do: {l, t}
-  defp build_type(:enum8 = e, mapping), do: {e, build_enum_mapping(mapping)}
-  defp build_type(:enum16 = e, mapping), do: {e, build_enum_mapping(mapping)}
+  defp build_type(:enum8 = e, mapping), do: {e, build_enum_mapping!(e, mapping)}
+  defp build_type(:enum16 = e, mapping), do: {e, build_enum_mapping!(e, mapping)}
   defp build_type(:simple_aggregate_function = saf, [t, f]), do: {saf, f, t}
-  defp build_type(:decimal32 = d, [s]), do: {d, s}
-  defp build_type(:decimal64 = d, [s]), do: {d, s}
-  defp build_type(:decimal128 = d, [s]), do: {d, s}
-  defp build_type(:decimal256 = d, [s]), do: {d, s}
-  defp build_type(:decimal = d, [s, p]), do: {d, p, s}
+  defp build_type(:decimal32 = d, [s]), do: build_decimal_type!(d, s, 9)
+  defp build_type(:decimal64 = d, [s]), do: build_decimal_type!(d, s, 18)
+  defp build_type(:decimal128 = d, [s]), do: build_decimal_type!(d, s, 38)
+  defp build_type(:decimal256 = d, [s]), do: build_decimal_type!(d, s, 76)
+  defp build_type(:decimal = d, [s, p]), do: validate_decimal_type!({d, p, s})
   defp build_type(:time64 = t, [precision]), do: {t, precision}
   defp build_type(:variant = v, ts), do: {v, build_variant(ts)}
   defp build_type(:dynamic, _max_types), do: :dynamic
 
-  defp build_enum_mapping(mapping) do
-    mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)
+  defp build_enum_mapping!(type, mapping) do
+    mapping =
+      mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)
+
+    validate_enum_mapping!(type, mapping)
+  end
+
+  defp build_decimal_type!(type, scale, precision) do
+    validate_decimal_type!({:decimal, precision, scale})
+    {type, scale}
   end
 
   defp build_tuple([type, name | rest]) when is_binary(name) do
@@ -514,16 +522,33 @@ defmodule Ch.Types do
     Enum.sort_by(types, fn t -> IO.iodata_to_binary(encode(t)) end)
   end
 
-  # TODO '', \'
-
-  defp decode_string(<<?', rest::bytes>>, len, original, stack, acc) do
+  defp decode_string(<<?', rest::bytes>>, len, original, parts, stack, acc) do
     part = :binary.part(original, 0, len)
-    decode(stack, rest, [:binary.copy(part) | acc])
+    string = parts |> then(&[part | &1]) |> Enum.reverse() |> IO.iodata_to_binary()
+    decode(stack, rest, [string | acc])
   end
 
-  defp decode_string(<<u::utf8, rest::bytes>>, len, original, stack, acc) do
-    decode_string(rest, len + utf8_size(u), original, stack, acc)
+  defp decode_string(<<?\\, escaped, rest::bytes>>, len, original, parts, stack, acc) do
+    part = :binary.part(original, 0, len)
+    decoded = decode_escaped_char(escaped)
+    decode_string(rest, 0, rest, [decoded, part | parts], stack, acc)
   end
+
+  defp decode_string(<<u::utf8, rest::bytes>>, len, original, parts, stack, acc) do
+    decode_string(rest, len + utf8_size(u), original, parts, stack, acc)
+  end
+
+  defp decode_string(<<>>, _len, _original, _parts, _stack, _acc) do
+    raise ArgumentError, "unexpected end of quoted string while decoding"
+  end
+
+  defp decode_escaped_char(?0), do: <<0>>
+  defp decode_escaped_char(?b), do: <<8>>
+  defp decode_escaped_char(?f), do: <<12>>
+  defp decode_escaped_char(?n), do: <<10>>
+  defp decode_escaped_char(?r), do: <<13>>
+  defp decode_escaped_char(?t), do: <<9>>
+  defp decode_escaped_char(char), do: <<char>>
 
   @compile inline: [utf8_size: 1]
   defp utf8_size(codepoint) when codepoint <= 0x7F, do: 1
@@ -609,6 +634,7 @@ defmodule Ch.Types do
   end
 
   def encode({:decimal, precision, scale}) do
+    {:decimal, precision, scale} = validate_decimal_type!({:decimal, precision, scale})
     ["Decimal(", Integer.to_string(precision), ", ", Integer.to_string(scale), ?)]
   end
 
@@ -629,6 +655,7 @@ defmodule Ch.Types do
   end
 
   def encode({:enum8, mapping}) do
+    validate_enum_mapping!(:enum8, mapping)
     ["Enum8('", encode_mapping(mapping), ?)]
   end
 
@@ -637,6 +664,7 @@ defmodule Ch.Types do
   end
 
   def encode({:enum16, mapping}) do
+    validate_enum_mapping!(:enum16, mapping)
     ["Enum16('", encode_mapping(mapping), ?)]
   end
 
@@ -655,10 +683,68 @@ defmodule Ch.Types do
   defp encode_intersperse([] = empty, _separator), do: empty
 
   defp encode_mapping([{k, v}]) when is_binary(k) do
-    [k, "' = ", Integer.to_string(v)]
+    [encode_quoted_string(k), "' = ", Integer.to_string(v)]
   end
 
   defp encode_mapping([{k, v} | mapping]) when is_binary(k) do
-    [k, "' = ", Integer.to_string(v), ", '" | encode_mapping(mapping)]
+    [encode_quoted_string(k), "' = ", Integer.to_string(v), ", '" | encode_mapping(mapping)]
   end
+
+  defp encode_quoted_string(string) do
+    for <<char <- string>> do
+      case char do
+        0 -> "\\0"
+        8 -> "\\b"
+        9 -> "\\t"
+        10 -> "\\n"
+        12 -> "\\f"
+        13 -> "\\r"
+        ?' -> "\\'"
+        ?\\ -> "\\\\"
+        _ -> char
+      end
+    end
+  end
+
+  defp validate_decimal_type!({:decimal, precision, scale} = type)
+       when is_integer(precision) and precision in 1..76 and is_integer(scale) and scale >= 0 and
+              scale <= precision,
+       do: type
+
+  defp validate_decimal_type!({:decimal, precision, scale}) do
+    raise ArgumentError,
+          "invalid Decimal precision and scale: precision=#{inspect(precision)}, scale=#{inspect(scale)}"
+  end
+
+  defp validate_enum_mapping!(type, mapping) do
+    {name, min, max} = enum_metadata(type)
+
+    if mapping == [] do
+      raise ArgumentError, "#{name} requires at least one mapping"
+    end
+
+    unless is_list(mapping) and
+             Enum.all?(mapping, fn
+               {label, value}
+               when is_binary(label) and is_integer(value) and value >= min and value <= max ->
+                 true
+
+               _ ->
+                 false
+             end) do
+      raise ArgumentError, "invalid #{name} mapping: #{inspect(mapping)}"
+    end
+
+    labels = Enum.map(mapping, &elem(&1, 0))
+    values = Enum.map(mapping, &elem(&1, 1))
+
+    if Enum.uniq(labels) != labels or Enum.uniq(values) != values do
+      raise ArgumentError, "#{name} mapping labels and values must be unique"
+    end
+
+    mapping
+  end
+
+  defp enum_metadata(:enum8), do: {"Enum8", -128, 127}
+  defp enum_metadata(:enum16), do: {"Enum16", -32_768, 32_767}
 end

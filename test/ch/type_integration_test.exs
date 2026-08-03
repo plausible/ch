@@ -106,6 +106,45 @@ defmodule Ch.TypeIntegrationTest do
              ]
   end
 
+  test "Enum labels with quotes and backslashes round-trip through type headers", %{pool: pool} do
+    type =
+      {:enum8,
+       [
+         {"can't", 1},
+         {"back\\slash", 2},
+         {"comma, equals= parens()", 3},
+         {"line\nbreak", 4},
+         {"null\0byte", 5}
+       ]}
+
+    encoded_type = type |> Ch.Types.encode() |> IO.iodata_to_binary()
+
+    Help.query!([
+      "CREATE TABLE type_integration_enum_escaping(x ",
+      encoded_type,
+      ") ENGINE Memory"
+    ])
+
+    on_exit(fn -> Help.query!("DROP TABLE type_integration_enum_escaping") end)
+
+    rows = [
+      ["can't"],
+      ["back\\slash"],
+      ["comma, equals= parens()"],
+      ["line\nbreak"],
+      ["null\0byte"]
+    ]
+
+    rowbinary = RowBinary.encode_rows(rows, [type])
+    Ch.query!(pool, ["INSERT INTO type_integration_enum_escaping FORMAT RowBinary\n" | rowbinary])
+
+    assert Ch.query!(
+             pool,
+             "SELECT x FROM type_integration_enum_escaping ORDER BY CAST(x, 'Int8')"
+           ).rows ==
+             rows
+  end
+
   test "DateTime and DateTime64 preserve declared timezones", %{pool: pool} do
     Help.query!("""
     CREATE TABLE type_integration_datetime(
