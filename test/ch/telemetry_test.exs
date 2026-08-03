@@ -113,6 +113,36 @@ defmodule Ch.TelemetryTest do
     assert_receive {:telemetry_event, [:ch, :conn, :drop], %{}, %{pool: ^pool, reason: _reason}}
   end
 
+  test "emits query error telemetry when pool checkout times out" do
+    stop_supervised(Ch)
+    pool = start_supervised!({Ch, pool_size: 1})
+    task = Task.async(fn -> Ch.query(pool, "SELECT sleep(0.1)") end)
+
+    assert_receive {:telemetry_event, [:ch, :conn, :stop], _measurements, %{pool: ^pool}}
+
+    reason = catch_exit(Ch.query(pool, "SELECT 1", %{}, timeout: 0))
+
+    assert_receive {:telemetry_event, [:ch, :query, :error], measurements,
+                    %{pool: ^pool, kind: :exit, reason: ^reason, stacktrace: stacktrace}}
+
+    assert measurements.duration >= 0
+    assert measurements.encode_time >= 0
+    assert measurements.queue_time >= 0
+    assert is_list(stacktrace)
+    assert {:ok, %Ch.Result{}} = Task.await(task)
+  end
+
+  test "emits drop telemetry when a checked-out connection is terminated" do
+    config = %{template: {:template, :http, "localhost", 8123}, pool: self()}
+    conn = %Mint.HTTP1{}
+
+    assert {:ok, ^config} = Ch.terminate_worker(:error, conn, config)
+
+    assert_receive {:telemetry_event, [:ch, :conn, :drop], %{}, %{pool: test_pid, reason: :error}}
+
+    assert test_pid == self()
+  end
+
   def handle_event(event, measurements, metadata, test_pid) do
     send(test_pid, {:telemetry_event, event, measurements, metadata})
   end

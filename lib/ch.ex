@@ -371,10 +371,6 @@ defmodule Ch do
     {:ok, config.template, template, config}
   end
 
-  def handle_checkout(:request, _from, %Mint.HTTP1{} = conn, config) do
-    {:ok, {:ok, conn}, conn, config}
-  end
-
   def handle_checkout(:request, _from, {:conn, conn, checkin_time, conn_metadata}, config) do
     {:ok, {:ok, conn, checkin_time, conn_metadata}, conn, config}
   end
@@ -461,8 +457,6 @@ defmodule Ch do
 
     {:ok, elem(ok, 1)}
   end
-
-  defp connect({:ok, _conn} = ok, _owner, _deadline, _query_metadata), do: ok
 
   defp request(conn, method, path, headers, body, deadline) do
     result =
