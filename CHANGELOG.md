@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 (2026-08-08)
 
 - Fix `Time64` RowBinary encoding for precisions below microseconds. https://github.com/plausible/ch/pull/347
 - Fix RowBinary integer encoders to reject out-of-range `Int16`/`UInt16` and wider values instead of silently wrapping, with added property coverage through 256-bit integer types. https://github.com/plausible/ch/pull/346
 - Fix `Ch.Types.encode/1` to reject empty `Enum8` and `Enum16` mappings instead of producing invalid type strings. https://github.com/plausible/ch/pull/361
+- use Ecto v3.14
 
 ## 0.8.3 (2026-05-12)
 
