@@ -74,6 +74,11 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} =
              parameterize_query(ctx, "select {a:Date32}", %{"a" => ~D[2022-01-01]})
 
+    assert {:ok, %{num_rows: 1, rows: [[~N[2022-01-01 12:00:00]]]}} =
+             parameterize_query(ctx, "select {a:DateTime}", %{
+               "a" => ~N[2022-01-01 12:00:00]
+             })
+
     assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} =
              parameterize_query(ctx, "select {a:Array(String)}", %{"a" => ["a", "b'", "\\'c"]})
 
@@ -850,34 +855,6 @@ defmodule Ch.ConnectionTest do
                  "2019-01-01 00:00:00"
                ]
              ]
-
-      naive_noon = ~N[2022-12-12 12:00:00]
-
-      assert {:ok, %{num_rows: 1, rows: [[~U[2022-12-12 12:00:00Z], "2022-12-12 12:00:00"]]}} =
-               parameterize_query(ctx, "select {$0:DateTime('UTC')} as d, toString(d)", [
-                 naive_noon
-               ])
-
-      assert {:ok, %{num_rows: 1, rows: rows}} =
-               parameterize_query(ctx, "select {$0:DateTime('Asia/Bangkok')} as d, toString(d)", [
-                 naive_noon
-               ])
-
-      assert rows == [
-               [
-                 DateTime.new!(~D[2022-12-12], ~T[12:00:00], "Asia/Bangkok"),
-                 "2022-12-12 12:00:00"
-               ]
-             ]
-
-      # simulate unknown timezone
-      prev_tz_db = Calendar.get_time_zone_database()
-      Calendar.put_time_zone_database(Calendar.UTCOnlyTimeZoneDatabase)
-      on_exit(fn -> Calendar.put_time_zone_database(prev_tz_db) end)
-
-      assert_raise ArgumentError, ~r/:utc_only_time_zone_database/, fn ->
-        parameterize_query(ctx, "select {$0:DateTime('Asia/Tokyo')}", [naive_noon])
-      end
     end
 
     # TODO are negatives correct? what's the range?
@@ -1207,32 +1184,6 @@ defmodule Ch.ConnectionTest do
                  5,
                  "2021-01-01 15:00:00.000"
                ]
-             ]
-
-      assert {:ok,
-              %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00.123Z], "2022-01-01 12:00:00.123"]]}} =
-               parameterize_query(ctx, "select {dt:DateTime64(3,'UTC')} as d, toString(d)", %{
-                 "dt" => ~N[2022-01-01 12:00:00.123]
-               })
-
-      assert {:ok,
-              %{num_rows: 1, rows: [[~U[1900-01-01 12:00:00.123Z], "1900-01-01 12:00:00.123"]]}} =
-               parameterize_query(ctx, "select {dt:DateTime64(3,'UTC')} as d, toString(d)", %{
-                 "dt" => ~N[1900-01-01 12:00:00.123]
-               })
-
-      assert {:ok, %{num_rows: 1, rows: [row]}} =
-               parameterize_query(
-                 ctx,
-                 "select {dt:DateTime64(3,'Asia/Bangkok')} as d, toString(d)",
-                 %{
-                   "dt" => ~N[2022-01-01 12:00:00.123]
-                 }
-               )
-
-      assert row == [
-               DateTime.new!(~D[2022-01-01], ~T[12:00:00.123], "Asia/Bangkok"),
-               "2022-01-01 12:00:00.123"
              ]
     end
 

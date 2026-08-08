@@ -36,13 +36,30 @@ defmodule Ch.TimezoneTest do
 
   test "explicit datetime timezone overrides the session timezone", ctx do
     ctx = setup_conn(ctx, "America/New_York")
-    naive_noon = ~N[2022-01-01 12:00:00]
+    naive_noon = ~N[2022-12-12 12:00:00]
 
-    assert parameterize_query!(ctx, "SELECT {$0:DateTime('Asia/Bangkok')}", [naive_noon]).rows ==
-             [[DateTime.from_naive!(naive_noon, "Asia/Bangkok")]]
+    assert parameterize_query!(ctx, "SELECT {$0:DateTime('UTC')} AS d, toString(d)", [naive_noon]).rows ==
+             [[~U[2022-12-12 12:00:00Z], "2022-12-12 12:00:00"]]
 
-    assert parameterize_query!(ctx, "SELECT {$0:DateTime('UTC')}", [naive_noon]).rows ==
-             [[~U[2022-01-01 12:00:00Z]]]
+    assert parameterize_query!(
+             ctx,
+             "SELECT {$0:DateTime('Asia/Bangkok')} AS d, toString(d)",
+             [naive_noon]
+           ).rows == [
+             [
+               DateTime.new!(~D[2022-12-12], ~T[12:00:00], "Asia/Bangkok"),
+               "2022-12-12 12:00:00"
+             ]
+           ]
+
+    # Decoding a timezone-qualified type still requires an Elixir timezone database.
+    previous_time_zone_database = Calendar.get_time_zone_database()
+    Calendar.put_time_zone_database(Calendar.UTCOnlyTimeZoneDatabase)
+    on_exit(fn -> Calendar.put_time_zone_database(previous_time_zone_database) end)
+
+    assert_raise ArgumentError, ~r/:utc_only_time_zone_database/, fn ->
+      parameterize_query!(ctx, "SELECT {$0:DateTime('Asia/Tokyo')}", [naive_noon])
+    end
   end
 
   test "naive datetime64 params use the session timezone", ctx do
@@ -66,6 +83,29 @@ defmodule Ch.TimezoneTest do
              "SELECT {$0:DateTime64(3)} AS d, toString(d)",
              [~N[2022-01-01 12:00:00.123]]
            ).rows == [[~N[2022-01-01 03:00:00.123], "2022-01-01 12:00:00.123"]]
+  end
+
+  test "explicit datetime64 timezone overrides the session timezone", ctx do
+    ctx = setup_conn(ctx, "Pacific/Auckland")
+
+    for naive <- [~N[1900-01-01 12:00:00.123], ~N[2022-01-01 12:00:00.123]] do
+      assert parameterize_query!(
+               ctx,
+               "SELECT {dt:DateTime64(3,'UTC')} AS d, toString(d)",
+               %{"dt" => naive}
+             ).rows == [[DateTime.from_naive!(naive, "Etc/UTC"), to_string(naive)]]
+    end
+
+    assert parameterize_query!(
+             ctx,
+             "SELECT {dt:DateTime64(3,'Asia/Bangkok')} AS d, toString(d)",
+             %{"dt" => ~N[2022-01-01 12:00:00.123]}
+           ).rows == [
+             [
+               DateTime.new!(~D[2022-01-01], ~T[12:00:00.123], "Asia/Bangkok"),
+               "2022-01-01 12:00:00.123"
+             ]
+           ]
   end
 
   test "UTC datetime params keep their instant and render in the session timezone", ctx do
