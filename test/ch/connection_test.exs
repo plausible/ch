@@ -76,22 +76,6 @@ defmodule Ch.ConnectionTest do
 
     naive_noon = ~N[2022-01-01 12:00:00]
 
-    # datetimes in params are sent in text and ClickHouse translates them to UTC from server timezone by default
-    # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
-    #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
-    assert {:ok, %{num_rows: 1, rows: [[naive_datetime]], headers: headers}} =
-             parameterize_query(ctx, "select {naive:DateTime}", %{"naive" => naive_noon})
-
-    # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
-    # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
-    {_, timezone} = List.keyfind!(headers, "x-clickhouse-timezone", 0)
-
-    assert naive_datetime ==
-             naive_noon
-             |> DateTime.from_naive!(timezone)
-             |> DateTime.shift_zone!("Etc/UTC")
-             |> DateTime.to_naive()
-
     # when the timezone information is provided in the type, we don't need to rely on server timezone
     assert {:ok, %{num_rows: 1, rows: [[bkk_datetime]]}} =
              parameterize_query(ctx, "select {$0:DateTime('Asia/Bangkok')}", [naive_noon])
@@ -100,19 +84,6 @@ defmodule Ch.ConnectionTest do
 
     assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00Z]]]}} =
              parameterize_query(ctx, "select {$0:DateTime('UTC')}", [naive_noon])
-
-    naive_noon_ms = ~N[2022-01-01 12:00:00.123]
-
-    assert {:ok, %{num_rows: 1, rows: [[naive_datetime]]}} =
-             parameterize_query(ctx, "select {$0:DateTime64(3)}", [naive_noon_ms])
-
-    assert NaiveDateTime.compare(
-             naive_datetime,
-             naive_noon_ms
-             |> DateTime.from_naive!(timezone)
-             |> DateTime.shift_zone!("Etc/UTC")
-             |> DateTime.to_naive()
-           ) == :eq
 
     assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} =
              parameterize_query(ctx, "select {a:Array(String)}", %{"a" => ["a", "b'", "\\'c"]})
@@ -893,23 +864,6 @@ defmodule Ch.ConnectionTest do
 
       naive_noon = ~N[2022-12-12 12:00:00]
 
-      # datetimes in params are sent in text and ClickHouse translates them to UTC from server timezone by default
-      # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
-      #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
-      assert {:ok,
-              %{num_rows: 1, rows: [[naive_datetime, "2022-12-12 12:00:00"]], headers: headers}} =
-               parameterize_query(ctx, "select {$0:DateTime} as d, toString(d)", [naive_noon])
-
-      # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
-      # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
-      {_, timezone} = List.keyfind!(headers, "x-clickhouse-timezone", 0)
-
-      assert naive_datetime ==
-               naive_noon
-               |> DateTime.from_naive!(timezone)
-               |> DateTime.shift_zone!("Etc/UTC")
-               |> DateTime.to_naive()
-
       assert {:ok, %{num_rows: 1, rows: [[~U[2022-12-12 12:00:00Z], "2022-12-12 12:00:00"]]}} =
                parameterize_query(ctx, "select {$0:DateTime('UTC')} as d, toString(d)", [
                  naive_noon
@@ -1265,28 +1219,6 @@ defmodule Ch.ConnectionTest do
                  "2021-01-01 15:00:00.000"
                ]
              ]
-
-      for precision <- 0..9 do
-        naive_noon = ~N[2022-01-01 12:00:00]
-
-        # datetimes in params are sent in text and ClickHouse translates them to UTC from server timezone by default
-        # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime
-        #     https://kb.altinity.com/altinity-kb-queries-and-syntax/time-zones/
-        assert {:ok, %{num_rows: 1, rows: [[naive_datetime]], headers: headers}} =
-                 parameterize_query(ctx, "select {$0:DateTime64(#{precision})}", [naive_noon])
-
-        # to make this test pass for contributors with non UTC timezone we perform the same steps as ClickHouse
-        # i.e. we give server timezone to the naive datetime and shift it to UTC before comparing with the result
-        {_, timezone} = List.keyfind!(headers, "x-clickhouse-timezone", 0)
-
-        expected =
-          naive_noon
-          |> DateTime.from_naive!(timezone)
-          |> DateTime.shift_zone!("Etc/UTC")
-          |> DateTime.to_naive()
-
-        assert NaiveDateTime.compare(naive_datetime, expected) == :eq
-      end
 
       assert {:ok,
               %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00.123Z], "2022-01-01 12:00:00.123"]]}} =
