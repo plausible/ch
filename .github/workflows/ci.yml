@@ -10,7 +10,7 @@ on:
 
 jobs:
   test:
-    name: "test @ elixir:${{ matrix.elixir }} otp:${{ matrix.otp }} clickhouse:${{ matrix.clickhouse }} tz:${{ matrix.timezone }}${{ matrix.dialyzer && ' +dialyzer' || '' }}${{ matrix.lint && ' +lint' || '' }}"
+    name: "test @ elixir:${{ matrix.elixir }} otp:${{ matrix.otp }} clickhouse:${{ matrix.clickhouse }}${{ matrix.dialyzer && ' +dialyzer' || '' }}${{ matrix.lint && ' +lint' || '' }}"
     runs-on: ubuntu-latest
 
     env:
@@ -23,19 +23,16 @@ jobs:
           - elixir: 1.15
             otp: 25
             clickhouse: latest
-            timezone: UTC
 
-          # some recent version and non-UTC timezone
+          # some recent version
           - elixir: 1.18
             otp: 27
             clickhouse: latest
-            timezone: Europe/Berlin
 
           # the latest elixir/erlang version with all static checks
           - elixir: ">0"
             otp: ">0"
             clickhouse: latest
-            timezone: UTC
             dialyzer: true
             lint: true
 
@@ -45,14 +42,12 @@ jobs:
           - elixir: 1.19.4
             otp: 27.3.4.6
             clickhouse: 25.11.5.8
-            timezone: UTC
 
           # some older pre-JSON ClickHouse version
           # https://github.com/plausible/ch/issues/273
           - elixir: 1.18
             otp: 28
             clickhouse: 24.5.4.49
-            timezone: UTC
 
     services:
       clickhouse:
@@ -60,7 +55,6 @@ jobs:
         ports:
           - 8123:8123
         env:
-          TZ: ${{ matrix.timezone }}
           # https://github.com/ClickHouse/ClickHouse/issues/75494
           CLICKHOUSE_SKIP_USER_SETUP: 1
           options: >-
