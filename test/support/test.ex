@@ -99,7 +99,7 @@ defmodule Ch.Test do
     byte_size(body) == content_length
   end
 
-  # shifts naive datetimes for non-UTC session timezones into UTC to match ClickHouse behaviour
+  # shifts naive datetimes for non-utc timezones into utc to match ClickHouse behaviour
   # see https://clickhouse.com/docs/en/sql-reference/data-types/datetime#usage-remarks
   def to_clickhouse_naive(conn, %NaiveDateTime{} = naive_datetime) do
     case Ch.query!(conn, "select timezone()").rows do
