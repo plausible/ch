@@ -38,7 +38,7 @@ defaults = [
   database: "default",
   settings: [],
   pool_size: 1,
-  timeout: :timer.seconds(15)
+  timeout: to_timeout(second: 15)
 ]
 
 # note that starting in ClickHouse 25.1.3.23 `default` user doesn't have
