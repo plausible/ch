@@ -2,7 +2,6 @@
 
 [![Documentation badge](https://img.shields.io/badge/Documentation-ff69b4)](https://hexdocs.pm/ch)
 [![Hex.pm badge](https://img.shields.io/badge/Package%20on%20hex.pm-informational)](https://hex.pm/packages/ch)
-[![Coveralls](https://img.shields.io/coverallsCoverage/github/plausible/ch?branch=master&style=flat&label=Coverage)](https://coveralls.io/github/plausible/ch?branch=master)
 
 HTTP [ClickHouse](https://clickhouse.com) client for Elixir.
 
@@ -38,7 +37,7 @@ defaults = [
   database: "default",
   settings: [],
   pool_size: 1,
-  timeout: :timer.seconds(15)
+  timeout: to_timeout(second: 15)
 ]
 
 # note that starting in ClickHouse 25.1.3.23 `default` user doesn't have

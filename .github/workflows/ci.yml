@@ -35,7 +35,6 @@ jobs:
             clickhouse: latest
             dialyzer: true
             lint: true
-            coverage: true
 
           # Plausible versions
           # - https://github.com/plausible/analytics/blob/master/.tool-versions
@@ -99,12 +98,6 @@ jobs:
         if: ${{ matrix.lint }}
 
       - run: mix test --include slow
-        if: ${{ !matrix.coverage || github.event_name == 'schedule' }}
-
-      - run: mix coveralls.github --include slow
-        if: ${{ matrix.coverage && github.event_name != 'schedule' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Restore PLTs cache
         if: ${{ matrix.dialyzer }}
