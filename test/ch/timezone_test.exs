@@ -34,6 +34,17 @@ defmodule Ch.TimezoneTest do
            ).rows == [[~N[2022-07-01 10:00:00], "2022-07-01 12:00:00"]]
   end
 
+  test "explicit datetime timezone overrides the session timezone", ctx do
+    ctx = setup_conn(ctx, "America/New_York")
+    naive_noon = ~N[2022-01-01 12:00:00]
+
+    assert parameterize_query!(ctx, "SELECT {$0:DateTime('Asia/Bangkok')}", [naive_noon]).rows ==
+             [[DateTime.from_naive!(naive_noon, "Asia/Bangkok")]]
+
+    assert parameterize_query!(ctx, "SELECT {$0:DateTime('UTC')}", [naive_noon]).rows ==
+             [[~U[2022-01-01 12:00:00Z]]]
+  end
+
   test "naive datetime64 params use the session timezone", ctx do
     ctx = setup_conn(ctx, "Asia/Tokyo")
 
@@ -78,7 +89,7 @@ defmodule Ch.TimezoneTest do
   defp setup_conn(ctx, timezone) do
     conn =
       start_supervised!(
-        {Ch, database: Ch.Test.database(), settings: [session_timezone: timezone]}
+        {Ch, database: Ch.Test.database(), pool_size: 1, settings: [session_timezone: timezone]}
       )
 
     Map.put(ctx, :conn, conn)

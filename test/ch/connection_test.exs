@@ -74,17 +74,6 @@ defmodule Ch.ConnectionTest do
     assert {:ok, %{num_rows: 1, rows: [[~D[2022-01-01]]]}} =
              parameterize_query(ctx, "select {a:Date32}", %{"a" => ~D[2022-01-01]})
 
-    naive_noon = ~N[2022-01-01 12:00:00]
-
-    # when the timezone information is provided in the type, we don't need to rely on server timezone
-    assert {:ok, %{num_rows: 1, rows: [[bkk_datetime]]}} =
-             parameterize_query(ctx, "select {$0:DateTime('Asia/Bangkok')}", [naive_noon])
-
-    assert bkk_datetime == DateTime.from_naive!(naive_noon, "Asia/Bangkok")
-
-    assert {:ok, %{num_rows: 1, rows: [[~U[2022-01-01 12:00:00Z]]]}} =
-             parameterize_query(ctx, "select {$0:DateTime('UTC')}", [naive_noon])
-
     assert {:ok, %{num_rows: 1, rows: [[["a", "b'", "\\'c"]]]}} =
              parameterize_query(ctx, "select {a:Array(String)}", %{"a" => ["a", "b'", "\\'c"]})
 
