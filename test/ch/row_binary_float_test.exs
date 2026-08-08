@@ -10,9 +10,10 @@ defmodule Ch.RowBinaryFloatTest do
 
   property "float params round-trip through ClickHouse", %{pool: pool} do
     check all {type, value, expected} <- float_param() do
-      assert Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}, []).rows == [
-               [expected]
-             ]
+      assert [[actual]] =
+               Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}, []).rows
+
+      assert_float_equal(actual, expected, type)
     end
   end
 
@@ -21,7 +22,7 @@ defmodule Ch.RowBinaryFloatTest do
       assert [[actual]] =
                Ch.query!(pool, "SELECT {value:Array(#{type})}", %{"value" => values}, []).rows
 
-      assert_float_array_equal(actual, expected)
+      assert_float_array_equal(actual, expected, type)
     end
   end
 
@@ -29,6 +30,7 @@ defmodule Ch.RowBinaryFloatTest do
     cases = [
       {"Float32", 0, 0.0},
       {"Float32", -1.5, -1.5},
+      {"Float32", -8100.0, -8100.0},
       {"Float32", 16_777_216, 16_777_216.0},
       {"Float32", -16_777_216, -16_777_216.0},
       {"Float64", 0, 0.0},
@@ -38,9 +40,10 @@ defmodule Ch.RowBinaryFloatTest do
     ]
 
     for {type, value, expected} <- cases do
-      assert Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}, []).rows == [
-               [expected]
-             ]
+      assert [[actual]] =
+               Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}, []).rows
+
+      assert_float_equal(actual, expected, type)
     end
   end
 
@@ -277,14 +280,22 @@ defmodule Ch.RowBinaryFloatTest do
     rounded
   end
 
-  defp assert_float_array_equal(actual, expected) do
+  defp assert_float_array_equal(actual, expected, type) do
     assert length(actual) == length(expected)
 
     Enum.zip(actual, expected)
     |> Enum.each(fn {actual_value, expected_value} ->
-      assert_in_delta actual_value, expected_value, float_delta(expected_value)
+      assert_float_equal(actual_value, expected_value, type)
     end)
   end
 
-  defp float_delta(value), do: max(abs(value) * 1.0e-12, 1.0e-12)
+  defp assert_float_equal(actual, expected, type) do
+    assert_in_delta actual, expected, float_delta(expected, type)
+  end
+
+  # Older ClickHouse versions can round a decimal query parameter to an adjacent Float32.
+  defp float_delta(value, "Float32"),
+    do: max(abs(value) * 1.1920928955078125e-7, 1.401298464324817e-45)
+
+  defp float_delta(value, "Float64"), do: max(abs(value) * 1.0e-12, 1.0e-12)
 end
