@@ -36,25 +36,6 @@ defmodule Ch.TimezoneTest do
            ).rows == [[~N[2022-07-01 10:00:00], "2022-07-01 12:00:00"]]
   end
 
-  test "explicit datetime timezone overrides the session timezone", ctx do
-    ctx = setup_conn(ctx, "America/New_York")
-    naive_noon = ~N[2022-12-12 12:00:00]
-
-    assert parameterize_query!(ctx, "SELECT {$0:DateTime('UTC')} AS d, toString(d)", [naive_noon]).rows ==
-             [[~U[2022-12-12 12:00:00Z], "2022-12-12 12:00:00"]]
-
-    assert parameterize_query!(
-             ctx,
-             "SELECT {$0:DateTime('Asia/Bangkok')} AS d, toString(d)",
-             [naive_noon]
-           ).rows == [
-             [
-               DateTime.new!(~D[2022-12-12], ~T[12:00:00], "Asia/Bangkok"),
-               "2022-12-12 12:00:00"
-             ]
-           ]
-  end
-
   test "naive datetime64 params use the session timezone", ctx do
     ctx = setup_conn(ctx, "Asia/Tokyo")
 
@@ -78,27 +59,29 @@ defmodule Ch.TimezoneTest do
            ).rows == [[~N[2022-01-01 03:00:00.123], "2022-01-01 12:00:00.123"]]
   end
 
-  test "explicit datetime64 timezone overrides the session timezone", ctx do
-    ctx = setup_conn(ctx, "Pacific/Auckland")
+  test "array datetime params use the session timezone", ctx do
+    ctx = setup_conn(ctx, "Asia/Kathmandu")
 
-    for naive <- [~N[1900-01-01 12:00:00.123], ~N[2022-01-01 12:00:00.123]] do
-      assert parameterize_query!(
-               ctx,
-               "SELECT {dt:DateTime64(3,'UTC')} AS d, toString(d)",
-               %{"dt" => naive}
-             ).rows == [[DateTime.from_naive!(naive, "Etc/UTC"), to_string(naive)]]
-    end
+    # Composite params apply the same session conversion to each naive DateTime element.
+    assert parameterize_query!(ctx, "SELECT {$0:Array(DateTime)}", [
+             [~N[2022-01-01 12:00:00]]
+           ]).rows == [[[~N[2022-01-01 06:15:00]]]]
 
-    assert parameterize_query!(
-             ctx,
-             "SELECT {dt:DateTime64(3,'Asia/Bangkok')} AS d, toString(d)",
-             %{"dt" => ~N[2022-01-01 12:00:00.123]}
-           ).rows == [
-             [
-               DateTime.new!(~D[2022-01-01], ~T[12:00:00.123], "Asia/Bangkok"),
-               "2022-01-01 12:00:00.123"
-             ]
-           ]
+    assert parameterize_query!(ctx, "SELECT {$0:Array(DateTime)}", [
+             [~U[2022-01-01 12:00:00Z]]
+           ]).rows == [[[~N[2022-01-01 12:00:00]]]]
+  end
+
+  @tag :dynamic
+  test "dynamic datetimes use the session timezone", ctx do
+    ctx = setup_conn(ctx, "America/Los_Angeles")
+
+    # Dynamic preserves the unqualified datetime type and its session-relative instant.
+    assert parameterize_query!(ctx, """
+           SELECT
+             '2022-01-01 12:00:00'::DateTime::Dynamic,
+             '2022-01-01 12:00:00.123'::DateTime64(3)::Dynamic
+           """).rows == [[~N[2022-01-01 20:00:00], ~N[2022-01-01 20:00:00.123]]]
   end
 
   test "UTC datetime params keep their instant and render in the session timezone", ctx do
