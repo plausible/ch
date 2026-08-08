@@ -609,7 +609,13 @@ defmodule Ch.Types do
   end
 
   def encode({:decimal, precision, scale}) do
-    ["Decimal(", Integer.to_string(precision), ", ", Integer.to_string(scale), ?)]
+    [
+      "Decimal(",
+      Integer.to_string(precision),
+      ", ",
+      Integer.to_string(scale),
+      ?)
+    ]
   end
 
   def encode({:datetime, timezone}) when is_binary(timezone) do

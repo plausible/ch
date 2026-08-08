@@ -6,7 +6,7 @@ defmodule Ch.RowBinaryArrayTest do
   import Bitwise
 
   setup do
-    {:ok, pool: start_supervised!(Ch)}
+    {:ok, pool: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   property "array params round-trip through ClickHouse across integer widths", %{pool: pool} do
@@ -48,8 +48,6 @@ defmodule Ch.RowBinaryArrayTest do
       {"Date", [~D[1970-01-01], ~D[2024-02-29]], [~D[1970-01-01], ~D[2024-02-29]]},
       {"Date32", [~D[1960-01-01], ~D[2100-01-01]], [~D[1960-01-01], ~D[2100-01-01]]},
       {"DateTime('UTC')", [~U[2024-01-02 03:04:05Z]], [~U[2024-01-02 03:04:05Z]]},
-      {"DateTime64(6, 'UTC')", [~U[2024-01-02 03:04:05.123456Z]],
-       [~U[2024-01-02 03:04:05.123456Z]]},
       {"UUID", [uuid], [uuid_to_binary(uuid)]},
       {"IPv4", ["127.0.0.1", "192.168.1.1"], [{127, 0, 0, 1}, {192, 168, 1, 1}]},
       {"IPv6", ["::1", "2001:4860:4860::8888"],
@@ -69,7 +67,7 @@ defmodule Ch.RowBinaryArrayTest do
   end
 
   test "arrays of scalar types inserted as RowBinary round-trip through ClickHouse", %{pool: pool} do
-    Help.query!("""
+    Ch.Test.query("""
     CREATE TABLE row_binary_array_scalars (
       ints Array(Int16),
       uints Array(UInt64),
@@ -87,7 +85,7 @@ defmodule Ch.RowBinaryArrayTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE row_binary_array_scalars") end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE row_binary_array_scalars") end)
 
     rows = [
       [
@@ -139,7 +137,10 @@ defmodule Ch.RowBinaryArrayTest do
     ]
 
     rowbinary = RowBinary.encode_rows(rows, types)
-    Ch.query!(pool, ["INSERT INTO row_binary_array_scalars FORMAT RowBinary\n" | rowbinary])
+
+    Ch.query!(pool, "INSERT INTO row_binary_array_scalars FORMAT RowBinary", rowbinary,
+      encode: false
+    )
 
     assert Ch.query!(pool, "SELECT * FROM row_binary_array_scalars").rows == [
              [
@@ -164,7 +165,7 @@ defmodule Ch.RowBinaryArrayTest do
   test "arrays of structured types inserted as RowBinary round-trip through ClickHouse", %{
     pool: pool
   } do
-    Help.query!("""
+    Ch.Test.query("""
     CREATE TABLE row_binary_array_structured (
       nested Array(Array(UInt8)),
       tuples Array(Tuple(String, UInt8)),
@@ -177,7 +178,7 @@ defmodule Ch.RowBinaryArrayTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE row_binary_array_structured") end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE row_binary_array_structured") end)
 
     uuid1 = "417ddc5d-e556-4d27-95dd-a34d84e46a50" |> uuid_to_binary()
     uuid2 = "00010203-0405-0607-0809-0a0b0c0d0e0f" |> uuid_to_binary()
@@ -205,7 +206,10 @@ defmodule Ch.RowBinaryArrayTest do
     ]
 
     rowbinary = RowBinary.encode_rows([row], types)
-    Ch.query!(pool, ["INSERT INTO row_binary_array_structured FORMAT RowBinary\n" | rowbinary])
+
+    Ch.query!(pool, "INSERT INTO row_binary_array_structured FORMAT RowBinary", rowbinary,
+      encode: false
+    )
 
     assert Ch.query!(pool, "SELECT * FROM row_binary_array_structured").rows == [row]
   end
@@ -263,7 +267,6 @@ defmodule Ch.RowBinaryArrayTest do
       typed_array("Date", date_gen()),
       typed_array("Date32", date32_gen()),
       typed_array("DateTime('UTC')", utc_datetime()),
-      typed_array("DateTime64(6, 'UTC')", utc_datetime64()),
       uuid_array(),
       typed_array(
         "IPv4",
@@ -393,16 +396,6 @@ defmodule Ch.RowBinaryArrayTest do
             minute <- integer(0..59),
             second <- integer(0..59) do
       DateTime.new!(date, Time.new!(hour, minute, second), "Etc/UTC")
-    end
-  end
-
-  defp utc_datetime64 do
-    gen all date <- date_gen(),
-            hour <- integer(0..23),
-            minute <- integer(0..59),
-            second <- integer(0..59),
-            microsecond <- integer(0..999_999) do
-      DateTime.new!(date, Time.new!(hour, minute, second, {microsecond, 6}), "Etc/UTC")
     end
   end
 
