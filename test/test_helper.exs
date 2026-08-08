@@ -19,6 +19,26 @@ version =
       System.halt(1)
   end
 
+case Help.http("GET", "http://localhost:8474/proxies") do
+  {:ok, 200, _headers, _body} ->
+    :ok
+
+  {:ok, status, _headers, body} ->
+    Mix.shell().error("Toxiproxy returned unexpected status #{status}: #{body}")
+    System.halt(1)
+
+  {:error, reason} ->
+    Mix.shell().error("""
+    Toxiproxy is not detected at http://localhost:8474: #{Exception.message(reason)}
+
+    Please start the container with the following command:
+
+        docker compose up -d toxiproxy
+    """)
+
+    System.halt(1)
+end
+
 exclude =
   if version >= "25" do
     []
@@ -35,5 +55,7 @@ assert_receive_timeout =
   end
 
 Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
+
+Help.setup_toxiproxy_counter()
 
 ExUnit.start(exclude: exclude, assert_receive_timeout: assert_receive_timeout)
