@@ -19,10 +19,11 @@ jobs:
     strategy:
       matrix:
         include:
-          # some old elixir/erlang version
+          # some old elixir/erlang and pre-JSON ClickHouse versions
+          # https://github.com/plausible/ch/issues/273
           - elixir: 1.15
             otp: 25
-            clickhouse: latest
+            clickhouse: 24.5.4.49
 
           # the latest elixir/erlang version with all static checks
           - elixir: ">0"
@@ -37,12 +38,6 @@ jobs:
           - elixir: 1.20.2
             otp: 28.5.0.3
             clickhouse: 25.11.5.8
-
-          # some older pre-JSON ClickHouse version
-          # https://github.com/plausible/ch/issues/273
-          - elixir: 1.20.2
-            otp: 28.5.0.3
-            clickhouse: 24.5.4.49
 
     services:
       clickhouse:
