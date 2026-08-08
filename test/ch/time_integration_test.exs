@@ -5,7 +5,7 @@ defmodule Ch.TimeIntegrationTest do
   @moduletag :time
 
   setup do
-    {:ok, pool: start_supervised!(Ch)}
+    {:ok, pool: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   property "Time params round-trip through ClickHouse at second precision", %{pool: pool} do
@@ -26,7 +26,7 @@ defmodule Ch.TimeIntegrationTest do
   end
 
   test "Time and Time64 can be inserted with RowBinary and selected", %{pool: pool} do
-    Help.query!("""
+    Ch.Test.query("""
     CREATE TABLE time_integration_rowbinary(
       t Time,
       t64_0 Time64(0),
@@ -35,7 +35,7 @@ defmodule Ch.TimeIntegrationTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE time_integration_rowbinary") end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE time_integration_rowbinary") end)
 
     rows = [
       [~T[00:00:00.987654], ~T[00:00:00.987654], ~T[00:00:00.987654], ~T[00:00:00.987654]],
@@ -46,7 +46,9 @@ defmodule Ch.TimeIntegrationTest do
     types = ["Time", "Time64(0)", "Time64(3)", "Time64(6)"]
     rowbinary = Ch.RowBinary.encode_rows(rows, types)
 
-    Ch.query!(pool, ["INSERT INTO time_integration_rowbinary FORMAT RowBinary\n" | rowbinary])
+    Ch.query!(pool, "INSERT INTO time_integration_rowbinary FORMAT RowBinary", rowbinary,
+      encode: false
+    )
 
     assert Ch.query!(pool, "SELECT * FROM time_integration_rowbinary ORDER BY t").rows == [
              [~T[00:00:00], ~T[00:00:00], ~T[00:00:00.987], ~T[00:00:00.987654]],

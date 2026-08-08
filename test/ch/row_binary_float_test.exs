@@ -5,7 +5,7 @@ defmodule Ch.RowBinaryFloatTest do
   alias Ch.RowBinary
 
   setup do
-    {:ok, pool: start_supervised!(Ch)}
+    {:ok, pool: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   property "float params round-trip through ClickHouse", %{pool: pool} do
@@ -86,7 +86,7 @@ defmodule Ch.RowBinaryFloatTest do
   end
 
   property "RowBinary float inserts round-trip through ClickHouse", %{pool: pool} do
-    Help.query!("""
+    Ch.Test.query("""
     CREATE TABLE row_binary_float_property (
       id UInt8,
       f32 Float32,
@@ -94,16 +94,16 @@ defmodule Ch.RowBinaryFloatTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE row_binary_float_property") end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE row_binary_float_property") end)
 
     check all rows <- rowbinary_float_rows() do
       Ch.query!(pool, "TRUNCATE TABLE row_binary_float_property")
 
       rowbinary = RowBinary.encode_rows(rows, ["UInt8", "Float32", "Float64"])
 
-      Ch.query!(pool, [
-        "INSERT INTO row_binary_float_property FORMAT RowBinary\n" | rowbinary
-      ])
+      Ch.query!(pool, "INSERT INTO row_binary_float_property FORMAT RowBinary", rowbinary,
+        encode: false
+      )
 
       expected =
         rows
@@ -118,7 +118,7 @@ defmodule Ch.RowBinaryFloatTest do
   test "RowBinary inserts cover scalar, nullable, array, tuple, point, and defaults", %{
     pool: pool
   } do
-    Help.query!("""
+    Ch.Test.query("""
     CREATE TABLE row_binary_float_representative (
       id UInt8,
       f32 Float32,
@@ -132,7 +132,7 @@ defmodule Ch.RowBinaryFloatTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE row_binary_float_representative") end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE row_binary_float_representative") end)
 
     rows = [
       [
@@ -184,7 +184,9 @@ defmodule Ch.RowBinaryFloatTest do
 
     rowbinary = RowBinary.encode_rows(rows, types)
 
-    Ch.query!(pool, ["INSERT INTO row_binary_float_representative FORMAT RowBinary\n" | rowbinary])
+    Ch.query!(pool, "INSERT INTO row_binary_float_representative FORMAT RowBinary", rowbinary,
+      encode: false
+    )
 
     assert Ch.query!(pool, "SELECT * FROM row_binary_float_representative ORDER BY id").rows == [
              [
