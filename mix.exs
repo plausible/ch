@@ -16,26 +16,13 @@ defmodule Ch.MixProject do
       docs: docs(),
       package: package(),
       source_url: @source_url,
-      dialyzer: [plt_local_path: "plts", plt_core_path: "plts", plt_ignore_apps: [:xmerl]],
-      test_coverage: [tool: ExCoveralls, ignore_modules: [Ch.Test]]
+      dialyzer: [plt_local_path: "plts", plt_core_path: "plts", plt_ignore_apps: [:xmerl]]
     ]
   end
 
   # Run "mix help compile.app" to learn about applications.
   def application do
     [extra_applications: [:logger | extra_applications(Mix.env())]]
-  end
-
-  def cli do
-    [
-      preferred_envs: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.json": :test,
-        "coveralls.html": :test,
-        "coveralls.github": :test
-      ]
-    ]
   end
 
   # Specifies which paths to compile per environment.
@@ -57,7 +44,6 @@ defmodule Ch.MixProject do
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
       {:tz, "~> 0.28.1", only: [:dev, :test]},
-      {:excoveralls, "~> 0.18.5", only: :test},
       {:stream_data, "~> 1.3", only: :test}
     ]
   end
