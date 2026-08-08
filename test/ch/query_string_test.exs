@@ -87,15 +87,6 @@ defmodule Ch.QueryStringTest do
         assert decoded_param(map) == expected_param(map)
       end
     end
-
-    test "encodes fractional DateTime parameters as signed Unix decimals" do
-      assert decoded_param(~U[1969-12-31 23:59:59.500000Z]) == "-0.500000"
-      assert decoded_param(~U[1969-12-31 23:59:58.500000Z]) == "-1.500000"
-      assert decoded_param(~U[1969-12-31 23:59:59.999999Z]) == "-0.000001"
-      assert decoded_param(~U[1970-01-01 00:00:00.000000Z]) == "0.000000"
-
-      assert decoded_param([~U[1969-12-31 23:59:59.500000Z]]) == "['-0.500000']"
-    end
   end
 
   describe "ClickHouse round-trip" do
@@ -227,22 +218,36 @@ defmodule Ch.QueryStringTest do
              ).rows == [[expected_datetimes]]
     end
 
-    test "ClickHouse treats negative fractional Unix timestamps above -1 as positive", %{
+    test "ClickHouse treats encoded negative fractional timestamps above -1 as positive", %{
       pool: pool
     } do
       cases = [
-        {"-0.000001", 1},
-        {"-0.500000", 500_000},
-        {"-0.999999", 999_999}
+        {~U[1969-12-31 23:59:59.999999Z], 1},
+        {~U[1969-12-31 23:59:59.500000Z], 500_000},
+        {~U[1969-12-31 23:59:59.000001Z], 999_999}
       ]
 
-      for {numeric, parsed_unix} <- cases do
+      for {datetime, parsed_unix} <- cases do
         assert Ch.query!(
                  pool,
                  "select toUnixTimestamp64Micro({datetime:DateTime64(6, 'UTC')})",
-                 %{"datetime" => numeric}
+                 %{"datetime" => datetime}
                ).rows == [[parsed_unix]]
       end
+
+      datetimes = Enum.map(cases, &elem(&1, 0))
+      parsed_unix = Enum.map(cases, &elem(&1, 1))
+
+      assert Ch.query!(
+               pool,
+               """
+               select arrayMap(
+                 datetime -> toUnixTimestamp64Micro(datetime),
+                 {datetimes:Array(DateTime64(6, 'UTC'))}
+               )
+               """,
+               %{"datetimes" => datetimes}
+             ).rows == [[parsed_unix]]
     end
 
     test "DateTime parameters in arrays are parsed as timestamps instead of DateTime64 ticks", %{
