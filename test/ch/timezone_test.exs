@@ -3,26 +3,29 @@ defmodule Ch.TimezoneTest do
 
   import Ch.Test, only: [parameterize_query!: 2, parameterize_query!: 3]
 
-  @session_timezone "Europe/Berlin"
-
-  setup do
-    {:ok,
-     conn:
-       start_supervised!(
-         {Ch, database: Ch.Test.database(), settings: [session_timezone: @session_timezone]}
-       )}
-  end
-
   test "session timezone is reported by ClickHouse", ctx do
+    conn =
+      start_supervised!(
+        {Ch, database: Ch.Test.database(), settings: [session_timezone: "Asia/Taipei"]}
+      )
+
+    ctx = Map.put(ctx, :conn, conn)
     result = parameterize_query!(ctx, "SELECT timezone()")
 
-    assert result.rows == [[@session_timezone]]
+    assert result.rows == [["Asia/Taipei"]]
 
     assert List.keyfind!(result.headers, "x-clickhouse-timezone", 0) ==
-             {"x-clickhouse-timezone", @session_timezone}
+             {"x-clickhouse-timezone", "Asia/Taipei"}
   end
 
   test "naive datetime params use the session timezone", ctx do
+    conn =
+      start_supervised!(
+        {Ch, database: Ch.Test.database(), settings: [session_timezone: "Europe/Berlin"]}
+      )
+
+    ctx = Map.put(ctx, :conn, conn)
+
     assert parameterize_query!(
              ctx,
              "SELECT {$0:DateTime} AS d, toString(d)",
@@ -37,14 +40,28 @@ defmodule Ch.TimezoneTest do
   end
 
   test "naive datetime64 params use the session timezone", ctx do
+    conn =
+      start_supervised!(
+        {Ch, database: Ch.Test.database(), settings: [session_timezone: "Asia/Tokyo"]}
+      )
+
+    ctx = Map.put(ctx, :conn, conn)
+
     assert parameterize_query!(
              ctx,
              "SELECT {$0:DateTime64(3)} AS d, toString(d)",
              [~N[2022-01-01 12:00:00.123]]
-           ).rows == [[~N[2022-01-01 11:00:00.123], "2022-01-01 12:00:00.123"]]
+           ).rows == [[~N[2022-01-01 03:00:00.123], "2022-01-01 12:00:00.123"]]
   end
 
   test "UTC datetime params keep their instant and render in the session timezone", ctx do
+    conn =
+      start_supervised!(
+        {Ch, database: Ch.Test.database(), settings: [session_timezone: "Australia/Sydney"]}
+      )
+
+    ctx = Map.put(ctx, :conn, conn)
+
     assert parameterize_query!(
              ctx,
              "SELECT {$0:DateTime} AS d, toString(d), {$1:DateTime64(3)} AS d64, toString(d64)",
@@ -52,9 +69,9 @@ defmodule Ch.TimezoneTest do
            ).rows == [
              [
                ~N[2022-01-01 12:00:00],
-               "2022-01-01 13:00:00",
+               "2022-01-01 23:00:00",
                ~N[2022-01-01 12:00:00.123],
-               "2022-01-01 13:00:00.123"
+               "2022-01-01 23:00:00.123"
              ]
            ]
   end
