@@ -4,7 +4,7 @@ defmodule Ch.TimezoneTest do
   import Ch.Test, only: [parameterize_query!: 2, parameterize_query!: 3]
 
   test "session timezone is reported by ClickHouse", ctx do
-    ctx = Map.put(ctx, :conn, start_timezone_ch("Asia/Taipei"))
+    ctx = setup_conn(ctx, "Asia/Taipei")
     result = parameterize_query!(ctx, "SELECT timezone()")
 
     assert result.rows == [["Asia/Taipei"]]
@@ -14,7 +14,7 @@ defmodule Ch.TimezoneTest do
   end
 
   test "naive datetime params use the session timezone", ctx do
-    ctx = Map.put(ctx, :conn, start_timezone_ch("Europe/Berlin"))
+    ctx = setup_conn(ctx, "Europe/Berlin")
 
     assert parameterize_query!(
              ctx,
@@ -30,7 +30,7 @@ defmodule Ch.TimezoneTest do
   end
 
   test "naive datetime64 params use the session timezone", ctx do
-    ctx = Map.put(ctx, :conn, start_timezone_ch("Asia/Tokyo"))
+    ctx = setup_conn(ctx, "Asia/Tokyo")
 
     assert parameterize_query!(
              ctx,
@@ -40,7 +40,7 @@ defmodule Ch.TimezoneTest do
   end
 
   test "UTC datetime params keep their instant and render in the session timezone", ctx do
-    ctx = Map.put(ctx, :conn, start_timezone_ch("Australia/Sydney"))
+    ctx = setup_conn(ctx, "Australia/Sydney")
 
     assert parameterize_query!(
              ctx,
@@ -56,7 +56,12 @@ defmodule Ch.TimezoneTest do
            ]
   end
 
-  defp start_timezone_ch(timezone) do
-    start_supervised!({Ch, database: Ch.Test.database(), settings: [session_timezone: timezone]})
+  defp setup_conn(ctx, timezone) do
+    conn =
+      start_supervised!(
+        {Ch, database: Ch.Test.database(), settings: [session_timezone: timezone]}
+      )
+
+    Map.put(ctx, :conn, conn)
   end
 end
