@@ -20,7 +20,7 @@ Your ideas are welcome [here.](https://github.com/plausible/ch/issues/82)
 ```elixir
 defp deps do
   [
-    {:ch, "~> 0.8.0"}
+    {:ch, "~> 0.9.0"}
   ]
 end
 ```
