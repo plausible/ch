@@ -3,6 +3,14 @@ defmodule Ch.CalendarTest do
 
   import Ch.Test, only: [parameterize_query!: 3]
 
+  setup ctx do
+    if ctx[:async] do
+      raise "Ch.CalendarTest cannot be async because it changes the VM-global timezone database"
+    end
+
+    :ok
+  end
+
   test "timezone-qualified types require an Elixir timezone database", ctx do
     conn =
       start_supervised!(
