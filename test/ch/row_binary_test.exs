@@ -162,6 +162,29 @@ defmodule Ch.RowBinaryTest do
       assert encode(:multipolygon, nil) == 0
       assert encode({:map, :string, :string}, nil) == 0
     end
+
+    test "variant selects the first recursively compatible type" do
+      assert encode({:variant, [:string, :u64]}, 42) == [1 | <<42::64-little>>]
+
+      assert encode({:variant, [{:array, :u64}, {:array, :string}]}, ["x"]) ==
+               [1, 1, [1 | "x"]]
+
+      assert encode({:variant, [{:tuple, [:string, :u64]}, {:tuple, [:u64, :string]}]}, {1, "x"}) ==
+               [1, <<1::64-little>>, [1 | "x"]]
+
+      assert encode(
+               {:variant, [{:map, :string, :u64}, {:map, :string, {:nullable, :string}}]},
+               %{"x" => nil}
+             ) == [1, 1, [1 | "x"], 1]
+    end
+
+    test "variant does not hide errors from a compatible encoder" do
+      type = {:variant, [{:enum8, %{"present" => 1}}, :string]}
+
+      assert_raise ArgumentError,
+                   ~s[enum value "missing" not found in mapping: %{"present" => 1}],
+                   fn -> encode(type, "missing") end
+    end
   end
 
   test "utf8" do

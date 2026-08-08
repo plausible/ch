@@ -342,7 +342,7 @@ defmodule Ch.RowBinary do
   def encode({:variant, _types}, nil), do: 255
 
   def encode({:variant, types}, value) do
-    try_encode_variant(types, 0, value)
+    encode_variant(types, 0, value)
   end
 
   def encode(:datetime, %NaiveDateTime{} = datetime) do
@@ -504,20 +504,115 @@ defmodule Ch.RowBinary do
 
   defp encode_many_kv([] = done, _key_type, _value_type), do: done
 
-  # TODO find a better way than try/rescue
-  defp try_encode_variant([type | types], idx, value) do
-    try do
-      encode(type, value)
+  defp encode_variant([type | types], idx, value) do
+    if variant_matches?(type, value) do
+      [idx | encode(type, value)]
     else
-      encoded -> [idx | encoded]
-    rescue
-      _e -> try_encode_variant(types, idx + 1, value)
+      encode_variant(types, idx + 1, value)
     end
   end
 
-  defp try_encode_variant([], _idx, value) do
+  defp encode_variant([], _idx, value) do
     raise ArgumentError, "no matching type found for encoding #{inspect(value)} as Variant"
   end
+
+  defp variant_matches?(:string, value), do: is_binary(value) or is_list(value)
+  defp variant_matches?({:fixed_string, _size}, value), do: is_binary(value)
+  defp variant_matches?(:boolean, value), do: is_boolean(value)
+
+  defp variant_matches?(type, value)
+       when type in [:u8, :u16, :u32, :u64, :u128, :u256],
+       do: is_integer(value) and value >= 0
+
+  defp variant_matches?(type, value)
+       when type in [:i8, :i16, :i32, :i64, :i128, :i256],
+       do: is_integer(value)
+
+  defp variant_matches?(type, value) when type in [:f32, :f64], do: is_number(value)
+
+  defp variant_matches?({type, _scale}, value)
+       when type in [:decimal32, :decimal64, :decimal128, :decimal256],
+       do: is_struct(value, Decimal)
+
+  defp variant_matches?({:array, type}, value) when is_list(value) do
+    variant_list_matches?(value, type)
+  end
+
+  defp variant_matches?({:tuple, types}, value) when is_tuple(value) do
+    variant_tuple_matches?(types, Tuple.to_list(value))
+  end
+
+  defp variant_matches?({:tuple, types}, value) when is_list(value) do
+    variant_tuple_matches?(types, value)
+  end
+
+  defp variant_matches?({:map, key_type, value_type}, value) when is_map(value) do
+    variant_map_matches?(Map.to_list(value), key_type, value_type)
+  end
+
+  defp variant_matches?({:map, key_type, value_type}, value) when is_list(value) do
+    variant_map_matches?(value, key_type, value_type)
+  end
+
+  defp variant_matches?({:nullable, _type}, nil), do: true
+  defp variant_matches?({:nullable, type}, value), do: variant_matches?(type, value)
+  defp variant_matches?(:date, value), do: is_struct(value, Date)
+  defp variant_matches?(:date32, value), do: is_struct(value, Date)
+
+  defp variant_matches?(:datetime, value) do
+    is_struct(value, NaiveDateTime) or is_struct(value, DateTime)
+  end
+
+  defp variant_matches?({:datetime64, _time_unit}, value) do
+    is_struct(value, NaiveDateTime) or is_struct(value, DateTime)
+  end
+
+  defp variant_matches?(:time, value), do: is_struct(value, Time)
+  defp variant_matches?({:time64, _time_unit}, value), do: is_struct(value, Time)
+  defp variant_matches?(:uuid, value), do: is_binary(value)
+  defp variant_matches?(:ipv4, value), do: is_tuple(value) and tuple_size(value) == 4
+
+  defp variant_matches?(:ipv6, value) do
+    (is_tuple(value) and tuple_size(value) == 8) or
+      (is_binary(value) and byte_size(value) == 16)
+  end
+
+  defp variant_matches?(:point, value) do
+    is_tuple(value) and tuple_size(value) == 2
+  end
+
+  defp variant_matches?({type, _mapping}, value) when type in [:enum8, :enum16] do
+    is_integer(value) or is_binary(value)
+  end
+
+  defp variant_matches?(:dynamic, value) do
+    is_binary(value) or is_integer(value) or is_float(value) or is_struct(value, Date) or
+      is_struct(value, NaiveDateTime) or value == []
+  end
+
+  defp variant_matches?(:json, _value), do: true
+  defp variant_matches?(_type, _value), do: false
+
+  defp variant_list_matches?([value | values], type) do
+    variant_matches?(type, value) and variant_list_matches?(values, type)
+  end
+
+  defp variant_list_matches?([], _type), do: true
+
+  defp variant_tuple_matches?([type | types], [value | values]) do
+    variant_matches?(type, value) and variant_tuple_matches?(types, values)
+  end
+
+  defp variant_tuple_matches?([], []), do: true
+  defp variant_tuple_matches?(_types, _values), do: false
+
+  defp variant_map_matches?([{key, value} | values], key_type, value_type) do
+    variant_matches?(key_type, key) and variant_matches?(value_type, value) and
+      variant_map_matches?(values, key_type, value_type)
+  end
+
+  defp variant_map_matches?([], _key_type, _value_type), do: true
+  defp variant_map_matches?(_value, _key_type, _value_type), do: false
 
   @compile {:inline, d: 1}
 
