@@ -121,26 +121,17 @@ defmodule Ch.HTTP do
   defp encode_param(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
   defp encode_param(%Time{} = time), do: Time.to_iso8601(time)
 
-  defp encode_param(%DateTime{microsecond: microsecond} = dt) do
-    dt = DateTime.shift_zone!(dt, "Etc/UTC")
+  defp encode_param(%DateTime{microsecond: {_value, precision}} = dt) when precision > 0 do
+    unix = DateTime.to_unix(dt, Integer.pow(10, precision))
+    sign = if unix < 0, do: -1, else: 1
 
-    case microsecond do
-      {val, precision} when val > 0 and precision > 0 ->
-        size = round(:math.pow(10, precision))
-        unix = DateTime.to_unix(dt, size)
-        seconds = div(unix, size)
-        fractional = rem(unix, size)
-
-        IO.iodata_to_binary([
-          Integer.to_string(seconds),
-          ?.,
-          String.pad_leading(Integer.to_string(fractional), precision, "0")
-        ])
-
-      _ ->
-        dt |> DateTime.to_unix(:second) |> Integer.to_string()
-    end
+    sign
+    |> Decimal.new(abs(unix), -precision)
+    |> Decimal.to_string(:normal)
   end
+
+  defp encode_param(%DateTime{} = dt),
+    do: dt |> DateTime.to_unix(:second) |> Integer.to_string()
 
   defp encode_param(tuple) when is_tuple(tuple) do
     IO.iodata_to_binary([?(, encode_array_params(Tuple.to_list(tuple)), ?)])

@@ -173,6 +173,83 @@ defmodule Ch.QueryStringTest do
       end
     end
 
+    test "numeric DateTime parameters retain their instant across ClickHouse timezones", %{
+      pool: pool
+    } do
+      datetimes = [
+        ~U[1969-12-31 23:59:58.500000Z],
+        ~U[1969-12-31 23:59:58.999999Z],
+        ~U[1970-01-01 00:00:00.000000Z],
+        ~U[1970-01-01 00:00:00.000001Z],
+        ~U[1970-01-01 00:00:00.5Z],
+        ~U[1970-01-01 00:00:00.999999Z],
+        ~U[1970-01-01 00:00:01.000000Z],
+        DateTime.shift_zone!(~U[1969-12-31 23:59:58.500000Z], "America/New_York"),
+        DateTime.shift_zone!(~U[1970-01-01 00:00:00.500000Z], "Europe/Moscow")
+      ]
+
+      for datetime <- datetimes do
+        expected = DateTime.to_unix(datetime, :microsecond)
+
+        assert Ch.query!(
+                 pool,
+                 """
+                 select
+                   toUnixTimestamp64Micro({datetime:DateTime64(6, 'Europe/Moscow')}),
+                   toUnixTimestamp64Micro({implicit:DateTime64(6)})
+                 """,
+                 %{"datetime" => datetime, "implicit" => datetime},
+                 settings: [session_timezone: "Asia/Bangkok"]
+               ).rows == [[expected, expected]]
+      end
+
+      array_datetimes = Enum.take(datetimes, 6)
+      expected_datetimes = Enum.map(array_datetimes, &DateTime.to_unix(&1, :microsecond))
+
+      assert Ch.query!(
+               pool,
+               """
+               select arrayMap(
+                 datetime -> toUnixTimestamp64Micro(datetime),
+                 {datetimes:Array(DateTime64(6, 'UTC'))}
+               )
+               """,
+               %{"datetimes" => array_datetimes}
+             ).rows == [[expected_datetimes]]
+    end
+
+    test "ClickHouse treats encoded negative fractional timestamps above -1 as positive", %{
+      pool: pool
+    } do
+      cases = [
+        {~U[1969-12-31 23:59:59.999999Z], 1},
+        {~U[1969-12-31 23:59:59.500000Z], 500_000},
+        {~U[1969-12-31 23:59:59.000001Z], 999_999}
+      ]
+
+      for {datetime, parsed_unix} <- cases do
+        assert Ch.query!(
+                 pool,
+                 "select toUnixTimestamp64Micro({datetime:DateTime64(6, 'UTC')})",
+                 %{"datetime" => datetime}
+               ).rows == [[parsed_unix]]
+      end
+
+      datetimes = Enum.map(cases, &elem(&1, 0))
+      parsed_unix = Enum.map(cases, &elem(&1, 1))
+
+      assert Ch.query!(
+               pool,
+               """
+               select arrayMap(
+                 datetime -> toUnixTimestamp64Micro(datetime),
+                 {datetimes:Array(DateTime64(6, 'UTC'))}
+               )
+               """,
+               %{"datetimes" => datetimes}
+             ).rows == [[parsed_unix]]
+    end
+
     test "DateTime parameters in arrays are parsed as timestamps instead of DateTime64 ticks", %{
       pool: pool
     } do
@@ -363,15 +440,14 @@ defmodule Ch.QueryStringTest do
   defp expected_param(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
   defp expected_param(%Time{} = value), do: Time.to_iso8601(value)
 
-  defp expected_param(%DateTime{microsecond: {val, precision}} = value)
-       when val > 0 and precision > 0 do
-    size = round(:math.pow(10, precision))
-    unix = DateTime.to_unix(value, size)
-    seconds = div(unix, size)
-    fractional = rem(unix, size)
+  defp expected_param(%DateTime{microsecond: {_value, precision}} = value)
+       when precision > 0 do
+    unix = DateTime.to_unix(value, Integer.pow(10, precision))
+    sign = if unix < 0, do: -1, else: 1
 
-    Integer.to_string(seconds) <>
-      "." <> String.pad_leading(Integer.to_string(fractional), precision, "0")
+    sign
+    |> Decimal.new(abs(unix), -precision)
+    |> Decimal.to_string(:normal)
   end
 
   defp expected_param(%DateTime{} = value),
