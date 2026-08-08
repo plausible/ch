@@ -545,6 +545,48 @@ defmodule Ch.FaultsTest do
     end
   end
 
+  describe "toxiproxy" do
+    test "recovers after a downstream timeout", %{query_options: query_options} do
+      proxy = Ch.Test.create_toxiproxy("clickhouse:8123")
+      {:ok, conn} = Ch.start_link(port: proxy.port, timeout: 100, backoff_min: 0)
+
+      assert {:ok, %Result{rows: [[2]]}} = Ch.query(conn, "select 1 + 1", [], query_options)
+
+      Ch.Test.add_toxic(proxy, %{
+        "name" => "timeout",
+        "type" => "timeout",
+        "stream" => "downstream",
+        "attributes" => %{"timeout" => 500}
+      })
+
+      query = Task.async(fn -> Ch.query(conn, "select 2 + 2", [], query_options) end)
+      Process.sleep(200)
+      Ch.Test.remove_toxic(proxy, "timeout")
+
+      assert {:ok, %Result{rows: [[4]]}} = Task.await(query, 5_000)
+    end
+
+    test "recovers after a peer reset", %{query_options: query_options} do
+      proxy = Ch.Test.create_toxiproxy("clickhouse:8123")
+      {:ok, conn} = Ch.start_link(port: proxy.port, backoff_min: 0)
+
+      assert {:ok, %Result{rows: [[2]]}} = Ch.query(conn, "select 1 + 1", [], query_options)
+
+      Ch.Test.add_toxic(proxy, %{
+        "name" => "reset_peer",
+        "type" => "reset_peer",
+        "stream" => "downstream",
+        "attributes" => %{"timeout" => 0}
+      })
+
+      query = Task.async(fn -> Ch.query(conn, "select 2 + 2", [], query_options) end)
+      Process.sleep(100)
+      Ch.Test.remove_toxic(proxy, "reset_peer")
+
+      assert {:ok, %Result{rows: [[4]]}} = Task.await(query, 5_000)
+    end
+  end
+
   defp first_byte(binary) do
     :binary.part(binary, 0, 1)
   end

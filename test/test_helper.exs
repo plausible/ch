@@ -17,6 +17,22 @@ unless clickhouse_available? do
   System.halt(1)
 end
 
+toxiproxy_available? =
+  case :httpc.request(:get, {~c"http://localhost:8474/proxies", []}, [], []) do
+    {:ok, {{_version, 200, _reason}, _headers, _body}} -> true
+    {:error, _reason} -> false
+  end
+
+unless toxiproxy_available? do
+  Mix.shell().error("""
+  Toxiproxy is not detected at localhost:8474! Please start the local container with the following command:
+
+      docker compose up -d toxiproxy
+  """)
+
+  System.halt(1)
+end
+
 Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
 default_test_db = System.get_env("CH_DATABASE", "ch_elixir_test")
 Application.put_env(:ch, :database, default_test_db)
@@ -47,5 +63,7 @@ extra_exclude =
       # Time, Variant, JSON, and Dynamic types are not supported in older ClickHouse versions we have in the CI
       [:time, :variant, :json, :dynamic]
   end
+
+Ch.Test.setup_toxiproxy_counter()
 
 ExUnit.start(exclude: [:slow | extra_exclude])
