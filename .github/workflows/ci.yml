@@ -20,7 +20,7 @@ jobs:
       matrix:
         include:
           # some old elixir/erlang version
-          - elixir: 1.17
+          - elixir: 1.15
             otp: 25
             clickhouse: latest
             timezone: UTC

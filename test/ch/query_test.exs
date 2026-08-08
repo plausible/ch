@@ -509,7 +509,7 @@ defmodule Ch.QueryTest do
       assert [[42]] = Ch.query!(conn, "SELECT 42", [], query_options).rows
 
       Enum.each(1..10, fn _ ->
-        assert_receive [[0]], to_timeout(second: 1)
+        assert_receive [[0]], :timer.seconds(1)
       end)
     end
 
