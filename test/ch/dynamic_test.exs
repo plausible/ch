@@ -3,9 +3,14 @@ defmodule Ch.DynamicTest do
   import Ch.Test, only: [parameterize_query!: 2, parameterize_query!: 3, parameterize_query!: 4]
 
   @moduletag :dynamic
+  @session_timezone "Europe/Berlin"
 
   setup do
-    {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
+    {:ok,
+     conn:
+       start_supervised!(
+         {Ch, database: Ch.Test.database(), settings: [session_timezone: @session_timezone]}
+       )}
   end
 
   test "it works", ctx do

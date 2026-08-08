@@ -5,6 +5,8 @@ defmodule Ch.QueryTest do
 
   alias Ch.Query
 
+  @session_timezone "Europe/Berlin"
+
   setup ctx do
     {:ok, query_options: ctx[:query_options] || []}
   end
@@ -53,7 +55,11 @@ defmodule Ch.QueryTest do
   # adapted from https://github.com/elixir-ecto/postgrex/blob/master/test/query_test.exs
   describe "query" do
     setup do
-      {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
+      {:ok,
+       conn:
+         start_supervised!(
+           {Ch, database: Ch.Test.database(), settings: [session_timezone: @session_timezone]}
+         )}
     end
 
     test "iodata", %{conn: conn, query_options: query_options} do
