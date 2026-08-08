@@ -36,11 +36,16 @@ Ch.Test.query(
 %{rows: [[ch_version]]} = Ch.Test.query("SELECT version()")
 
 extra_exclude =
-  if ch_version >= "25" do
-    []
-  else
-    # Time, Variant, JSON, and Dynamic types are not supported in older ClickHouse versions we have in the CI
-    [:time, :variant, :json, :dynamic]
+  cond do
+    ch_version >= "26" ->
+      []
+
+    ch_version >= "25" ->
+      [:time]
+
+    true ->
+      # Time, Variant, JSON, and Dynamic types are not supported in older ClickHouse versions we have in the CI
+      [:time, :variant, :json, :dynamic]
   end
 
 ExUnit.start(exclude: [:slow | extra_exclude])
