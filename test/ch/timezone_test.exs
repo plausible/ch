@@ -4,12 +4,7 @@ defmodule Ch.TimezoneTest do
   import Ch.Test, only: [parameterize_query!: 2, parameterize_query!: 3]
 
   test "session timezone is reported by ClickHouse", ctx do
-    conn =
-      start_supervised!(
-        {Ch, database: Ch.Test.database(), settings: [session_timezone: "Asia/Taipei"]}
-      )
-
-    ctx = Map.put(ctx, :conn, conn)
+    ctx = Map.put(ctx, :conn, start_timezone_ch("Asia/Taipei"))
     result = parameterize_query!(ctx, "SELECT timezone()")
 
     assert result.rows == [["Asia/Taipei"]]
@@ -19,12 +14,7 @@ defmodule Ch.TimezoneTest do
   end
 
   test "naive datetime params use the session timezone", ctx do
-    conn =
-      start_supervised!(
-        {Ch, database: Ch.Test.database(), settings: [session_timezone: "Europe/Berlin"]}
-      )
-
-    ctx = Map.put(ctx, :conn, conn)
+    ctx = Map.put(ctx, :conn, start_timezone_ch("Europe/Berlin"))
 
     assert parameterize_query!(
              ctx,
@@ -40,12 +30,7 @@ defmodule Ch.TimezoneTest do
   end
 
   test "naive datetime64 params use the session timezone", ctx do
-    conn =
-      start_supervised!(
-        {Ch, database: Ch.Test.database(), settings: [session_timezone: "Asia/Tokyo"]}
-      )
-
-    ctx = Map.put(ctx, :conn, conn)
+    ctx = Map.put(ctx, :conn, start_timezone_ch("Asia/Tokyo"))
 
     assert parameterize_query!(
              ctx,
@@ -55,12 +40,7 @@ defmodule Ch.TimezoneTest do
   end
 
   test "UTC datetime params keep their instant and render in the session timezone", ctx do
-    conn =
-      start_supervised!(
-        {Ch, database: Ch.Test.database(), settings: [session_timezone: "Australia/Sydney"]}
-      )
-
-    ctx = Map.put(ctx, :conn, conn)
+    ctx = Map.put(ctx, :conn, start_timezone_ch("Australia/Sydney"))
 
     assert parameterize_query!(
              ctx,
@@ -74,5 +54,9 @@ defmodule Ch.TimezoneTest do
                "2022-01-01 23:00:00.123"
              ]
            ]
+  end
+
+  defp start_timezone_ch(timezone) do
+    start_supervised!({Ch, database: Ch.Test.database(), settings: [session_timezone: timezone]})
   end
 end
