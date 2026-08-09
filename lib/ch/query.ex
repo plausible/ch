@@ -347,14 +347,34 @@ defimpl DBConnection.Query, for: Ch.Query do
         seconds = div(unix, size)
         fractional = rem(unix, size)
 
-        IO.iodata_to_binary([
-          Integer.to_string(seconds),
-          ?.,
-          String.pad_leading(Integer.to_string(fractional), precision, "0")
-        ])
+        # Manually add minus sign if fractional is < 0 and seconds isn't already negative.
+        sign = if fractional < 0 and seconds >= 0, do: [?-], else: []
+
+        fractional = abs(fractional)
+
+        IO.iodata_to_binary(
+          sign ++
+            [
+              Integer.to_string(seconds),
+              ?.,
+              String.pad_leading(Integer.to_string(fractional), precision, "0")
+            ]
+        )
 
       _ ->
-        dt |> DateTime.to_unix(:second) |> Integer.to_string()
+        # Padding needed for small values: https://github.com/ClickHouse/ClickHouse/issues/64708
+        dt = dt |> DateTime.to_unix(:second)
+
+        sign = if dt < 0, do: [?-], else: []
+
+        IO.iodata_to_binary(
+          sign ++
+            [
+              abs(dt)
+              |> Integer.to_string()
+              |> String.pad_leading(5, "0")
+            ]
+        )
     end
   end
 
