@@ -4,6 +4,7 @@
 
 - Fix `encode_param` for `DateTime` https://github.com/plausible/ch/pull/298
 - Fix malformed pre-epoch fractional `DateTime` query parameter encoding. https://github.com/plausible/ch/pull/409
+- Speed up RowBinary decoding for timezone-less `DateTime`/`DateTime64` and `Time64` values by constructing naive temporal values directly. https://github.com/plausible/ch/pull/398
 
 ## 0.9.0 (2026-08-08)
 
