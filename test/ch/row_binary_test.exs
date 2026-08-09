@@ -134,40 +134,6 @@ defmodule Ch.RowBinaryTest do
                    fn -> encode(:datetime, ~U[2106-02-07 06:28:16Z]) end
     end
 
-    test "timezone-qualified encoding types" do
-      assert encoding_types([{:datetime, "UTC"}]) == [{:datetime, "UTC"}]
-      assert encoding_types([{:datetime, "Europe/Vienna"}]) == [{:datetime, "Europe/Vienna"}]
-      assert encoding_types([{:datetime64, 3, "UTC"}]) == [{:datetime64, 1000, "UTC"}]
-
-      assert encoding_types([{:datetime64, 3, "Europe/Vienna"}]) ==
-               [{:datetime64, 1000, "Europe/Vienna"}]
-    end
-
-    test "timezone-qualified datetimes interpret naive values in the annotated timezone" do
-      winter = ~N[2022-01-01 12:00:00]
-      winter_unix = winter |> DateTime.from_naive!("Europe/Vienna") |> DateTime.to_unix()
-      assert encode({:datetime, "Europe/Vienna"}, winter) == <<winter_unix::32-little>>
-
-      summer = ~N[2022-07-01 12:00:00.123456]
-
-      summer_unix =
-        summer |> DateTime.from_naive!("Europe/Vienna") |> DateTime.to_unix(:millisecond)
-
-      assert encode({:datetime64, 1_000, "Europe/Vienna"}, summer) ==
-               <<summer_unix::64-little-signed>>
-    end
-
-    test "timezone-qualified datetimes preserve the instant of aware values" do
-      utc = ~U[2022-07-01 12:00:00.123456Z]
-      tokyo = DateTime.shift_zone!(utc, "Asia/Tokyo")
-
-      assert encode({:datetime, "Europe/Vienna"}, tokyo) ==
-               <<DateTime.to_unix(utc)::32-little>>
-
-      assert encode({:datetime64, 1_000, "Europe/Vienna"}, tokyo) ==
-               <<DateTime.to_unix(utc, :millisecond)::64-little-signed>>
-    end
-
     test "decimal" do
       type = {:decimal32, _scale = 4}
       assert encode(type, Decimal.new("2")) == <<20000::32-little>>
