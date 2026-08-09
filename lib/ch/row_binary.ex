@@ -1400,13 +1400,11 @@ defmodule Ch.RowBinary do
       {:datetime, timezone} ->
         case bin do
           <<s::32-little, bin::bytes>> ->
-            dt = DateTime.from_unix!(s)
-
             dt =
               case timezone do
-                nil -> DateTime.to_naive(dt)
-                "UTC" -> dt
-                _ -> DateTime.shift_zone!(dt, timezone)
+                nil -> NaiveDateTime.from_gregorian_seconds(s + @epoch_gregorian_seconds)
+                "UTC" -> DateTime.from_unix!(s)
+                _ -> s |> DateTime.from_unix!() |> DateTime.shift_zone!(timezone)
               end
 
             decode_rows(types_rest, bin, [dt | row], rows, types)
@@ -1482,14 +1480,12 @@ defmodule Ch.RowBinary do
 
       {:datetime64, time_unit, timezone} ->
         case bin do
-          <<s::64-little-signed, bin::bytes>> ->
-            dt = DateTime.from_unix!(s, time_unit)
-
+          <<ticks::64-little-signed, bin::bytes>> ->
             dt =
               case timezone do
-                nil -> DateTime.to_naive(dt)
-                "UTC" -> dt
-                _ -> DateTime.shift_zone!(dt, timezone)
+                nil -> naive_datetime_from_unix(ticks, time_unit)
+                "UTC" -> DateTime.from_unix!(ticks, time_unit)
+                _ -> ticks |> DateTime.from_unix!(time_unit) |> DateTime.shift_zone!(timezone)
               end
 
             decode_rows(types_rest, bin, [dt | row], rows, types)
@@ -1553,16 +1549,26 @@ defmodule Ch.RowBinary do
     end
   end
 
-  @compile inline: [time_unit: 1]
+  @compile inline: [time_unit: 1, time_precision: 1]
   for precision <- 0..9 do
     time_unit = Integer.pow(10, precision)
     defp time_unit(unquote(precision)), do: unquote(time_unit)
+
+    if precision <= 6 do
+      defp time_precision(unquote(time_unit)), do: unquote(precision)
+    end
   end
 
   @compile inline: [time_after_midnight: 2]
+  defp time_after_midnight(ticks, 1) when ticks >= 0 and ticks < 86400 do
+    Time.from_seconds_after_midnight(ticks)
+  end
+
   defp time_after_midnight(ticks, time_unit) do
     if ticks >= 0 and ticks < 86400 * time_unit do
-      ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
+      seconds = div(ticks, time_unit)
+      subsecond_ticks = rem(ticks, time_unit)
+      Time.from_seconds_after_midnight(seconds, microsecond_precision(subsecond_ticks, time_unit))
     else
       # since ClickHouse supports Time64 values of [-999:59:59.999999999, 999:59:59.999999999]
       # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
@@ -1572,5 +1578,36 @@ defmodule Ch.RowBinary do
 
       # TODO: we could potentially decode ClickHouse's Time/Time64 values as Elixir's Duration when it's out of Elixir's Time range
     end
+  end
+
+  @compile inline: [naive_datetime_from_unix: 2]
+  defp naive_datetime_from_unix(ticks, 1) do
+    NaiveDateTime.from_gregorian_seconds(ticks + @epoch_gregorian_seconds)
+  end
+
+  defp naive_datetime_from_unix(ticks, time_unit) do
+    seconds = div(ticks, time_unit)
+    subsecond_ticks = rem(ticks, time_unit)
+
+    {seconds, subsecond_ticks} =
+      if subsecond_ticks < 0 do
+        {seconds - 1, subsecond_ticks + time_unit}
+      else
+        {seconds, subsecond_ticks}
+      end
+
+    NaiveDateTime.from_gregorian_seconds(
+      seconds + @epoch_gregorian_seconds,
+      microsecond_precision(subsecond_ticks, time_unit)
+    )
+  end
+
+  @compile inline: [microsecond_precision: 2]
+  defp microsecond_precision(subsecond_ticks, time_unit) when time_unit <= 1_000_000 do
+    {subsecond_ticks * div(1_000_000, time_unit), time_precision(time_unit)}
+  end
+
+  defp microsecond_precision(subsecond_ticks, time_unit) do
+    {div(subsecond_ticks, div(time_unit, 1_000_000)), 6}
   end
 end
