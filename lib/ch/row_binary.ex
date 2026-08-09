@@ -324,7 +324,9 @@ defmodule Ch.RowBinary do
   end
 
   def encode({:tuple, types}, values) when is_list(types) and is_list(values) do
-    encode_row(values, types)
+    # types were already normalized by encoding_type({:tuple, ts}); use the
+    # private encoder so we don't re-run encoding_types/1 on normalized types
+    _encode_row(values, types)
   end
 
   def encode({:tuple, types}, nil) when is_list(types) do
@@ -348,15 +350,13 @@ defmodule Ch.RowBinary do
 
   def encode(:datetime, nil), do: <<0::32>>
 
+  # RowBinary stores Unix timestamps, so the type timezone only matters when a
+  # naive wall-clock value needs to be resolved to an instant.
   def encode({:datetime, timezone}, %NaiveDateTime{} = datetime) when is_binary(timezone) do
     encode(:datetime, DateTime.from_naive!(datetime, timezone))
   end
 
-  def encode({:datetime, timezone}, %DateTime{} = datetime) when is_binary(timezone) do
-    encode(:datetime, datetime)
-  end
-
-  def encode({:datetime, timezone}, nil) when is_binary(timezone), do: encode(:datetime, nil)
+  def encode({:datetime, timezone}, value) when is_binary(timezone), do: encode(:datetime, value)
 
   def encode({:datetime64, time_unit}, %NaiveDateTime{} = datetime) do
     {seconds, micros} = NaiveDateTime.to_gregorian_seconds(datetime)
@@ -375,13 +375,8 @@ defmodule Ch.RowBinary do
     encode({:datetime64, time_unit}, DateTime.from_naive!(datetime, timezone))
   end
 
-  def encode({:datetime64, time_unit, timezone}, %DateTime{} = datetime)
-      when is_binary(timezone) do
-    encode({:datetime64, time_unit}, datetime)
-  end
-
-  def encode({:datetime64, time_unit, timezone}, nil) when is_binary(timezone) do
-    encode({:datetime64, time_unit}, nil)
+  def encode({:datetime64, time_unit, timezone}, value) when is_binary(timezone) do
+    encode({:datetime64, time_unit}, value)
   end
 
   def encode(:date, %Date{} = date) do

@@ -143,24 +143,29 @@ defmodule Ch.RowBinaryTest do
                [{:datetime64, 1000, "Europe/Vienna"}]
     end
 
-    test "timezone-qualified datetime encodes naive values in the annotated timezone" do
-      types = ["DateTime('Europe/Vienna')", "DateTime64(3, 'Europe/Vienna')"]
+    test "timezone-qualified datetimes interpret naive values in the annotated timezone" do
+      winter = ~N[2022-01-01 12:00:00]
+      winter_unix = winter |> DateTime.from_naive!("Europe/Vienna") |> DateTime.to_unix()
+      assert encode({:datetime, "Europe/Vienna"}, winter) == <<winter_unix::32-little>>
 
-      rows = [
-        [~N[2022-01-01 12:00:00], ~N[2022-07-01 12:00:00.123456]],
-        [~U[2022-01-01 12:00:00Z], ~U[2022-07-01 12:00:00.123456Z]]
-      ]
+      summer = ~N[2022-07-01 12:00:00.123456]
 
-      assert rows |> encode_rows(types) |> byte_by_byte(types) == [
-               [
-                 DateTime.from_naive!(~N[2022-01-01 12:00:00], "Europe/Vienna"),
-                 DateTime.from_naive!(~N[2022-07-01 12:00:00.123], "Europe/Vienna")
-               ],
-               [
-                 DateTime.shift_zone!(~U[2022-01-01 12:00:00Z], "Europe/Vienna"),
-                 DateTime.shift_zone!(~U[2022-07-01 12:00:00.123Z], "Europe/Vienna")
-               ]
-             ]
+      summer_unix =
+        summer |> DateTime.from_naive!("Europe/Vienna") |> DateTime.to_unix(:millisecond)
+
+      assert encode({:datetime64, 1_000, "Europe/Vienna"}, summer) ==
+               <<summer_unix::64-little-signed>>
+    end
+
+    test "timezone-qualified datetimes preserve the instant of aware values" do
+      utc = ~U[2022-07-01 12:00:00.123456Z]
+      tokyo = DateTime.shift_zone!(utc, "Asia/Tokyo")
+
+      assert encode({:datetime, "Europe/Vienna"}, tokyo) ==
+               <<DateTime.to_unix(utc)::32-little>>
+
+      assert encode({:datetime64, 1_000, "Europe/Vienna"}, tokyo) ==
+               <<DateTime.to_unix(utc, :millisecond)::64-little-signed>>
     end
 
     test "decimal" do
@@ -187,6 +192,16 @@ defmodule Ch.RowBinaryTest do
 
       assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
                encode({:map, :string, :string}, [{"hello", "world"}])
+    end
+
+    test "tuple with normalized nested types round-trips" do
+      dt = ~U[2026-01-02 03:04:05.123Z]
+      encoded = IO.iodata_to_binary(encode_rows([[{dt}]], ["Tuple(DateTime64(3, 'UTC'))"]))
+      assert decode_rows(encoded, ["Tuple(DateTime64(3, 'UTC'))"]) == [[{dt}]]
+
+      time = ~T[03:04:05.123456]
+      encoded = IO.iodata_to_binary(encode_rows([[{time}]], ["Tuple(Time64(6))"]))
+      assert decode_rows(encoded, ["Tuple(Time64(6))"]) == [[{time}]]
     end
 
     test "nil" do
