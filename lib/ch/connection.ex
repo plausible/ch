@@ -414,9 +414,13 @@ defmodule Ch.Connection do
     case recv_all(conn, [], timeout) do
       {:ok, conn, responses} ->
         case responses do
-          [200, headers | _rest] ->
+          [200, headers | _data] ->
             conn = ensure_same_server(conn, headers)
-            {:ok, conn, responses}
+
+            case decode_row_binary_exception(responses) do
+              {:ok, error} -> {:error, error, conn}
+              :error -> {:ok, conn, responses}
+            end
 
           [_status, headers | data] ->
             message = IO.iodata_to_binary(data)
@@ -445,8 +449,7 @@ defmodule Ch.Connection do
       with "RowBinaryWithNamesAndTypes" <- get_header(headers, "x-clickhouse-format"),
            nil <- get_header(headers, "content-encoding"),
            tag when is_binary(tag) <- get_header(headers, "x-clickhouse-exception-tag"),
-           body = IO.iodata_to_binary(data),
-           {:error, message} <- RowBinary.decode_names_and_rows(body, tag) do
+           {:ok, message} <- RowBinary.decode_exception(data, tag) do
         {:ok, Error.exception(code: exception_code(message), message: message)}
       else
         _ -> :error

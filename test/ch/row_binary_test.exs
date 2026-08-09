@@ -312,6 +312,36 @@ defmodule Ch.RowBinaryTest do
     end
   end
 
+  describe "decode_exception/2" do
+    test "decodes a tagged exception split across response chunks" do
+      tag = "0123456789abcdef"
+      message = "Code: 395. DB::Exception: late exception\n"
+
+      trailer =
+        "\r\n__exception__\r\n#{tag}\r\n#{message}#{byte_size(message)} #{tag}\r\n__exception__\r\n"
+
+      assert {:ok, ^message} =
+               decode_exception(
+                 [
+                   <<1, 1, "x", 5, "UInt8", 42>>,
+                   binary_part(trailer, 0, 13),
+                   binary_part(trailer, 13, byte_size(trailer) - 13)
+                 ],
+                 tag
+               )
+    end
+
+    test "rejects a trailer with a different tag" do
+      tag = "0123456789abcdef"
+      message = "Code: 395. DB::Exception: late exception\n"
+
+      trailer =
+        "\r\n__exception__\r\n#{tag}\r\n#{message}#{byte_size(message)} fedcba9876543210\r\n__exception__\r\n"
+
+      assert :error = decode_exception(trailer, tag)
+    end
+  end
+
   describe "decode_rows/2" do
     test "empty" do
       assert decode_rows(<<>>, [:u8, :string]) == []

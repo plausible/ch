@@ -665,14 +665,19 @@ defmodule Ch.RowBinary do
   end
 
   @doc false
-  def decode_names_and_rows(row_binary_with_names_and_types, exception_tag) do
-    case decode_exception(row_binary_with_names_and_types, exception_tag) do
-      {:ok, message} -> {:error, message}
-      :error -> {:ok, decode_names_and_rows(row_binary_with_names_and_types)}
+  def decode_exception(body, tag)
+      when is_list(body) and is_binary(tag) and byte_size(tag) == @exception_tag_length do
+    closing = " #{tag}\r\n#{@exception_marker}\r\n"
+
+    if exception_tail(body, byte_size(closing)) == closing do
+      body
+      |> exception_tail(@max_exception_size)
+      |> decode_exception(tag)
+    else
+      :error
     end
   end
 
-  @doc false
   def decode_exception(body, tag)
       when is_binary(tag) and byte_size(tag) == @exception_tag_length do
     opening = "\r\n#{@exception_marker}\r\n#{tag}\r\n"
@@ -700,6 +705,27 @@ defmodule Ch.RowBinary do
   end
 
   def decode_exception(_body, _tag), do: :error
+
+  defp exception_tail(chunks, limit) do
+    chunks
+    |> :lists.reverse()
+    |> exception_tail([], 0, limit)
+    |> IO.iodata_to_binary()
+  end
+
+  defp exception_tail(_chunks, acc, size, limit) when size == limit, do: acc
+
+  defp exception_tail([chunk | chunks], acc, size, limit) do
+    remaining = limit - size
+
+    if byte_size(chunk) <= remaining do
+      exception_tail(chunks, [chunk | acc], size + byte_size(chunk), limit)
+    else
+      [binary_part(chunk, byte_size(chunk) - remaining, remaining) | acc]
+    end
+  end
+
+  defp exception_tail([], acc, _size, _limit), do: acc
 
   defp trailing_decimal_start(body, index), do: trailing_decimal_start(body, index, 0)
 
