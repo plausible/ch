@@ -106,6 +106,34 @@ defmodule Ch.RowBinaryTest do
   end
 
   describe "encode/2" do
+    test "datetime accepts UInt32 Unix timestamp boundaries" do
+      assert encode(:datetime, ~N[1970-01-01 00:00:00]) == <<0::32-little>>
+      assert encode(:datetime, ~U[1970-01-01 00:00:00Z]) == <<0::32-little>>
+
+      assert encode(:datetime, ~N[2106-02-07 06:28:15]) == <<0xFFFFFFFF::32-little>>
+      assert encode(:datetime, ~U[2106-02-07 06:28:15Z]) == <<0xFFFFFFFF::32-little>>
+    end
+
+    test "datetime rejects values before the Unix epoch" do
+      assert_raise ArgumentError,
+                   "cannot encode 1969-12-31 23:59:59 as DateTime since it's before Unix epoch",
+                   fn -> encode(:datetime, ~N[1969-12-31 23:59:59]) end
+
+      assert_raise ArgumentError,
+                   "cannot encode 1969-12-31 23:59:59Z as DateTime since it's before Unix epoch",
+                   fn -> encode(:datetime, ~U[1969-12-31 23:59:59Z]) end
+    end
+
+    test "datetime rejects values after the maximum Unix timestamp" do
+      assert_raise ArgumentError,
+                   "cannot encode 2106-02-07 06:28:16 as DateTime since it's after the maximum Unix timestamp",
+                   fn -> encode(:datetime, ~N[2106-02-07 06:28:16]) end
+
+      assert_raise ArgumentError,
+                   "cannot encode 2106-02-07 06:28:16Z as DateTime since it's after the maximum Unix timestamp",
+                   fn -> encode(:datetime, ~U[2106-02-07 06:28:16Z]) end
+    end
+
     test "decimal" do
       type = {:decimal32, _scale = 4}
       assert encode(type, Decimal.new("2")) == <<20000::32-little>>
