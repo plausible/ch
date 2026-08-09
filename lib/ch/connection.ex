@@ -363,7 +363,7 @@ defmodule Ch.Connection do
   @spec request(conn, binary, binary, Mint.Types.headers(), iodata, [Ch.query_option()]) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
-          | {:disconnect, Mint.Types.error(), conn}
+          | {:disconnect, Error.t() | Mint.Types.error(), conn}
   defp request(conn, method, path, headers, body, opts) do
     with {:ok, conn, _ref} <- send_request(conn, method, path, headers, body) do
       receive_full_response(conn, timeout(conn, opts))
@@ -373,7 +373,7 @@ defmodule Ch.Connection do
   @spec request_chunked(conn, binary, binary, Mint.Types.headers(), Enumerable.t(), Keyword.t()) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
-          | {:disconnect, Mint.Types.error(), conn}
+          | {:disconnect, Error.t() | Mint.Types.error(), conn}
   def request_chunked(conn, method, path, headers, stream, opts) do
     with {:ok, conn, ref} <- send_request(conn, method, path, headers, :stream),
          {:ok, conn} <- stream_body(conn, ref, stream),
