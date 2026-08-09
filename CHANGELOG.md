@@ -6,7 +6,7 @@
 - Fix malformed pre-epoch fractional `DateTime` query parameter encoding. https://github.com/plausible/ch/pull/409
 - Fix RowBinary `DateTime` encoding to reject timestamps outside the supported Unix timestamp range. https://github.com/plausible/ch/pull/419
 - Speed up RowBinary decoding for timezone-less `DateTime`/`DateTime64` and `Time64` values by constructing naive temporal values directly. https://github.com/plausible/ch/pull/398
-- Fix RowBinary encoding for timezone-qualified `DateTime` and `DateTime64` values with non-UTC timezones. https://github.com/plausible/ch/pull/359
+- Allow RowBinary encoding for timezone-qualified `DateTime` and `DateTime64` values with non-UTC timezones. https://github.com/plausible/ch/pull/359
 
 ## 0.9.0 (2026-08-08)
 
