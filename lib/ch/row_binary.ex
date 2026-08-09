@@ -347,11 +347,11 @@ defmodule Ch.RowBinary do
 
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     {seconds, _micros} = NaiveDateTime.to_gregorian_seconds(datetime)
-    <<seconds - @epoch_gregorian_seconds::32-little>>
+    encode_datetime(seconds - @epoch_gregorian_seconds, datetime)
   end
 
   def encode(:datetime, %DateTime{} = datetime) do
-    <<DateTime.to_unix(datetime, :second)::32-little>>
+    datetime |> DateTime.to_unix(:second) |> encode_datetime(datetime)
   end
 
   def encode(:datetime, nil), do: <<0::32>>
@@ -484,6 +484,18 @@ defmodule Ch.RowBinary do
       e -> [0, e]
     end
   end
+
+  @compile inline: [encode_datetime: 2]
+  defp encode_datetime(seconds, datetime) when seconds < 0 do
+    raise ArgumentError, "cannot encode #{datetime} as DateTime since it's before Unix epoch"
+  end
+
+  defp encode_datetime(seconds, datetime) when seconds > 0xFFFFFFFF do
+    raise ArgumentError,
+          "cannot encode #{datetime} as DateTime since it's after the maximum Unix timestamp"
+  end
+
+  defp encode_datetime(seconds, _datetime), do: <<seconds::32-little>>
 
   defp encode_varint_cont(i) when i < 128, do: <<i>>
 
