@@ -309,7 +309,3 @@ Ch.query!(pid, "INSERT INTO ch_datetimes(name, datetime) FORMAT RowBinary", rows
 } =
   Ch.query!(pid, "SELECT name, CAST(datetime as DateTime('UTC')) FROM ch_datetimes")
 ```
-
-## [Benchmarks](./bench)
-
-See [GitHub Pages](https://plausible.github.io/ch/dev/bench/) for latest results.
