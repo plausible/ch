@@ -134,6 +134,35 @@ defmodule Ch.RowBinaryTest do
                    fn -> encode(:datetime, ~U[2106-02-07 06:28:16Z]) end
     end
 
+    test "timezone-qualified encoding types" do
+      assert encoding_types([{:datetime, "UTC"}]) == [{:datetime, "UTC"}]
+      assert encoding_types([{:datetime, "Europe/Vienna"}]) == [{:datetime, "Europe/Vienna"}]
+      assert encoding_types([{:datetime64, 3, "UTC"}]) == [{:datetime64, 1000, "UTC"}]
+
+      assert encoding_types([{:datetime64, 3, "Europe/Vienna"}]) ==
+               [{:datetime64, 1000, "Europe/Vienna"}]
+    end
+
+    test "timezone-qualified datetime encodes naive values in the annotated timezone" do
+      types = ["DateTime('Europe/Vienna')", "DateTime64(3, 'Europe/Vienna')"]
+
+      rows = [
+        [~N[2022-01-01 12:00:00], ~N[2022-07-01 12:00:00.123456]],
+        [~U[2022-01-01 12:00:00Z], ~U[2022-07-01 12:00:00.123456Z]]
+      ]
+
+      assert rows |> encode_rows(types) |> byte_by_byte(types) == [
+               [
+                 DateTime.from_naive!(~N[2022-01-01 12:00:00], "Europe/Vienna"),
+                 DateTime.from_naive!(~N[2022-07-01 12:00:00.123], "Europe/Vienna")
+               ],
+               [
+                 DateTime.shift_zone!(~U[2022-01-01 12:00:00Z], "Europe/Vienna"),
+                 DateTime.shift_zone!(~U[2022-07-01 12:00:00.123Z], "Europe/Vienna")
+               ]
+             ]
+    end
+
     test "decimal" do
       type = {:decimal32, _scale = 4}
       assert encode(type, Decimal.new("2")) == <<20000::32-little>>
@@ -179,7 +208,12 @@ defmodule Ch.RowBinaryTest do
       assert encode(:date, nil) == <<0, 0>>
       assert encode(:date32, nil) == <<0, 0, 0, 0>>
       assert encode(:datetime, nil) == <<0, 0, 0, 0>>
+      assert encode({:datetime, "Europe/Vienna"}, nil) == <<0, 0, 0, 0>>
       assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+
+      assert encode({:datetime64, :microsecond, "Europe/Vienna"}, nil) ==
+               <<0, 0, 0, 0, 0, 0, 0, 0>>
+
       assert encode(:uuid, nil) == <<0::128>>
       assert encode({:decimal32, _scale = 4}, nil) == <<0::32>>
       assert encode({:decimal64, _scale = 4}, nil) == <<0::64>>
