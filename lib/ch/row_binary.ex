@@ -534,7 +534,7 @@ defmodule Ch.RowBinary do
     try do
       encode(type, value)
     else
-      encoded -> [idx | encoded]
+      encoded -> [idx, encoded]
     rescue
       _e -> try_encode_variant(types, idx + 1, value)
     end

@@ -5,6 +5,10 @@ defmodule Ch.RowBinaryTest do
   import Ch.RowBinary
   import Bitwise
 
+  defp encode_to_binary(type, value) do
+    type |> encode(value) |> IO.iodata_to_binary()
+  end
+
   test "encode -> decode" do
     spec = [
       {:string, ""},
@@ -184,10 +188,25 @@ defmodule Ch.RowBinaryTest do
 
     test "map" do
       assert encode({:map, :string, :string}, []) == 0
-      assert IO.iodata_to_binary(encode({:map, :string, :string}, %{})) == <<0>>
+      assert encode_to_binary({:map, :string, :string}, %{}) == <<0>>
 
       assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
                encode({:map, :string, :string}, [{"hello", "world"}])
+    end
+
+    test "variants always produce valid iodata" do
+      cases = [
+        {{:variant, [:string, :u8]}, 7, <<1, 7>>},
+        {{:variant, [:i8]}, 7, <<0, 7>>},
+        {{:variant, [:boolean]}, true, <<0, 1>>},
+        {{:variant, [{:enum8, %{"one" => 1}}]}, "one", <<0, 1>>},
+        {{:variant, [{:array, :u8}]}, [], <<0, 0>>},
+        {{:variant, [{:map, :u8, :u8}]}, [], <<0, 0>>}
+      ]
+
+      for {type, value, expected} <- cases do
+        assert encode_to_binary(type, value) == expected
+      end
     end
 
     test "tuple with normalized nested types round-trips" do

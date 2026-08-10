@@ -9,6 +9,7 @@
 - Speed up RowBinary decoding for timezone-less `DateTime`/`DateTime64` and `Time64` values by constructing naive temporal values directly. https://github.com/plausible/ch/pull/398
 - Allow RowBinary encoding for timezone-qualified `DateTime` and `DateTime64` values with non-UTC timezones. https://github.com/plausible/ch/pull/359
 - Fix RowBinary tuple encoding re-normalizing nested types https://github.com/plausible/ch/pull/378
+- Fix RowBinary `Variant` encoding producing invalid iodata for byte-sized and empty values. https://github.com/plausible/ch/pull/423
 
 ## 0.9.0 (2026-08-08)
 
