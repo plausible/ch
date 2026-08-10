@@ -142,6 +142,36 @@ defmodule Ch.RowBinaryTest do
       assert encode(type, Decimal.new("2.66666")) == <<26667::32-little>>
     end
 
+    test "decimal accepts storage boundaries" do
+      for size <- [32, 64, 128, 256] do
+        type = {:"decimal#{size}", _scale = 0}
+        # Smallest and largest signed integers representable by this decimal's storage width.
+        min = -(1 <<< (size - 1))
+        max = (1 <<< (size - 1)) - 1
+
+        assert encode(type, Decimal.new(min)) == <<min::size(size)-little-signed>>
+        assert encode(type, Decimal.new(max)) == <<max::size(size)-little-signed>>
+      end
+    end
+
+    test "decimal rejects values outside storage boundaries" do
+      for size <- [32, 64, 128, 256] do
+        type = {:"decimal#{size}", _scale = 0}
+        # Smallest and largest signed integers representable by this decimal's storage width.
+        min = -(1 <<< (size - 1))
+        max = (1 <<< (size - 1)) - 1
+
+        assert_raise ArgumentError, fn -> encode(type, Decimal.new(min - 1)) end
+        assert_raise ArgumentError, fn -> encode(type, Decimal.new(max + 1)) end
+      end
+
+      assert_raise ArgumentError, fn ->
+        encode({:decimal32, 1}, Decimal.new("214748364.75"))
+      end
+
+      assert_raise ArgumentError, fn -> encode({:decimal, 9, 0}, Decimal.new("4294967296")) end
+    end
+
     test "uuid" do
       uuid = <<210, 189, 94, 201, 253, 197, 165, 63, 50, 181, 232, 82, 246, 58, 95, 9>>
 
