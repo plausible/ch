@@ -337,25 +337,20 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp encode_param(%NaiveDateTime{} = naive), do: NaiveDateTime.to_iso8601(naive)
   defp encode_param(%Time{} = time), do: Time.to_iso8601(time)
 
-  defp encode_param(%DateTime{microsecond: microsecond} = dt) do
-    dt = DateTime.shift_zone!(dt, "Etc/UTC")
+  defp encode_param(%DateTime{microsecond: {_value, precision}} = dt) when precision > 0 do
+    unix = DateTime.to_unix(dt, Integer.pow(10, precision))
+    sign = if unix < 0, do: -1, else: 1
 
-    case microsecond do
-      {val, precision} when val > 0 and precision > 0 ->
-        size = Integer.pow(10, precision)
-        unix = DateTime.to_unix(dt, size)
-        seconds = div(unix, size)
-        fractional = rem(unix, size)
+    sign
+    |> Decimal.new(abs(unix), -precision)
+    |> Decimal.to_string(:normal)
+  end
 
-        IO.iodata_to_binary([
-          Integer.to_string(seconds),
-          ?.,
-          String.pad_leading(Integer.to_string(fractional), precision, "0")
-        ])
-
-      _ ->
-        dt |> DateTime.to_unix(:second) |> Integer.to_string()
-    end
+  defp encode_param(%DateTime{} = dt) do
+    # Padding needed for small values: https://github.com/ClickHouse/ClickHouse/issues/64708
+    dt = DateTime.to_unix(dt, :second)
+    unsigned = dt |> abs() |> Integer.to_string() |> String.pad_leading(5, "0")
+    if dt < 0, do: "-" <> unsigned, else: unsigned
   end
 
   defp encode_param(tuple) when is_tuple(tuple) do

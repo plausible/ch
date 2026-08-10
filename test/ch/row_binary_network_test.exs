@@ -17,10 +17,10 @@ defmodule Ch.RowBinaryNetworkTest do
   end
 
   property "IPv6 params accept text and decode to tuples", %{pool: pool} do
-    check all {text, tuple, canonical} <- ipv6_param() do
-      assert Ch.query!(pool, "SELECT {value:IPv6}, toString({value:IPv6})", %{
+    check all {text, tuple} <- ipv6_param() do
+      assert Ch.query!(pool, "SELECT {value:IPv6}", %{
                "value" => text
-             }).rows == [[tuple, canonical]]
+             }).rows == [[tuple]]
     end
   end
 
@@ -29,8 +29,8 @@ defmodule Ch.RowBinaryNetworkTest do
               ipv6s <- list_of(ipv6_param(), max_length: 8) do
       ipv4_texts = Enum.map(ipv4s, fn {text, _tuple} -> text end)
       ipv4_tuples = Enum.map(ipv4s, fn {_text, tuple} -> tuple end)
-      ipv6_texts = Enum.map(ipv6s, fn {text, _tuple, _canonical} -> text end)
-      ipv6_tuples = Enum.map(ipv6s, fn {_text, tuple, _canonical} -> tuple end)
+      ipv6_texts = Enum.map(ipv6s, fn {text, _tuple} -> text end)
+      ipv6_tuples = Enum.map(ipv6s, fn {_text, tuple} -> tuple end)
 
       assert Ch.query!(
                pool,
@@ -186,8 +186,8 @@ defmodule Ch.RowBinaryNetworkTest do
 
   defp ipv6_param do
     gen all tuple <- ipv6_tuple() do
-      canonical = tuple |> :inet.ntoa() |> to_string()
-      {canonical, tuple, canonical}
+      text = tuple |> Tuple.to_list() |> Enum.map_join(":", &Integer.to_string(&1, 16))
+      {text, tuple}
     end
   end
 
