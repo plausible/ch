@@ -10,6 +10,13 @@ defmodule Ch.EctoTypeTest do
       assert {:parameterized, {Ch, :string}} = Ecto.ParameterizedType.init(Ch, type: "String")
     end
 
+    test "with decoded :type" do
+      assert {:parameterized, {Ch, :string}} = Ecto.ParameterizedType.init(Ch, type: :string)
+
+      assert {:parameterized, {Ch, {:array, :u256}}} =
+               Ecto.ParameterizedType.init(Ch, type: {:array, :u256})
+    end
+
     test "with :raw" do
       assert {:parameterized, {Ch, :string}} = Ecto.ParameterizedType.init(Ch, raw: "String")
     end

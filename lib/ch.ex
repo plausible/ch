@@ -180,7 +180,11 @@ defmodule Ch do
         opts[:raw] || opts[:type] ||
           raise ArgumentError, "keys :raw or :type not found in: #{inspect(opts)}"
 
-      Ch.Types.decode(clickhouse_type)
+      case clickhouse_type do
+        type when is_binary(type) -> Ch.Types.decode(type)
+        type when is_atom(type) or is_tuple(type) -> type
+        type -> raise ArgumentError, "invalid ClickHouse type: #{inspect(type)}"
+      end
     end
 
     @impl Ecto.ParameterizedType
@@ -228,8 +232,7 @@ defmodule Ch do
     end
 
     def cast(value, {:array, type}) do
-      encoded_type = type |> Ch.Types.encode() |> IO.iodata_to_binary()
-      parameterized_type = Ecto.ParameterizedType.init(__MODULE__, type: encoded_type)
+      parameterized_type = Ecto.ParameterizedType.init(__MODULE__, type: type)
 
       Ecto.Type.cast({:array, parameterized_type}, value)
     end
