@@ -444,7 +444,11 @@ defmodule Ch.Connection do
     end
   end
 
-  for tag <- [:data, :status, :headers] do
+  defp handle_all_responses([{:status, _ref, status} | rest], _acc) do
+    handle_all_responses(rest, [status])
+  end
+
+  for tag <- [:data, :headers] do
     defp handle_all_responses([{unquote(tag), _ref, data} | rest], acc) do
       handle_all_responses(rest, [data | acc])
     end
