@@ -12,3 +12,9 @@ services:
     tmpfs:
       - /var/lib/clickhouse:size=1G
       - /var/log/clickhouse-server:size=100M
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    ports:
+      - 8474:8474
+      # Open several ports so tests can each create an isolated proxy.
+      - 8475-8480:8475-8480

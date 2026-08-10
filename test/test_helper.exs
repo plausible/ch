@@ -48,4 +48,6 @@ extra_exclude =
       [:time, :variant, :json, :dynamic]
   end
 
+Ch.Test.setup_toxiproxy_counter()
+
 ExUnit.start(exclude: [:slow | extra_exclude])

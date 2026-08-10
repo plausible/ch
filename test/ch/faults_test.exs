@@ -545,6 +545,40 @@ defmodule Ch.FaultsTest do
     end
   end
 
+  describe "toxiproxy" do
+    test "recovers in-flight queries across repeated proxy outages", %{
+      query_options: query_options
+    } do
+      proxy = Ch.Test.create_toxiproxy("clickhouse:8123")
+
+      {:ok, conn} =
+        Ch.start_link(
+          port: proxy.port,
+          backoff_min: 0,
+          connection_listeners: [self()]
+        )
+
+      assert_receive {:connected, connection}, 5_000
+
+      Enum.reduce(
+        [{"select 2 + 2", 4}, {"select 3 + 3", 6}],
+        connection,
+        fn {sql, expected}, connection ->
+          Ch.Test.toxiproxy_down(proxy)
+          query = Task.async(fn -> Ch.query(conn, sql, [], query_options) end)
+
+          assert_receive {:disconnected, ^connection}, 5_000
+
+          Ch.Test.toxiproxy_up(proxy)
+          assert_receive {:connected, next_connection}, 5_000
+
+          assert {:ok, %Result{rows: [[^expected]]}} = Task.await(query, 5_000)
+          next_connection
+        end
+      )
+    end
+  end
+
   defp first_byte(binary) do
     :binary.part(binary, 0, 1)
   end

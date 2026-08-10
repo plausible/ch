@@ -1,6 +1,8 @@
 defmodule Ch.Test do
   @moduledoc false
 
+  @toxiproxy_counter {__MODULE__, :toxiproxy_counter}
+
   def database, do: Application.fetch_env!(:ch, :database)
 
   # makes a query in a short lived process so that pool automatically exits once finished
@@ -40,6 +42,66 @@ defmodule Ch.Test do
       params,
       parameterize_query_options(ctx, options)
     )
+  end
+
+  def setup_toxiproxy_counter do
+    :persistent_term.put(@toxiproxy_counter, :atomics.new(1, signed: false))
+  end
+
+  def create_toxiproxy(upstream) do
+    index =
+      @toxiproxy_counter
+      |> :persistent_term.get()
+      |> :atomics.add_get(1, 1)
+
+    name = "ch_test-#{index}"
+    port = 8474 + index
+
+    toxiproxy(:post, "/proxies", %{
+      "name" => name,
+      "listen" => "0.0.0.0:#{port}",
+      "upstream" => upstream,
+      "enabled" => true
+    })
+
+    ExUnit.Callbacks.on_exit(fn -> toxiproxy(:delete, "/proxies/#{name}") end)
+    %{name: name, port: port}
+  end
+
+  def toxiproxy_up(%{name: name}) do
+    toxiproxy(:post, "/proxies/#{name}", %{"enabled" => true})
+  end
+
+  def toxiproxy_down(%{name: name}) do
+    toxiproxy(:post, "/proxies/#{name}", %{"enabled" => false})
+  end
+
+  def toxiproxy(method, path, data \\ nil) do
+    url = ~c"http://localhost:8474#{path}"
+
+    request =
+      if data do
+        {url, [], ~c"application/json", Jason.encode!(data)}
+      else
+        {url, []}
+      end
+
+    case :httpc.request(method, request, [], body_format: :binary) do
+      {:ok, {{_version, status, _reason}, _headers, _body}} when status in 200..299 ->
+        :ok
+
+      {:ok, {{_version, status, _reason}, _headers, body}} ->
+        raise "unexpected status #{status} from Toxiproxy: #{body}"
+
+      {:error, reason} ->
+        raise """
+        Toxiproxy request failed: #{inspect(reason)}
+
+        Please start it with:
+
+            docker compose up -d toxiproxy
+        """
+    end
   end
 
   # TODO packet: :http?

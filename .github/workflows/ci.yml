@@ -52,6 +52,11 @@ jobs:
             --health-interval 10s
             --health-timeout 5s
             --health-retries 5
+      toxiproxy:
+        image: ghcr.io/shopify/toxiproxy:2.12.0
+        ports:
+          - 8474:8474
+          - 8475-8480:8475-8480
 
     steps:
       - uses: actions/checkout@v7
