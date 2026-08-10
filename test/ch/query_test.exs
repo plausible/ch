@@ -535,6 +535,66 @@ defmodule Ch.QueryTest do
       assert {:error, %Ch.Error{code: 62}} = Ch.query(conn, "wat", [], query_options)
     end
 
+    test "mixed-case x-clickhouse-format overrides the default", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      for header_name <- [
+            "x-clickhouse-format",
+            "X-ClickHouse-Format",
+            "x-ClIcKhOuSe-FoRmAt"
+          ] do
+        result =
+          Ch.query!(
+            conn,
+            "SELECT 1",
+            [],
+            Keyword.merge(query_options, headers: [{header_name, "CSV"}])
+          )
+
+        assert IO.iodata_to_binary(result.data) == "1\n"
+        assert result.columns == nil
+        assert :proplists.get_value("x-clickhouse-format", result.headers) == "CSV"
+      end
+    end
+
+    test "mixed-case user-agent overrides the default", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      assert %Ch.Result{rows: [["custom-agent/ABC"]]} =
+               Ch.query!(
+                 conn,
+                 "SELECT getClientHTTPHeader('user-agent')",
+                 [],
+                 Keyword.merge(query_options,
+                   headers: [{"User-Agent", "custom-agent/ABC"}],
+                   settings: [allow_get_client_http_header: 1]
+                 )
+               )
+    end
+
+    test "first x-clickhouse-format header wins regardless of case", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      result =
+        Ch.query!(
+          conn,
+          "SELECT 1",
+          [],
+          Keyword.merge(query_options,
+            headers: [
+              {"X-ClickHouse-Format", "CSV"},
+              {"x-clickhouse-format", "JSONEachRow"}
+            ]
+          )
+        )
+
+      assert IO.iodata_to_binary(result.data) == "1\n"
+      assert :proplists.get_value("x-clickhouse-format", result.headers) == "CSV"
+    end
+
     test "handles ClickHouse 100 Continue response", %{
       conn: conn,
       query_options: query_options
