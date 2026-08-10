@@ -228,7 +228,10 @@ defmodule Ch do
     end
 
     def cast(value, {:array, type}) do
-      Ecto.Type.cast({:array, {:parameterized, {__MODULE__, type}}}, value)
+      encoded_type = type |> Ch.Types.encode() |> IO.iodata_to_binary()
+      parameterized_type = Ecto.ParameterizedType.init(__MODULE__, type: encoded_type)
+
+      Ecto.Type.cast({:array, parameterized_type}, value)
     end
 
     def cast(value, {:nullable, type}), do: cast(value, type)
