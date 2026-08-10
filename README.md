@@ -264,7 +264,8 @@ Decoding non-UTC datetimes like `DateTime('Asia/Taipei')` requires a [timezone d
 Encoding a `NaiveDateTime` for a timezone-qualified type does too.
 
 A naive value is interpreted as local time in the type's timezone. An aware `DateTime` always
-preserves its Unix instant. Ambiguous or nonexistent local times raise an error.
+preserves its Unix instant. Naive local times that fall within daylight-saving gaps or overlaps
+cannot be resolved unambiguously and raise an error.
 
 ```elixir
 Mix.install([:ch, :tz])
