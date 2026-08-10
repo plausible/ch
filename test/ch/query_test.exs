@@ -535,6 +535,21 @@ defmodule Ch.QueryTest do
       assert {:error, %Ch.Error{code: 62}} = Ch.query(conn, "wat", [], query_options)
     end
 
+    test "handles ClickHouse 100 Continue response", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      opts = Keyword.merge(query_options, headers: [{"expect", "100-continue"}])
+
+      assert {:ok, %Ch.Result{rows: [[1]], headers: headers_continue}} =
+               Ch.query(conn, "SELECT 1", [], opts)
+
+      assert {:ok, %Ch.Result{rows: [[1]], headers: headers_normal}} =
+               Ch.query(conn, "SELECT 1", [], query_options)
+
+      assert :proplists.get_keys(headers_continue) == :proplists.get_keys(headers_normal)
+    end
+
     test "connection works after failure in execute", %{conn: conn, query_options: query_options} do
       assert {:error, %Ch.Error{}} = Ch.query(conn, "wat", [], query_options)
       assert [[42]] = Ch.query!(conn, "SELECT 42", [], query_options).rows
