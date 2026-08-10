@@ -277,14 +277,16 @@ defmodule Ch.RowBinary do
     type = :"decimal#{size}"
 
     def encode({unquote(type), scale} = t, %Decimal{sign: sign, coef: coef, exp: exp} = d) do
+      # RowBinary stores decimals as signed scaled integers. Use the corresponding integer
+      # encoder so coefficients that exceed the storage width are rejected instead of truncated.
       cond do
         scale == -exp ->
           i = sign * coef
-          <<i::unquote(size)-little>>
+          encode(unquote(:"i#{size}"), i)
 
         exp >= 0 ->
           i = sign * coef * Integer.pow(10, exp + scale)
-          <<i::unquote(size)-little>>
+          encode(unquote(:"i#{size}"), i)
 
         true ->
           encode(t, Decimal.round(d, scale))
