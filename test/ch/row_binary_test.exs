@@ -1,5 +1,6 @@
 defmodule Ch.RowBinaryTest do
   use ExUnit.Case, async: true
+  use ExUnitProperties
   doctest Ch.RowBinary, import: true
   import Ch.RowBinary
   import Bitwise
@@ -105,12 +106,70 @@ defmodule Ch.RowBinaryTest do
   end
 
   describe "encode/2" do
+    test "datetime accepts UInt32 Unix timestamp boundaries" do
+      assert encode(:datetime, ~N[1970-01-01 00:00:00]) == <<0::32-little>>
+      assert encode(:datetime, ~U[1970-01-01 00:00:00Z]) == <<0::32-little>>
+
+      assert encode(:datetime, ~N[2106-02-07 06:28:15]) == <<0xFFFFFFFF::32-little>>
+      assert encode(:datetime, ~U[2106-02-07 06:28:15Z]) == <<0xFFFFFFFF::32-little>>
+    end
+
+    test "datetime rejects values before the Unix epoch" do
+      assert_raise ArgumentError,
+                   "cannot encode 1969-12-31 23:59:59 as DateTime since it's before Unix epoch",
+                   fn -> encode(:datetime, ~N[1969-12-31 23:59:59]) end
+
+      assert_raise ArgumentError,
+                   "cannot encode 1969-12-31 23:59:59Z as DateTime since it's before Unix epoch",
+                   fn -> encode(:datetime, ~U[1969-12-31 23:59:59Z]) end
+    end
+
+    test "datetime rejects values after the maximum Unix timestamp" do
+      assert_raise ArgumentError,
+                   "cannot encode 2106-02-07 06:28:16 as DateTime since it's after the maximum Unix timestamp",
+                   fn -> encode(:datetime, ~N[2106-02-07 06:28:16]) end
+
+      assert_raise ArgumentError,
+                   "cannot encode 2106-02-07 06:28:16Z as DateTime since it's after the maximum Unix timestamp",
+                   fn -> encode(:datetime, ~U[2106-02-07 06:28:16Z]) end
+    end
+
     test "decimal" do
       type = {:decimal32, _scale = 4}
       assert encode(type, Decimal.new("2")) == <<20000::32-little>>
       assert encode(type, Decimal.new("2.66")) == <<26600::32-little>>
       assert encode(type, Decimal.new("2.6666")) == <<26666::32-little>>
       assert encode(type, Decimal.new("2.66666")) == <<26667::32-little>>
+    end
+
+    test "decimal accepts storage boundaries" do
+      for size <- [32, 64, 128, 256] do
+        type = {:"decimal#{size}", _scale = 0}
+        # Smallest and largest signed integers representable by this decimal's storage width.
+        min = -(1 <<< (size - 1))
+        max = (1 <<< (size - 1)) - 1
+
+        assert encode(type, Decimal.new(min)) == <<min::size(size)-little-signed>>
+        assert encode(type, Decimal.new(max)) == <<max::size(size)-little-signed>>
+      end
+    end
+
+    test "decimal rejects values outside storage boundaries" do
+      for size <- [32, 64, 128, 256] do
+        type = {:"decimal#{size}", _scale = 0}
+        # Smallest and largest signed integers representable by this decimal's storage width.
+        min = -(1 <<< (size - 1))
+        max = (1 <<< (size - 1)) - 1
+
+        assert_raise ArgumentError, fn -> encode(type, Decimal.new(min - 1)) end
+        assert_raise ArgumentError, fn -> encode(type, Decimal.new(max + 1)) end
+      end
+
+      assert_raise ArgumentError, fn ->
+        encode({:decimal32, 1}, Decimal.new("214748364.75"))
+      end
+
+      assert_raise ArgumentError, fn -> encode({:decimal, 9, 0}, Decimal.new("4294967296")) end
     end
 
     test "uuid" do
@@ -129,6 +188,16 @@ defmodule Ch.RowBinaryTest do
 
       assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
                encode({:map, :string, :string}, [{"hello", "world"}])
+    end
+
+    test "tuple with normalized nested types round-trips" do
+      dt = ~U[2026-01-02 03:04:05.123Z]
+      encoded = IO.iodata_to_binary(encode_rows([[{dt}]], ["Tuple(DateTime64(3, 'UTC'))"]))
+      assert decode_rows(encoded, ["Tuple(DateTime64(3, 'UTC'))"]) == [[{dt}]]
+
+      time = ~T[03:04:05.123456]
+      encoded = IO.iodata_to_binary(encode_rows([[{time}]], ["Tuple(Time64(6))"]))
+      assert decode_rows(encoded, ["Tuple(Time64(6))"]) == [[{time}]]
     end
 
     test "nil" do
@@ -150,7 +219,12 @@ defmodule Ch.RowBinaryTest do
       assert encode(:date, nil) == <<0, 0>>
       assert encode(:date32, nil) == <<0, 0, 0, 0>>
       assert encode(:datetime, nil) == <<0, 0, 0, 0>>
+      assert encode({:datetime, "Europe/Vienna"}, nil) == <<0, 0, 0, 0>>
       assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+
+      assert encode({:datetime64, :microsecond, "Europe/Vienna"}, nil) ==
+               <<0, 0, 0, 0, 0, 0, 0, 0>>
+
       assert encode(:uuid, nil) == <<0::128>>
       assert encode({:decimal32, _scale = 4}, nil) == <<0::32>>
       assert encode({:decimal64, _scale = 4}, nil) == <<0::64>>
@@ -604,6 +678,14 @@ defmodule Ch.RowBinaryTest do
              ]
     end
 
+    property "naive datetime matches Unix conversion" do
+      check all seconds <- uint32_seconds() do
+        expected = seconds |> DateTime.from_unix!() |> DateTime.to_naive()
+
+        assert decode_rows(<<seconds::32-little>>, ["DateTime"]) == [[expected]]
+      end
+    end
+
     test "datetime64" do
       types = [
         "DateTime64(0)",
@@ -649,6 +731,24 @@ defmodule Ch.RowBinaryTest do
                  DateTime.new!(~D[2042-12-31], ~T[23:59:59.987654], "Asia/Tokyo")
                ]
              ]
+    end
+
+    test "datetime64 before the Unix epoch" do
+      assert decode_rows(<<-1::64-little-signed>>, ["DateTime64(3)"]) ==
+               [[~N[1969-12-31 23:59:59.999]]]
+
+      assert decode_rows(<<-1::64-little-signed>>, ["DateTime64(9)"]) ==
+               [[~N[1969-12-31 23:59:59.999999]]]
+    end
+
+    property "naive datetime64 matches Unix conversion across all precisions" do
+      check all {precision, ticks} <- datetime64_ticks(), max_runs: 250 do
+        time_unit = Integer.pow(10, precision)
+        type = "DateTime64(#{precision})"
+        expected = ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_naive()
+
+        assert decode_rows(<<ticks::64-little-signed>>, [type]) == [[expected]]
+      end
     end
 
     test "integers" do
@@ -801,6 +901,31 @@ defmodule Ch.RowBinaryTest do
                [long_string, long_binary],
                [long_string <> "b", long_binary <> <<0xB>>]
              ]
+    end
+  end
+
+  defp uint32_seconds do
+    one_of([
+      member_of([0, 1, 86_399, 86_400, 0xFFFFFFFF]),
+      integer(0..0xFFFFFFFF)
+    ])
+  end
+
+  defp datetime64_ticks do
+    gen all precision <- integer(0..9),
+            seconds <-
+              one_of([
+                member_of([-2_208_988_800, -2, -1, 0, 1, 4_102_444_800]),
+                integer(-2_208_988_800..4_102_444_800)
+              ]),
+            nanoseconds <-
+              one_of([
+                member_of([0, 1, 999, 1_000, 999_999, 1_000_000, 999_999_999]),
+                integer(0..999_999_999)
+              ]) do
+      time_unit = Integer.pow(10, precision)
+      ticks = seconds * time_unit + div(nanoseconds * time_unit, 1_000_000_000)
+      {precision, ticks}
     end
   end
 end

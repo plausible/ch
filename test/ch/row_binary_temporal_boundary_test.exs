@@ -30,11 +30,14 @@ defmodule Ch.RowBinaryTemporalBoundaryTest do
              [[DateTime.to_naive(max_datetime)]]
 
     for datetime <- [DateTime.from_unix!(-1), DateTime.from_unix!(max_seconds + 1)] do
-      assert_raise ArgumentError, ~r/out of range/, fn ->
+      message =
+        ~r/cannot encode .* as DateTime since it's (before Unix epoch|after the maximum Unix timestamp)/
+
+      assert_raise ArgumentError, message, fn ->
         RowBinary.encode(:datetime, datetime)
       end
 
-      assert_raise ArgumentError, ~r/out of range/, fn ->
+      assert_raise ArgumentError, message, fn ->
         RowBinary.encode(:datetime, DateTime.to_naive(datetime))
       end
     end

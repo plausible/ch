@@ -18,7 +18,7 @@ defmodule Ch.TimeIntegrationTest do
   property "Time64 params round-trip through ClickHouse at their declared precision", %{
     pool: pool
   } do
-    check all precision <- integer(0..6),
+    check all precision <- integer(0..9),
               time <- time_gen() do
       assert Ch.query!(pool, "SELECT {value:Time64(#{precision})}", %{"value" => time}).rows ==
                [[truncate_time(time, precision)]]
@@ -75,6 +75,7 @@ defmodule Ch.TimeIntegrationTest do
   end
 
   defp truncate_time(time, precision) do
+    precision = min(precision, 6)
     {microsecond, _} = time.microsecond
 
     microsecond =

@@ -3,6 +3,8 @@ defmodule Ch.TimezoneTest do
     async: true,
     parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
 
+  use ExUnitProperties
+
   import Ch.Test, only: [parameterize_query!: 2, parameterize_query!: 3]
 
   test "session timezone is reported by ClickHouse", ctx do
@@ -59,6 +61,19 @@ defmodule Ch.TimezoneTest do
            ).rows == [[~N[2022-01-01 03:00:00.123], "2022-01-01 12:00:00.123"]]
   end
 
+  property "naive datetime64 params round-trip through ClickHouse", ctx do
+    ctx = setup_conn(ctx, "UTC")
+
+    check all precision <- integer(0..9),
+              datetime <- naive_datetime_gen() do
+      assert parameterize_query!(
+               ctx,
+               "SELECT {$0:DateTime64(#{precision})}",
+               [datetime]
+             ).rows == [[truncate_naive_datetime(datetime, precision)]]
+    end
+  end
+
   test "array datetime params use the session timezone", ctx do
     ctx = setup_conn(ctx, "Asia/Kathmandu")
 
@@ -109,5 +124,30 @@ defmodule Ch.TimezoneTest do
       )
 
     Map.put(ctx, :conn, conn)
+  end
+
+  defp naive_datetime_gen do
+    gen all seconds <-
+              one_of([
+                member_of([-2_208_988_800, -2, -1, 0, 1, 4_102_444_800]),
+                integer(-2_208_988_800..4_102_444_800)
+              ]),
+            microsecond <-
+              one_of([
+                member_of([0, 1, 999, 1_000, 999_999]),
+                integer(0..999_999)
+              ]) do
+      seconds
+      |> DateTime.from_unix!()
+      |> DateTime.to_naive()
+      |> NaiveDateTime.add(microsecond, :microsecond)
+    end
+  end
+
+  defp truncate_naive_datetime(datetime, precision) do
+    precision = min(precision, 6)
+    {microsecond, _precision} = datetime.microsecond
+    scale = Integer.pow(10, 6 - precision)
+    %{datetime | microsecond: {div(microsecond, scale) * scale, precision}}
   end
 end

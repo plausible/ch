@@ -182,6 +182,58 @@ defmodule Ch.ConnectionTest do
     assert result["vienna"] == ~U[2024-12-21 05:35:19Z]
   end
 
+  test "timezone-qualified datetime rowbinary encoding", ctx do
+    parameterize_query!(
+      ctx,
+      """
+      create table ch_timezone_qualified_datetimes(
+        name String,
+        datetime DateTime('Europe/Vienna'),
+        datetime64 DateTime64(3, 'Europe/Vienna')
+      ) engine Memory
+      """
+    )
+
+    on_exit(fn -> Ch.Test.query("drop table ch_timezone_qualified_datetimes") end)
+
+    winter = ~N[2022-01-01 12:00:00.123456]
+    summer = ~N[2022-07-01 12:00:00.123456]
+    utc = ~U[2022-07-01 12:00:00.123456Z]
+    tokyo = DateTime.shift_zone!(utc, "Asia/Tokyo")
+
+    parameterize_query!(
+      ctx,
+      "insert into ch_timezone_qualified_datetimes format RowBinary",
+      [["winter", winter, winter], ["summer", summer, summer], ["aware", tokyo, tokyo]],
+      types: ["String", "DateTime('Europe/Vienna')", "DateTime64(3, 'Europe/Vienna')"]
+    )
+
+    assert parameterize_query!(
+             ctx,
+             """
+             select name, toUnixTimestamp(datetime), toUnixTimestamp64Milli(datetime64)
+             from ch_timezone_qualified_datetimes
+             order by name
+             """
+           ).rows == [
+             ["aware", DateTime.to_unix(utc), DateTime.to_unix(utc, :millisecond)],
+             [
+               "summer",
+               summer |> DateTime.from_naive!("Europe/Vienna") |> DateTime.to_unix(),
+               summer
+               |> DateTime.from_naive!("Europe/Vienna")
+               |> DateTime.to_unix(:millisecond)
+             ],
+             [
+               "winter",
+               winter |> DateTime.from_naive!("Europe/Vienna") |> DateTime.to_unix(),
+               winter
+               |> DateTime.from_naive!("Europe/Vienna")
+               |> DateTime.to_unix(:millisecond)
+             ]
+           ]
+  end
+
   test "utc datetime64 query param encoding", ctx do
     utc = ~U[2021-01-01 12:00:00.123456Z]
     msk = DateTime.new!(~D[2021-01-01], ~T[15:00:00.123456], "Europe/Moscow")

@@ -261,6 +261,11 @@ To get raw binary from `String` columns use `:binary` type that skips UTF-8 chec
 #### Timezones in RowBinary
 
 Decoding non-UTC datetimes like `DateTime('Asia/Taipei')` requires a [timezone database.](https://hexdocs.pm/elixir/DateTime.html#module-time-zone-database)
+Encoding a `NaiveDateTime` for a timezone-qualified type does too.
+
+A naive value is interpreted as local time in the type's timezone. An aware `DateTime` always
+preserves its Unix instant. Naive local times that fall within daylight-saving gaps or overlaps
+cannot be resolved unambiguously and raise an error.
 
 ```elixir
 Mix.install([:ch, :tz])
@@ -309,7 +314,3 @@ Ch.query!(pid, "INSERT INTO ch_datetimes(name, datetime) FORMAT RowBinary", rows
 } =
   Ch.query!(pid, "SELECT name, CAST(datetime as DateTime('UTC')) FROM ch_datetimes")
 ```
-
-## [Benchmarks](./bench)
-
-See [GitHub Pages](https://plausible.github.io/ch/dev/bench/) for latest results.
