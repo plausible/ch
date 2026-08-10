@@ -107,11 +107,7 @@ defmodule Ch.RowBinary do
             ],
        do: t
 
-  defp encoding_type({:datetime = d, "UTC"}), do: d
-
-  defp encoding_type({:datetime, tz}) do
-    raise ArgumentError, "can't encode DateTime with non-UTC timezone: #{inspect(tz)}"
-  end
+  defp encoding_type({:datetime = d, tz}) when is_binary(tz), do: {d, tz}
 
   defp encoding_type({:fixed_string, _len} = t), do: t
 
@@ -156,11 +152,7 @@ defmodule Ch.RowBinary do
 
   defp encoding_type({:datetime64 = t, p}), do: {t, time_unit(p)}
 
-  defp encoding_type({:datetime64 = t, p, "UTC"}), do: {t, time_unit(p)}
-
-  defp encoding_type({:datetime64, _, tz}) do
-    raise ArgumentError, "can't encode DateTime64 with non-UTC timezone: #{inspect(tz)}"
-  end
+  defp encoding_type({:datetime64 = t, p, tz}) when is_binary(tz), do: {t, time_unit(p), tz}
 
   defp encoding_type({:time64 = t, p}), do: {t, time_unit(p)}
 
@@ -358,6 +350,14 @@ defmodule Ch.RowBinary do
 
   def encode(:datetime, nil), do: <<0::32>>
 
+  # RowBinary stores Unix timestamps, so the type timezone only matters when a
+  # naive wall-clock value needs to be resolved to an instant.
+  def encode({:datetime, timezone}, %NaiveDateTime{} = datetime) when is_binary(timezone) do
+    encode(:datetime, DateTime.from_naive!(datetime, timezone))
+  end
+
+  def encode({:datetime, timezone}, value) when is_binary(timezone), do: encode(:datetime, value)
+
   def encode({:datetime64, time_unit}, %NaiveDateTime{} = datetime) do
     {seconds, micros} = NaiveDateTime.to_gregorian_seconds(datetime)
 
@@ -369,6 +369,15 @@ defmodule Ch.RowBinary do
   end
 
   def encode({:datetime64, _time_unit}, nil), do: <<0::64>>
+
+  def encode({:datetime64, time_unit, timezone}, %NaiveDateTime{} = datetime)
+      when is_binary(timezone) do
+    encode({:datetime64, time_unit}, DateTime.from_naive!(datetime, timezone))
+  end
+
+  def encode({:datetime64, time_unit, timezone}, value) when is_binary(timezone) do
+    encode({:datetime64, time_unit}, value)
+  end
 
   def encode(:date, %Date{} = date) do
     <<Date.to_gregorian_days(date) - @epoch_gregorian_days::16-little>>
