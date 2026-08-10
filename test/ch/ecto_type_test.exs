@@ -204,7 +204,6 @@ defmodule Ch.EctoTypeTest do
   end
 
   # TODO check size?
-  # TODO casting from binary wouldn't work for large values of 128 and 256 sized ints
   for size <- [8, 16, 32, 64, 128, 256] do
     for {encoded, decoded} <- [{"Int#{size}", :"i#{size}"}, {"UInt#{size}", :"u#{size}"}] do
       test encoded do
@@ -222,6 +221,22 @@ defmodule Ch.EctoTypeTest do
         assert {:ok, 1} = Ecto.Type.dump(type, 1)
         assert {:ok, 1} = Ecto.Type.load(type, 1)
       end
+    end
+  end
+
+  for {encoded, boundary, value} <- [
+        {"Int128", "minimum", -Bitwise.bsl(1, 127)},
+        {"Int128", "maximum", Bitwise.bsl(1, 127) - 1},
+        {"UInt128", "maximum", Bitwise.bsl(1, 128) - 1},
+        {"Int256", "minimum", -Bitwise.bsl(1, 255)},
+        {"Int256", "maximum", Bitwise.bsl(1, 255) - 1},
+        {"UInt256", "maximum", Bitwise.bsl(1, 256) - 1}
+      ] do
+    test "#{encoded} casts its #{boundary} value from a string" do
+      type = Ecto.ParameterizedType.init(Ch, type: unquote(encoded))
+      value = unquote(value)
+
+      assert {:ok, ^value} = Ecto.Type.cast(type, Integer.to_string(value))
     end
   end
 
