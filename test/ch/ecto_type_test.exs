@@ -10,13 +10,6 @@ defmodule Ch.EctoTypeTest do
       assert {:parameterized, {Ch, :string}} = Ecto.ParameterizedType.init(Ch, type: "String")
     end
 
-    test "with decoded :type" do
-      assert {:parameterized, {Ch, :string}} = Ecto.ParameterizedType.init(Ch, type: :string)
-
-      assert {:parameterized, {Ch, {:array, :u256}}} =
-               Ecto.ParameterizedType.init(Ch, type: {:array, :u256})
-    end
-
     test "with :raw" do
       assert {:parameterized, {Ch, :string}} = Ecto.ParameterizedType.init(Ch, raw: "String")
     end
@@ -252,9 +245,11 @@ defmodule Ch.EctoTypeTest do
     string = Integer.to_string(value)
     type = Ecto.ParameterizedType.init(Ch, type: "UInt256")
     array_type = Ecto.ParameterizedType.init(Ch, type: "Array(UInt256)")
+    nested_array_type = Ecto.ParameterizedType.init(Ch, type: "Array(Array(UInt256))")
 
     assert {:ok, ^value} = Ecto.Type.cast(type, "+" <> string)
     assert {:ok, [^value]} = Ecto.Type.cast(array_type, [string])
+    assert {:ok, [[^value]]} = Ecto.Type.cast(nested_array_type, [[string]])
   end
 
   test "UInt256 rejects unnecessarily large integer strings" do

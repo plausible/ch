@@ -180,11 +180,7 @@ defmodule Ch do
         opts[:raw] || opts[:type] ||
           raise ArgumentError, "keys :raw or :type not found in: #{inspect(opts)}"
 
-      case clickhouse_type do
-        type when is_binary(type) -> Ch.Types.decode(type)
-        type when is_atom(type) or is_tuple(type) -> type
-        type -> raise ArgumentError, "invalid ClickHouse type: #{inspect(type)}"
-      end
+      Ch.Types.decode(clickhouse_type)
     end
 
     @impl Ecto.ParameterizedType
@@ -231,12 +227,7 @@ defmodule Ch do
       end
     end
 
-    def cast(value, {:array, type}) do
-      # Array params contain a decoded Ch type, not an Ecto parameterized type.
-      # Initialize the element so Ecto delegates each value back to Ch.cast/2.
-      parameterized_type = Ecto.ParameterizedType.init(__MODULE__, type: type)
-      Ecto.Type.cast({:array, parameterized_type}, value)
-    end
+    def cast(value, {:array, type}), do: cast_array(value, type)
 
     def cast(value, {:nullable, type}), do: cast(value, type)
     def cast(value, {:low_cardinality, type}), do: cast(value, type)
@@ -316,6 +307,28 @@ defmodule Ch do
     end
 
     defp cast_large_integer(value), do: Ecto.Type.cast(:integer, value)
+
+    defp cast_array(nil, _type), do: {:ok, nil}
+    defp cast_array(values, type), do: cast_array(values, type, 0, [])
+
+    defp cast_array([value | values], type, index, acc) do
+      case cast(value, type) do
+        {:ok, value} -> cast_array(values, type, index + 1, [value | acc])
+        :error = error -> error
+        {:error, errors} -> {:error, Keyword.update(errors, :source, [index], &[index | &1])}
+      end
+    end
+
+    defp cast_array([], _type, _index, acc), do: {:ok, :lists.reverse(acc)}
+
+    defp cast_array(%_{} = struct, type, index, acc) do
+      case Enumerable.impl_for(struct) do
+        nil -> :error
+        _ -> cast_array(Enum.to_list(struct), type, index, acc)
+      end
+    end
+
+    defp cast_array(_values, _type, _index, _acc), do: :error
 
     defp cast_tuple(types, values) when is_tuple(values) do
       cast_tuple(types, Tuple.to_list(values), [])
