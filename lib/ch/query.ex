@@ -172,15 +172,16 @@ defimpl DBConnection.Query, for: Ch.Query do
     multipart = add_multipart_part(multipart, "query", statement, enc_boundary)
     multipart = [multipart | "--#{boundary}--\r\n"]
 
-    {_no_query_params = [],
-     [{"x-clickhouse-format", format}, {"content-type", content_type} | headers(opts)], multipart}
+    headers = headers(opts, [{"x-clickhouse-format", format}, {"content-type", content_type}])
+
+    {_no_query_params = [], headers, multipart}
   end
 
   def encode(%Query{statement: statement}, params, opts) do
     types = Keyword.get(opts, :types)
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
-    {query_params(params), [{"x-clickhouse-format", format} | headers(opts)], statement}
+    {query_params(params), headers(opts, [{"x-clickhouse-format", format}]), statement}
   end
 
   defp multipart_params(params, boundary) when is_map(params) do
@@ -411,8 +412,17 @@ defimpl DBConnection.Query, for: Ch.Query do
 
   defp decimal_to_string!(d), do: Decimal.to_string(d, :scientific)
 
-  @spec headers(Keyword.t()) :: Mint.Types.headers()
-  defp headers(opts), do: Keyword.get(opts, :headers, [])
+  @spec headers(Keyword.t(), Mint.Types.headers()) :: Mint.Types.headers()
+  defp headers(opts, defaults \\ []) do
+    headers =
+      opts
+      |> Keyword.get(:headers, [])
+      |> Enum.map(fn {name, value} -> {String.downcase(name), value} end)
+
+    Enum.reduce(defaults, headers, fn {name, value}, headers ->
+      if List.keymember?(headers, name, 0), do: headers, else: [{name, value} | headers]
+    end)
+  end
 end
 
 defimpl String.Chars, for: Ch.Query do

@@ -467,6 +467,7 @@ defmodule Ch.Connection do
 
   defp headers(conn, extra_headers, opts) do
     extra_headers
+    |> Enum.map(fn {name, value} -> {String.downcase(name), value} end)
     |> maybe_put_new_header("x-clickhouse-user", get_opts_or_private(conn, opts, :username))
     |> maybe_put_new_header("x-clickhouse-key", get_opts_or_private(conn, opts, :password))
     |> maybe_put_new_header("x-clickhouse-database", get_opts_or_private(conn, opts, :database))
