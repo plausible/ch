@@ -232,7 +232,8 @@ defmodule Ch do
     end
 
     def cast(value, {:array, type}) do
-      # Reinitialize the element type so Ecto casts array values through Ch.cast/2.
+      # Array params contain a decoded Ch type, not an Ecto parameterized type.
+      # Initialize the element so Ecto delegates each value back to Ch.cast/2.
       parameterized_type = Ecto.ParameterizedType.init(__MODULE__, type: type)
       Ecto.Type.cast({:array, parameterized_type}, value)
     end
