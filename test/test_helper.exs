@@ -45,7 +45,7 @@ extra_exclude =
 
     true ->
       # Time, Variant, JSON, and Dynamic types are not supported in older ClickHouse versions we have in the CI
-      [:time, :variant, :json, :dynamic]
+      [:time, :variant, :json, :dynamic, :exception]
   end
 
 ExUnit.start(exclude: [:slow | extra_exclude])

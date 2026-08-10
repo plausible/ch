@@ -343,6 +343,7 @@ defmodule Ch.Connection do
     case request(conn, "POST", path, headers, body, opts) do
       {:ok, conn, responses} -> {:ok, query, responses, conn}
       {:error, _reason, _conn} = client_error -> client_error
+      {:disconnect, %Error{} = reason, conn} -> {:disconnect, reason, conn}
       {:disconnect, reason, conn} -> {:disconnect_and_retry, reason, conn}
     end
   end
@@ -362,7 +363,7 @@ defmodule Ch.Connection do
   @spec request(conn, binary, binary, Mint.Types.headers(), iodata, [Ch.query_option()]) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
-          | {:disconnect, Mint.Types.error(), conn}
+          | {:disconnect, Error.t() | Mint.Types.error(), conn}
   defp request(conn, method, path, headers, body, opts) do
     with {:ok, conn, _ref} <- send_request(conn, method, path, headers, body) do
       receive_full_response(conn, timeout(conn, opts))
@@ -372,7 +373,7 @@ defmodule Ch.Connection do
   @spec request_chunked(conn, binary, binary, Mint.Types.headers(), Enumerable.t(), Keyword.t()) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
-          | {:disconnect, Mint.Types.error(), conn}
+          | {:disconnect, Error.t() | Mint.Types.error(), conn}
   def request_chunked(conn, method, path, headers, stream, opts) do
     with {:ok, conn, ref} <- send_request(conn, method, path, headers, :stream),
          {:ok, conn} <- stream_body(conn, ref, stream),
@@ -408,29 +409,71 @@ defmodule Ch.Connection do
   @spec receive_full_response(conn, timeout) ::
           {:ok, conn, [response]}
           | {:error, Error.t(), conn}
-          | {:disconnect, Mint.Types.error(), conn}
+          | {:disconnect, Error.t() | Mint.Types.error(), conn}
   defp receive_full_response(conn, timeout) do
-    with {:ok, conn, responses} <- recv_all(conn, [], timeout) do
-      case responses do
-        [200, headers | _rest] ->
-          conn = ensure_same_server(conn, headers)
-          {:ok, conn, responses}
+    case recv_all(conn, [], timeout) do
+      {:ok, conn, responses} ->
+        case responses do
+          [200, headers | _data] ->
+            conn = ensure_same_server(conn, headers)
 
-        [_status, headers | data] ->
-          message = IO.iodata_to_binary(data)
-
-          code =
-            if code = get_header(headers, "x-clickhouse-exception-code") do
-              String.to_integer(code)
+            case decode_row_binary_exception(responses) do
+              {:ok, error} -> {:error, error, conn}
+              :error -> {:ok, conn, responses}
             end
 
-          {:error, Error.exception(code: code, message: message), conn}
-      end
+          [_status, headers | data] ->
+            message = IO.iodata_to_binary(data)
+
+            code =
+              if code = get_header(headers, "x-clickhouse-exception-code") do
+                String.to_integer(code)
+              end
+
+            {:error, Error.exception(code: code, message: message), conn}
+        end
+
+      {:closed, conn, responses, reason} ->
+        case decode_row_binary_exception(responses) do
+          {:ok, error} -> {:disconnect, error, conn}
+          :error -> {:disconnect, reason, conn}
+        end
+
+      {:disconnect, _reason, _conn} = disconnect ->
+        disconnect
     end
   end
 
+  defp decode_row_binary_exception([200, headers | data]) do
+    try do
+      with "RowBinaryWithNamesAndTypes" <- get_header(headers, "x-clickhouse-format"),
+           nil <- get_header(headers, "content-encoding"),
+           tag when is_binary(tag) <- get_header(headers, "x-clickhouse-exception-tag"),
+           {:ok, message} <- RowBinary.decode_exception(data, tag) do
+        {:ok, Error.exception(code: exception_code(message), message: message)}
+      else
+        _ -> :error
+      end
+    rescue
+      _ -> :error
+    end
+  end
+
+  defp decode_row_binary_exception(_responses), do: :error
+
+  defp exception_code(<<"Code: ", rest::binary>>) do
+    case Integer.parse(rest) do
+      {code, <<".", _rest::binary>>} -> code
+      _ -> nil
+    end
+  end
+
+  defp exception_code(_message), do: nil
+
   @spec recv_all(conn, [response], timeout()) ::
-          {:ok, conn, [response]} | {:disconnect, Mint.Types.error(), conn}
+          {:ok, conn, [response]}
+          | {:closed, conn, [response], Mint.Types.error()}
+          | {:disconnect, Mint.Types.error(), conn}
   defp recv_all(conn, acc, timeout) do
     case HTTP.recv(conn, 0, timeout) do
       {:ok, conn, responses} ->
@@ -438,6 +481,9 @@ defmodule Ch.Connection do
           {:ok, responses} -> {:ok, conn, responses}
           {:more, acc} -> recv_all(conn, acc, timeout)
         end
+
+      {:error, conn, %Mint.TransportError{reason: :closed} = reason, _responses} ->
+        {:closed, conn, :lists.reverse(acc), reason}
 
       {:error, conn, reason, _responses} ->
         {:disconnect, reason, conn}

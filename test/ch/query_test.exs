@@ -535,6 +535,34 @@ defmodule Ch.QueryTest do
       assert {:error, %Ch.Error{code: 62}} = Ch.query(conn, "wat", [], query_options)
     end
 
+    @tag :exception
+    test "detects __exception__ block in HTTP 200 response", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      assert {:error, %Ch.Error{code: 395, message: message}} =
+               Ch.query(
+                 conn,
+                 """
+                 SELECT number, throwIf(number = 2, 'late exception')
+                 FROM numbers(5)
+                 """,
+                 %{},
+                 Keyword.merge(query_options,
+                   settings: [
+                     wait_end_of_query: 0,
+                     http_response_buffer_size: 1,
+                     output_format_parallel_formatting: 0,
+                     max_threads: 1,
+                     max_block_size: 1
+                   ]
+                 )
+               )
+
+      assert message =~ "Code: 395"
+      assert message =~ "late exception"
+    end
+
     test "connection works after failure in execute", %{conn: conn, query_options: query_options} do
       assert {:error, %Ch.Error{}} = Ch.query(conn, "wat", [], query_options)
       assert [[42]] = Ch.query!(conn, "SELECT 42", [], query_options).rows
