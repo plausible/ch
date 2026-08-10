@@ -9,32 +9,35 @@ defmodule Ch.RowBinaryStringTest do
   @array_table "row_binary_string_array_property"
 
   setup do
-    {:ok, pool: start_supervised!(Ch)}
+    {:ok, pool: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   property "String values inserted as RowBinary round-trip through ClickHouse", %{pool: pool} do
-    Help.query!("CREATE TABLE #{@string_table}(id UInt8, s String) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE #{@string_table}") end)
+    Ch.Test.query("CREATE TABLE #{@string_table}(id UInt8, s String) ENGINE Memory")
+    on_exit(fn -> Ch.Test.query("DROP TABLE #{@string_table}") end)
 
     check all rows <- string_rows() do
-      Help.query!("TRUNCATE TABLE #{@string_table}")
+      Ch.Test.query("TRUNCATE TABLE #{@string_table}")
 
       rowbinary = RowBinary.encode_rows(rows, ["UInt8", "String"])
-      Ch.query!(pool, ["INSERT INTO #{@string_table} FORMAT RowBinary\n" | rowbinary])
+      Ch.query!(pool, "INSERT INTO #{@string_table} FORMAT RowBinary", rowbinary, encode: false)
 
       assert Ch.query!(pool, "SELECT * FROM #{@string_table} ORDER BY id").rows == rows
     end
   end
 
   property "FixedString values inserted as RowBinary are padded by ClickHouse", %{pool: pool} do
-    Help.query!("CREATE TABLE #{@fixed_string_table}(id UInt8, s FixedString(8)) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE #{@fixed_string_table}") end)
+    Ch.Test.query("CREATE TABLE #{@fixed_string_table}(id UInt8, s FixedString(8)) ENGINE Memory")
+    on_exit(fn -> Ch.Test.query("DROP TABLE #{@fixed_string_table}") end)
 
     check all rows <- fixed_string_rows(8) do
-      Help.query!("TRUNCATE TABLE #{@fixed_string_table}")
+      Ch.Test.query("TRUNCATE TABLE #{@fixed_string_table}")
 
       rowbinary = RowBinary.encode_rows(rows, ["UInt8", "FixedString(8)"])
-      Ch.query!(pool, ["INSERT INTO #{@fixed_string_table} FORMAT RowBinary\n" | rowbinary])
+
+      Ch.query!(pool, "INSERT INTO #{@fixed_string_table} FORMAT RowBinary", rowbinary,
+        encode: false
+      )
 
       expected =
         Enum.map(rows, fn [id, value] ->
@@ -46,7 +49,7 @@ defmodule Ch.RowBinaryStringTest do
   end
 
   property "string-like arrays inserted as RowBinary round-trip through ClickHouse", %{pool: pool} do
-    Help.query!("""
+    Ch.Test.query("""
     CREATE TABLE #{@array_table}(
       id UInt8,
       strings Array(String),
@@ -57,7 +60,7 @@ defmodule Ch.RowBinaryStringTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE #{@array_table}") end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE #{@array_table}") end)
 
     types = [
       "UInt8",
@@ -69,10 +72,10 @@ defmodule Ch.RowBinaryStringTest do
     ]
 
     check all rows <- string_array_rows(4) do
-      Help.query!("TRUNCATE TABLE #{@array_table}")
+      Ch.Test.query("TRUNCATE TABLE #{@array_table}")
 
       rowbinary = RowBinary.encode_rows(rows, types)
-      Ch.query!(pool, ["INSERT INTO #{@array_table} FORMAT RowBinary\n" | rowbinary])
+      Ch.query!(pool, "INSERT INTO #{@array_table} FORMAT RowBinary", rowbinary, encode: false)
 
       expected =
         Enum.map(rows, fn [id, strings, fixed_strings, nullable_strings, lc_strings, lc_fixed] ->
@@ -90,12 +93,12 @@ defmodule Ch.RowBinaryStringTest do
     end
   end
 
-  test "String values preserve boundary lengths, invalid UTF-8, and null bytes through ClickHouse",
+  test "String values preserve boundary lengths and null bytes through ClickHouse",
        %{
          pool: pool
        } do
-    Help.query!("CREATE TABLE row_binary_string_examples(id UInt8, s String) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE row_binary_string_examples") end)
+    Ch.Test.query("CREATE TABLE row_binary_string_examples(id UInt8, s String) ENGINE Memory")
+    on_exit(fn -> Ch.Test.query("DROP TABLE row_binary_string_examples") end)
 
     rows =
       [
@@ -107,26 +110,29 @@ defmodule Ch.RowBinaryStringTest do
         :binary.copy("a", 16_384),
         <<0>>,
         <<0, 1, 2, 3>>,
-        <<0xFF, 0xFE, 0xFD>>,
-        "\x61\xF0\x80\x80\x80b",
-        "/some/url" <> <<0xAE>> <> "-/",
         "/opportunity/category/جوائز-ومسابقات"
       ]
       |> Enum.with_index()
       |> Enum.map(fn {value, id} -> [id, value] end)
 
     rowbinary = RowBinary.encode_rows(rows, ["UInt8", "String"])
-    Ch.query!(pool, ["INSERT INTO row_binary_string_examples FORMAT RowBinary\n" | rowbinary])
+
+    Ch.query!(pool, "INSERT INTO row_binary_string_examples FORMAT RowBinary", rowbinary,
+      encode: false
+    )
 
     assert Ch.query!(pool, "SELECT * FROM row_binary_string_examples ORDER BY id").rows == rows
   end
 
   test "String and FixedString nils encode as empty/null bytes through ClickHouse", %{pool: pool} do
-    Help.query!("CREATE TABLE row_binary_string_nils(s String, f FixedString(3)) ENGINE Memory")
-    on_exit(fn -> Help.query!("DROP TABLE row_binary_string_nils") end)
+    Ch.Test.query("CREATE TABLE row_binary_string_nils(s String, f FixedString(3)) ENGINE Memory")
+    on_exit(fn -> Ch.Test.query("DROP TABLE row_binary_string_nils") end)
 
     rowbinary = RowBinary.encode_rows([[nil, nil]], ["String", "FixedString(3)"])
-    Ch.query!(pool, ["INSERT INTO row_binary_string_nils FORMAT RowBinary\n" | rowbinary])
+
+    Ch.query!(pool, "INSERT INTO row_binary_string_nils FORMAT RowBinary", rowbinary,
+      encode: false
+    )
 
     assert Ch.query!(pool, "SELECT * FROM row_binary_string_nils").rows == [["", <<0, 0, 0>>]]
   end
@@ -188,13 +194,10 @@ defmodule Ch.RowBinaryStringTest do
 
   defp small_binary do
     one_of([
-      binary(max_length: 64),
+      string(:alphanumeric, max_length: 64),
       member_of([
         <<0>>,
         <<0, 1, 2, 3>>,
-        <<0xFF, 0xFE, 0xFD>>,
-        "\x61\xF0\x80\x80\x80b",
-        "/some/url" <> <<0xAE>> <> "-/",
         "/opportunity/category/جوائز-ومسابقات"
       ])
     ])

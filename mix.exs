@@ -4,58 +4,46 @@ defmodule Ch.MixProject do
   @source_url "https://github.com/plausible/ch"
   @version "0.9.0"
 
-  def version, do: @version
-
   def project do
     [
       app: :ch,
-      version: version(),
-      elixir: "~> 1.18",
+      version: @version,
+      elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       name: "Ch",
-      description: "HTTP ClickHouse client for Elixir",
+      description: "HTTP ClickHouse driver for Elixir",
       docs: docs(),
       package: package(),
       source_url: @source_url,
-      dialyzer: [plt_local_path: "plts", plt_core_path: "plts", plt_ignore_apps: [:xmerl]],
-      test_coverage: [tool: ExCoveralls, ignore_modules: [Help]]
+      dialyzer: [plt_local_path: "plts", plt_core_path: "plts", plt_ignore_apps: [:xmerl]]
     ]
   end
 
   # Run "mix help compile.app" to learn about applications.
   def application do
-    [extra_applications: [:logger]]
-  end
-
-  def cli do
-    [
-      preferred_envs: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.json": :test,
-        "coveralls.html": :test,
-        "coveralls.github": :test
-      ]
-    ]
+    [extra_applications: [:logger | extra_applications(Mix.env())]]
   end
 
   # Specifies which paths to compile per environment.
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_env), do: ["lib"]
 
+  defp extra_applications(:test), do: [:inets, :tools]
+  defp extra_applications(:dev), do: [:tools]
+  defp extra_applications(_env), do: []
+
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:mint, "~> 1.8"},
-      {:nimble_pool, "~> 1.1"},
-      {:nimble_options, "~> 1.1"},
+      {:db_connection, "~> 2.10.1"},
+      {:jason, "~> 1.0"},
       {:decimal, "~> 3.0"},
       {:ecto, "~> 3.14.0", optional: true},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
-      {:ex_doc, ">= 0.0.0", only: :dev},
+      {:ex_doc, ">= 0.0.0", only: :docs},
       {:tz, "~> 0.28.1", only: [:dev, :test]},
-      {:excoveralls, "~> 0.18.5", only: :test},
       {:stream_data, "~> 1.3", only: :test}
     ]
   end
@@ -65,13 +53,7 @@ defmodule Ch.MixProject do
       source_url: @source_url,
       source_ref: "v#{@version}",
       main: "readme",
-      extras: [
-        "README.md",
-        "CHANGELOG.md",
-        "pages/query.md",
-        "pages/datetime-timezones.md",
-        "pages/compression.md"
-      ],
+      extras: ["README.md", "CHANGELOG.md"],
       skip_undefined_reference_warnings_on: ["CHANGELOG.md"]
     ]
   end

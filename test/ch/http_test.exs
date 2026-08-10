@@ -1,27 +1,66 @@
 defmodule Ch.HTTPTest do
-  use ExUnit.Case, async: true
-  use ExUnitProperties
+  use ExUnit.Case,
+    async: true,
+    parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
 
-  doctest Ch.HTTP
+  @moduletag :slow
 
-  property "timeout to deadline to timeout preserves the remaining timeout" do
-    check all timeout <- integer(0..60_000) do
-      round_tripped = timeout |> Ch.HTTP.to_deadline() |> Ch.HTTP.to_timeout()
+  setup ctx do
+    {:ok, query_options: ctx[:query_options] || []}
+  end
 
-      assert round_tripped <= timeout
-      assert round_tripped >= max(timeout - 50, 0)
+  describe "user-agent" do
+    setup do
+      {:ok, ch: start_supervised!(Ch)}
+    end
+
+    test "sets user-agent to ch/<version> by default", %{ch: ch, query_options: query_options} do
+      %Ch.Result{rows: [[123]], headers: resp_header} =
+        Ch.query!(ch, "select 123", [], query_options)
+
+      {"x-clickhouse-query-id", query_id} = List.keyfind!(resp_header, "x-clickhouse-query-id", 0)
+
+      assert query_http_user_agent(ch, query_id, query_options) ==
+               "ch/" <> Mix.Project.config()[:version]
+    end
+
+    test "uses the provided user-agent", %{ch: ch, query_options: query_options} do
+      req_headers = [{"user-agent", "plausible/0.1.0"}]
+
+      %Ch.Result{rows: [[123]], headers: resp_header} =
+        Ch.query!(
+          ch,
+          "select 123",
+          _params = [],
+          Keyword.merge(query_options, headers: req_headers)
+        )
+
+      {"x-clickhouse-query-id", query_id} = List.keyfind!(resp_header, "x-clickhouse-query-id", 0)
+      assert query_http_user_agent(ch, query_id, query_options) == "plausible/0.1.0"
     end
   end
 
-  property "deadline to timeout to deadline preserves the absolute deadline" do
-    check all offset <- integer(0..60_000) do
-      deadline = {:deadline, System.monotonic_time(:millisecond) + offset}
-      {:deadline, original_timestamp} = deadline
+  defp query_http_user_agent(ch, query_id, query_options) do
+    retry(fn ->
+      %Ch.Result{rows: [[user_agent]]} =
+        Ch.query!(
+          ch,
+          "select http_user_agent from system.query_log where query_id = {query_id:String} limit 1",
+          %{"query_id" => query_id},
+          query_options
+        )
 
-      {:deadline, round_tripped_timestamp} =
-        deadline |> Ch.HTTP.to_timeout() |> Ch.HTTP.to_deadline()
+      user_agent
+    end)
+  end
 
-      assert_in_delta round_tripped_timestamp, original_timestamp, 50
+  defp retry(f) do
+    try do
+      f.()
+    catch
+      _, _ ->
+        :timer.sleep(100)
+        retry(f)
     end
   end
 end

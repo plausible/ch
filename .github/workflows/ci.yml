@@ -10,7 +10,7 @@ on:
 
 jobs:
   test:
-    name: "test @ elixir:${{ matrix.elixir }} otp:${{ matrix.otp }} clickhouse:${{ matrix.clickhouse }} ${{ matrix.dialyzer && ' +dialyzer' || '' }}${{ matrix.lint && ' +lint' || '' }}"
+    name: "test @ elixir:${{ matrix.elixir }} otp:${{ matrix.otp }} clickhouse:${{ matrix.clickhouse }}${{ matrix.dialyzer && ' +dialyzer' || '' }}${{ matrix.lint && ' +lint' || '' }}"
     runs-on: ubuntu-latest
 
     env:
@@ -19,19 +19,25 @@ jobs:
     strategy:
       matrix:
         include:
-          # some old elixir/clickhouse version with the minimum supported OTP
-          # see https://hexdocs.pm/elixir/compatibility-and-deprecations.html#between-elixir-and-erlang-otp
-          - elixir: "1.18"
-            otp: "28"
-            clickhouse: "24.5.4.49"
+          # some old elixir/erlang and pre-JSON ClickHouse versions
+          # https://github.com/plausible/ch/issues/273
+          - elixir: 1.15
+            otp: 25
+            clickhouse: 24.5.4.49
 
-          # the latest versions with all static checks
+          # the latest elixir/erlang version with all static checks
           - elixir: ">0"
             otp: ">0"
-            clickhouse: "latest"
+            clickhouse: latest
             dialyzer: true
             lint: true
-            coverage: true
+
+          # Plausible versions
+          # - https://github.com/plausible/analytics/blob/master/.tool-versions
+          # - https://github.com/plausible/analytics/blob/master/.github/workflows/elixir.yml
+          - elixir: 1.20.2
+            otp: 28.5.0.3
+            clickhouse: 25.11.5.8
 
     services:
       clickhouse:
@@ -82,12 +88,6 @@ jobs:
         if: ${{ matrix.lint }}
 
       - run: mix test --include slow
-        if: ${{ !matrix.coverage || github.event_name == 'schedule' }}
-
-      - run: mix coveralls.github --include slow
-        if: ${{ matrix.coverage && github.event_name != 'schedule' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Restore PLTs cache
         if: ${{ matrix.dialyzer }}

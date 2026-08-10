@@ -23,7 +23,7 @@ defmodule Ch.BFloat16Test do
   ]
 
   setup do
-    {:ok, pool: start_supervised!(Ch)}
+    {:ok, pool: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   property "plain finite values", %{pool: pool} do
@@ -68,7 +68,7 @@ defmodule Ch.BFloat16Test do
     create_table(pool, table)
 
     on_exit(fn ->
-      Help.query!("drop table if exists {table:Identifier}", %{"table" => table})
+      Ch.Test.query("drop table if exists {table:Identifier}", %{"table" => table})
     end)
 
     values = Enum.map(@bf16_edges, &bfloat16_to_float/1)
@@ -85,7 +85,7 @@ defmodule Ch.BFloat16Test do
     create_table(pool, table)
 
     on_exit(fn ->
-      Help.query!("drop table if exists {table:Identifier}", %{"table" => table})
+      Ch.Test.query("drop table if exists {table:Identifier}", %{"table" => table})
     end)
 
     check all bits <- list_of(finite_bfloat16_bits(), length: 20) do
@@ -150,8 +150,7 @@ defmodule Ch.BFloat16Test do
 
     rowbinary = Ch.RowBinary.encode_rows(rows, ["UInt8", "BFloat16"])
 
-    assert %Ch.Result{names: nil, rows: nil, data: nil} =
-             Ch.query!(pool, [insert, ?\n | rowbinary])
+    Ch.query!(pool, insert, rowbinary, encode: false)
 
     assert Ch.query!(pool, "select bf16 from {table:Identifier} order by idx", %{"table" => table}).rows ==
              Enum.map(values, &[&1])
