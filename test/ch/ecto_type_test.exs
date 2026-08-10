@@ -240,6 +240,22 @@ defmodule Ch.EctoTypeTest do
     end
   end
 
+  test "UInt256 casts plus-prefixed and nested maximum values from strings" do
+    value = Bitwise.bsl(1, 256) - 1
+    string = Integer.to_string(value)
+    type = Ecto.ParameterizedType.init(Ch, type: "UInt256")
+    array_type = Ecto.ParameterizedType.init(Ch, type: "Array(UInt256)")
+
+    assert {:ok, ^value} = Ecto.Type.cast(type, "+" <> string)
+    assert {:ok, [^value]} = Ecto.Type.cast(array_type, [string])
+  end
+
+  test "UInt256 rejects unnecessarily large integer strings" do
+    type = Ecto.ParameterizedType.init(Ch, type: "UInt256")
+
+    assert :error = Ecto.Type.cast(type, String.duplicate("9", 80))
+  end
+
   test "Map(String, UInt64)" do
     assert {:parameterized, {Ch, {:map, :string, :u64}}} =
              type = Ecto.ParameterizedType.init(Ch, type: "Map(String, UInt64)")
