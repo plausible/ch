@@ -204,7 +204,6 @@ defmodule Ch.EctoTypeTest do
   end
 
   # TODO check size?
-  # TODO casting from binary wouldn't work for large values of 128 and 256 sized ints
   for size <- [8, 16, 32, 64, 128, 256] do
     for {encoded, decoded} <- [{"Int#{size}", :"i#{size}"}, {"UInt#{size}", :"u#{size}"}] do
       test encoded do
@@ -223,6 +222,40 @@ defmodule Ch.EctoTypeTest do
         assert {:ok, 1} = Ecto.Type.load(type, 1)
       end
     end
+  end
+
+  for {encoded, boundary, value} <- [
+        {"Int128", "minimum", -Bitwise.bsl(1, 127)},
+        {"Int128", "maximum", Bitwise.bsl(1, 127) - 1},
+        {"UInt128", "maximum", Bitwise.bsl(1, 128) - 1},
+        {"Int256", "minimum", -Bitwise.bsl(1, 255)},
+        {"Int256", "maximum", Bitwise.bsl(1, 255) - 1},
+        {"UInt256", "maximum", Bitwise.bsl(1, 256) - 1}
+      ] do
+    test "#{encoded} casts its #{boundary} value from a string" do
+      type = Ecto.ParameterizedType.init(Ch, type: unquote(encoded))
+      value = unquote(value)
+
+      assert {:ok, ^value} = Ecto.Type.cast(type, Integer.to_string(value))
+    end
+  end
+
+  test "UInt256 casts plus-prefixed and nested maximum values from strings" do
+    value = Bitwise.bsl(1, 256) - 1
+    string = Integer.to_string(value)
+    type = Ecto.ParameterizedType.init(Ch, type: "UInt256")
+    array_type = Ecto.ParameterizedType.init(Ch, type: "Array(UInt256)")
+    nested_array_type = Ecto.ParameterizedType.init(Ch, type: "Array(Array(UInt256))")
+
+    assert {:ok, ^value} = Ecto.Type.cast(type, "+" <> string)
+    assert {:ok, [^value]} = Ecto.Type.cast(array_type, [string])
+    assert {:ok, [[^value]]} = Ecto.Type.cast(nested_array_type, [[string]])
+  end
+
+  test "UInt256 rejects unnecessarily large integer strings" do
+    type = Ecto.ParameterizedType.init(Ch, type: "UInt256")
+
+    assert :error = Ecto.Type.cast(type, String.duplicate("9", 80))
   end
 
   test "Map(String, UInt64)" do

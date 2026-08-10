@@ -124,6 +124,8 @@ defmodule Ch do
   if Code.ensure_loaded?(Ecto.ParameterizedType) do
     @behaviour Ecto.ParameterizedType
 
+    @max_integer_string_bytes byte_size("+#{Bitwise.bsl(1, 256) - 1}")
+
     @impl Ecto.ParameterizedType
     def type(:string), do: :string
     def type(:boolean), do: :boolean
@@ -203,9 +205,14 @@ defmodule Ch do
     def cast(value, :json), do: Ecto.Type.cast(:map, value)
     def cast(value, :dynamic), do: {:ok, value}
 
-    for size <- [8, 16, 32, 64, 128, 256] do
+    for size <- [8, 16, 32, 64] do
       def cast(value, unquote(:"i#{size}")), do: Ecto.Type.cast(:integer, value)
       def cast(value, unquote(:"u#{size}")), do: Ecto.Type.cast(:integer, value)
+    end
+
+    for size <- [128, 256] do
+      def cast(value, unquote(:"i#{size}")), do: cast_large_integer(value)
+      def cast(value, unquote(:"u#{size}")), do: cast_large_integer(value)
     end
 
     for size <- [32, 64] do
@@ -220,7 +227,8 @@ defmodule Ch do
       end
     end
 
-    def cast(value, {:array, type}), do: Ecto.Type.cast({:array, type(type)}, value)
+    def cast(value, {:array, type}), do: cast_array(value, type)
+
     def cast(value, {:nullable, type}), do: cast(value, type)
     def cast(value, {:low_cardinality, type}), do: cast(value, type)
     def cast(value, {:simple_aggregate_function, _name, type}), do: cast(value, type)
@@ -289,6 +297,38 @@ defmodule Ch do
     def cast(value, {:tuple, types}), do: cast_tuple(types, value)
     def cast(value, {:map, key_type, value_type}), do: cast_map(value, key_type, value_type)
     def cast(value, {:variant, types}), do: cast_variant(types, value)
+
+    defp cast_large_integer(value)
+         when is_binary(value) and byte_size(value) <= @max_integer_string_bytes do
+      case Integer.parse(value) do
+        {integer, ""} -> {:ok, integer}
+        _ -> :error
+      end
+    end
+
+    defp cast_large_integer(value), do: Ecto.Type.cast(:integer, value)
+
+    defp cast_array(nil, _type), do: {:ok, nil}
+    defp cast_array(values, type), do: cast_array(values, type, 0, [])
+
+    defp cast_array([value | values], type, index, acc) do
+      case cast(value, type) do
+        {:ok, value} -> cast_array(values, type, index + 1, [value | acc])
+        :error = error -> error
+        {:error, errors} -> {:error, Keyword.update(errors, :source, [index], &[index | &1])}
+      end
+    end
+
+    defp cast_array([], _type, _index, acc), do: {:ok, :lists.reverse(acc)}
+
+    defp cast_array(%_{} = struct, type, index, acc) do
+      case Enumerable.impl_for(struct) do
+        nil -> :error
+        _ -> cast_array(Enum.to_list(struct), type, index, acc)
+      end
+    end
+
+    defp cast_array(_values, _type, _index, _acc), do: :error
 
     defp cast_tuple(types, values) when is_tuple(values) do
       cast_tuple(types, Tuple.to_list(values), [])
