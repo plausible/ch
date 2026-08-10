@@ -149,6 +149,8 @@ defmodule Ch do
       def type(unquote(:"f#{size}")), do: :float
     end
 
+    def type(:bf16), do: :float
+
     def type({:decimal, _p, _s}), do: :decimal
 
     for size <- [32, 64, 128, 256] do
@@ -211,6 +213,8 @@ defmodule Ch do
     for size <- [32, 64] do
       def cast(value, unquote(:"f#{size}")), do: Ecto.Type.cast(:float, value)
     end
+
+    def cast(value, :bf16), do: Ecto.Type.cast(:float, value)
 
     def cast(value, {:decimal = type, _p, _s}), do: Ecto.Type.cast(type, value)
 
