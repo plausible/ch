@@ -13,6 +13,7 @@
 - Fix RowBinary `Variant` encoding producing invalid iodata for byte-sized and empty values. https://github.com/plausible/ch/pull/423
 - Fix informational HTTP responses such as `100 Continue` crashing `Ch.query/4`. https://github.com/plausible/ch/pull/424
 - Fix case-insensitive HTTP header precedence https://github.com/plausible/ch/pull/425
+- Make `stream_data` available in the development environment so `mix format` can import its formatter configuration.
 
 ## 0.9.0 (2026-08-08)
 

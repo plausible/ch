@@ -44,7 +44,7 @@ defmodule Ch.MixProject do
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
       {:tz, "~> 0.28.1", only: [:dev, :test]},
-      {:stream_data, "~> 1.3", only: :test}
+      {:stream_data, "~> 1.3", only: [:dev, :test]}
     ]
   end
 
