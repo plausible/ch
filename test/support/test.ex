@@ -76,14 +76,6 @@ defmodule Ch.Test do
     toxiproxy(:post, "/proxies/#{name}", %{"enabled" => false})
   end
 
-  def add_toxic(%{name: name}, %{"name" => _toxic_name} = toxic) do
-    toxiproxy(:post, "/proxies/#{name}/toxics", toxic)
-  end
-
-  def remove_toxic(%{name: name}, toxic_name) do
-    toxiproxy(:delete, "/proxies/#{name}/toxics/#{toxic_name}")
-  end
-
   def toxiproxy(method, path, data \\ nil) do
     url = ~c"http://localhost:8474#{path}"
 
@@ -102,7 +94,13 @@ defmodule Ch.Test do
         raise "unexpected status #{status} from Toxiproxy: #{body}"
 
       {:error, reason} ->
-        raise "Toxiproxy request failed: #{inspect(reason)}"
+        raise """
+        Toxiproxy request failed: #{inspect(reason)}
+
+        Please start it with:
+
+            docker compose up -d toxiproxy
+        """
     end
   end
 

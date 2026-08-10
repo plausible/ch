@@ -16,5 +16,5 @@ services:
     image: ghcr.io/shopify/toxiproxy:2.12.0
     ports:
       - 8474:8474
-      # Open a range so async tests can each create an isolated proxy.
-      - 8475-9000:8475-9000
+      # Open several ports so tests can each create an isolated proxy.
+      - 8475-8480:8475-8480
