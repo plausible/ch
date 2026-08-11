@@ -13,6 +13,7 @@ defmodule Ch.MixProject do
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
+      aliases: aliases(),
       name: "Ch",
       description: "HTTP ClickHouse client for Elixir",
       docs: docs(),
@@ -31,6 +32,7 @@ defmodule Ch.MixProject do
   def cli do
     [
       preferred_envs: [
+        benchmark: :dev,
         coveralls: :test,
         "coveralls.detail": :test,
         "coveralls.json": :test,
@@ -52,12 +54,17 @@ defmodule Ch.MixProject do
       {:nimble_options, "~> 1.1"},
       {:decimal, "~> 3.0"},
       {:ecto, "~> 3.14.0", optional: true},
+      {:benchee, "~> 1.5", only: :dev},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev},
       {:tz, "~> 0.28.1", only: [:dev, :test]},
       {:excoveralls, "~> 0.18.5", only: :test},
       {:stream_data, "~> 1.3", only: :test}
     ]
+  end
+
+  defp aliases do
+    [benchmark: "run bench/benchmark.exs"]
   end
 
   defp docs do
