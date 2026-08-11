@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.1 (2026-08-11)
 
 - Allow Ecto types to cast 128-bit and 256-bit integers from strings. https://github.com/plausible/ch/pull/422
 - Fix `encode_param` for `DateTime` https://github.com/plausible/ch/pull/298
