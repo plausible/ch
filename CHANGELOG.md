@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Fix type decoding for option-bearing `JSON(...)`, including nested forms such as `Array(JSON(...))`. This could previously make RowBinary queries fail when ClickHouse returned arrays or tuples containing JSON values.
+- Fix type decoding for option-bearing `JSON(...)`, including nested forms such as `Array(JSON(...))`. This could previously make RowBinary queries fail when ClickHouse returned arrays or tuples containing JSON values. https://github.com/plausible/ch/pull/435
 
 ## 0.9.1 (2026-08-11)
 
