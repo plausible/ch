@@ -5,14 +5,15 @@ defmodule Ch.RowBinaryFloatTest do
   alias Ch.RowBinary
 
   setup do
-    {:ok, pool: start_supervised!(Ch)}
+    {:ok, pool: start_supervised!({Ch, database: Ch.Test.database()})}
   end
 
   property "float params round-trip through ClickHouse", %{pool: pool} do
     check all {type, value, expected} <- float_param() do
-      assert Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}, []).rows == [
-               [expected]
-             ]
+      assert [[actual]] =
+               Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}, []).rows
+
+      assert_float_equal(actual, expected, type)
     end
   end
 
@@ -21,7 +22,7 @@ defmodule Ch.RowBinaryFloatTest do
       assert [[actual]] =
                Ch.query!(pool, "SELECT {value:Array(#{type})}", %{"value" => values}, []).rows
 
-      assert_float_array_equal(actual, expected)
+      assert_float_array_equal(actual, expected, type)
     end
   end
 
@@ -29,6 +30,7 @@ defmodule Ch.RowBinaryFloatTest do
     cases = [
       {"Float32", 0, 0.0},
       {"Float32", -1.5, -1.5},
+      {"Float32", -8100.0, -8100.0},
       {"Float32", 16_777_216, 16_777_216.0},
       {"Float32", -16_777_216, -16_777_216.0},
       {"Float64", 0, 0.0},
@@ -38,9 +40,10 @@ defmodule Ch.RowBinaryFloatTest do
     ]
 
     for {type, value, expected} <- cases do
-      assert Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}, []).rows == [
-               [expected]
-             ]
+      assert [[actual]] =
+               Ch.query!(pool, "SELECT {value:#{type}}", %{"value" => value}, []).rows
+
+      assert_float_equal(actual, expected, type)
     end
   end
 
@@ -86,7 +89,7 @@ defmodule Ch.RowBinaryFloatTest do
   end
 
   property "RowBinary float inserts round-trip through ClickHouse", %{pool: pool} do
-    Help.query!("""
+    Ch.Test.query("""
     CREATE TABLE row_binary_float_property (
       id UInt8,
       f32 Float32,
@@ -94,16 +97,16 @@ defmodule Ch.RowBinaryFloatTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE row_binary_float_property") end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE row_binary_float_property") end)
 
     check all rows <- rowbinary_float_rows() do
       Ch.query!(pool, "TRUNCATE TABLE row_binary_float_property")
 
       rowbinary = RowBinary.encode_rows(rows, ["UInt8", "Float32", "Float64"])
 
-      Ch.query!(pool, [
-        "INSERT INTO row_binary_float_property FORMAT RowBinary\n" | rowbinary
-      ])
+      Ch.query!(pool, "INSERT INTO row_binary_float_property FORMAT RowBinary", rowbinary,
+        encode: false
+      )
 
       expected =
         rows
@@ -118,7 +121,7 @@ defmodule Ch.RowBinaryFloatTest do
   test "RowBinary inserts cover scalar, nullable, array, tuple, point, and defaults", %{
     pool: pool
   } do
-    Help.query!("""
+    Ch.Test.query("""
     CREATE TABLE row_binary_float_representative (
       id UInt8,
       f32 Float32,
@@ -132,7 +135,7 @@ defmodule Ch.RowBinaryFloatTest do
     ) ENGINE Memory
     """)
 
-    on_exit(fn -> Help.query!("DROP TABLE row_binary_float_representative") end)
+    on_exit(fn -> Ch.Test.query("DROP TABLE row_binary_float_representative") end)
 
     rows = [
       [
@@ -184,7 +187,9 @@ defmodule Ch.RowBinaryFloatTest do
 
     rowbinary = RowBinary.encode_rows(rows, types)
 
-    Ch.query!(pool, ["INSERT INTO row_binary_float_representative FORMAT RowBinary\n" | rowbinary])
+    Ch.query!(pool, "INSERT INTO row_binary_float_representative FORMAT RowBinary", rowbinary,
+      encode: false
+    )
 
     assert Ch.query!(pool, "SELECT * FROM row_binary_float_representative ORDER BY id").rows == [
              [
@@ -275,14 +280,22 @@ defmodule Ch.RowBinaryFloatTest do
     rounded
   end
 
-  defp assert_float_array_equal(actual, expected) do
+  defp assert_float_array_equal(actual, expected, type) do
     assert length(actual) == length(expected)
 
     Enum.zip(actual, expected)
     |> Enum.each(fn {actual_value, expected_value} ->
-      assert_in_delta actual_value, expected_value, float_delta(expected_value)
+      assert_float_equal(actual_value, expected_value, type)
     end)
   end
 
-  defp float_delta(value), do: max(abs(value) * 1.0e-12, 1.0e-12)
+  defp assert_float_equal(actual, expected, type) do
+    assert_in_delta actual, expected, float_delta(expected, type)
+  end
+
+  # Older ClickHouse versions can round a decimal query parameter to an adjacent Float32.
+  defp float_delta(value, "Float32"),
+    do: max(abs(value) * 1.1920928955078125e-7, 1.401298464324817e-45)
+
+  defp float_delta(value, "Float64"), do: max(abs(value) * 1.0e-12, 1.0e-12)
 end

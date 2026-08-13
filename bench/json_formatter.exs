@@ -47,7 +47,7 @@ defmodule Ch.Bench.JSONFormatter do
         scenarios: Enum.map(suite.scenarios, &scenario/1)
       }
       |> json_safe()
-      |> JSON.encode_to_iodata!()
+      |> Jason.encode_to_iodata!()
 
     %{data: data, path: path, output_root: output_root}
   end

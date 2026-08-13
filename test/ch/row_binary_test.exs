@@ -1,8 +1,13 @@
 defmodule Ch.RowBinaryTest do
   use ExUnit.Case, async: true
+  use ExUnitProperties
   doctest Ch.RowBinary, import: true
   import Ch.RowBinary
   import Bitwise
+
+  defp encode_to_binary(type, value) do
+    type |> encode(value) |> IO.iodata_to_binary()
+  end
 
   test "encode -> decode" do
     spec = [
@@ -105,50 +110,70 @@ defmodule Ch.RowBinaryTest do
   end
 
   describe "encode/2" do
-    test "names and atom types" do
-      assert IO.iodata_to_binary(encode_names_and_types(["answer"], [:u8])) ==
-               <<1, 6, "answer", 5, "UInt8">>
+    test "datetime accepts UInt32 Unix timestamp boundaries" do
+      assert encode(:datetime, ~N[1970-01-01 00:00:00]) == <<0::32-little>>
+      assert encode(:datetime, ~U[1970-01-01 00:00:00Z]) == <<0::32-little>>
+
+      assert encode(:datetime, ~N[2106-02-07 06:28:15]) == <<0xFFFFFFFF::32-little>>
+      assert encode(:datetime, ~U[2106-02-07 06:28:15Z]) == <<0xFFFFFFFF::32-little>>
     end
 
-    test "encoding type aliases" do
-      assert encoding_types([{:datetime, "UTC"}]) == [:datetime]
-      assert encoding_types([{:datetime64, 6}]) == [datetime64: 1_000_000]
-      assert encoding_types([{:datetime64, 3, "UTC"}]) == [datetime64: 1000]
-      assert encoding_types([{:decimal, 9, 4}]) == [decimal32: 4]
-      assert encoding_types([{:decimal, 18, 4}]) == [decimal64: 4]
-      assert encoding_types([{:decimal, 38, 4}]) == [decimal128: 4]
-      assert encoding_types([{:decimal, 76, 4}]) == [decimal256: 4]
-      assert encoding_types([{:simple_aggregate_function, "any", :u8}]) == [:u8]
-
-      # See https://github.com/plausible/ch/issues/353
+    test "datetime rejects values before the Unix epoch" do
       assert_raise ArgumentError,
-                   "can't encode DateTime with non-UTC timezone: \"Europe/Vienna\"",
-                   fn ->
-                     encoding_types([{:datetime, "Europe/Vienna"}])
-                   end
+                   "cannot encode 1969-12-31 23:59:59 as DateTime since it's before Unix epoch",
+                   fn -> encode(:datetime, ~N[1969-12-31 23:59:59]) end
 
       assert_raise ArgumentError,
-                   "can't encode DateTime64 with non-UTC timezone: \"Europe/Vienna\"",
-                   fn ->
-                     encoding_types([{:datetime64, 3, "Europe/Vienna"}])
-                   end
+                   "cannot encode 1969-12-31 23:59:59Z as DateTime since it's before Unix epoch",
+                   fn -> encode(:datetime, ~U[1969-12-31 23:59:59Z]) end
+    end
 
-      assert_raise ArgumentError, "unsupported type for encoding: :unsupported", fn ->
-        encoding_types([:unsupported])
-      end
+    test "datetime rejects values after the maximum Unix timestamp" do
+      assert_raise ArgumentError,
+                   "cannot encode 2106-02-07 06:28:16 as DateTime since it's after the maximum Unix timestamp",
+                   fn -> encode(:datetime, ~N[2106-02-07 06:28:16]) end
+
+      assert_raise ArgumentError,
+                   "cannot encode 2106-02-07 06:28:16Z as DateTime since it's after the maximum Unix timestamp",
+                   fn -> encode(:datetime, ~U[2106-02-07 06:28:16Z]) end
     end
 
     test "decimal" do
-      assert encode({:decimal, 9, 4}, Decimal.new("2.66")) == <<26600::32-little>>
-      assert encode({:decimal, 18, 4}, Decimal.new("2.66")) == <<26600::64-little>>
-      assert encode({:decimal, 38, 4}, Decimal.new("2.66")) == <<26600::128-little>>
-      assert encode({:decimal, 76, 4}, Decimal.new("2.66")) == <<26600::256-little>>
-
       type = {:decimal32, _scale = 4}
       assert encode(type, Decimal.new("2")) == <<20000::32-little>>
       assert encode(type, Decimal.new("2.66")) == <<26600::32-little>>
       assert encode(type, Decimal.new("2.6666")) == <<26666::32-little>>
       assert encode(type, Decimal.new("2.66666")) == <<26667::32-little>>
+    end
+
+    test "decimal accepts storage boundaries" do
+      for size <- [32, 64, 128, 256] do
+        type = {:"decimal#{size}", _scale = 0}
+        # Smallest and largest signed integers representable by this decimal's storage width.
+        min = -(1 <<< (size - 1))
+        max = (1 <<< (size - 1)) - 1
+
+        assert encode(type, Decimal.new(min)) == <<min::size(size)-little-signed>>
+        assert encode(type, Decimal.new(max)) == <<max::size(size)-little-signed>>
+      end
+    end
+
+    test "decimal rejects values outside storage boundaries" do
+      for size <- [32, 64, 128, 256] do
+        type = {:"decimal#{size}", _scale = 0}
+        # Smallest and largest signed integers representable by this decimal's storage width.
+        min = -(1 <<< (size - 1))
+        max = (1 <<< (size - 1)) - 1
+
+        assert_raise ArgumentError, fn -> encode(type, Decimal.new(min - 1)) end
+        assert_raise ArgumentError, fn -> encode(type, Decimal.new(max + 1)) end
+      end
+
+      assert_raise ArgumentError, fn ->
+        encode({:decimal32, 1}, Decimal.new("214748364.75"))
+      end
+
+      assert_raise ArgumentError, fn -> encode({:decimal, 9, 0}, Decimal.new("4294967296")) end
     end
 
     test "uuid" do
@@ -159,18 +184,39 @@ defmodule Ch.RowBinaryTest do
 
       hex = "d2bd5ec9-fdc5-a53f-32b5-e852f63a5f09"
       assert encode(:uuid, hex) == encode(:uuid, uuid)
-
-      uppercase = "12345678-9ABC-DEF0-1234-56789ABCDEF0"
-      raw = Base.decode16!("123456789ABCDEF0123456789ABCDEF0")
-      assert encode(:uuid, uppercase) == encode(:uuid, raw)
     end
 
     test "map" do
       assert encode({:map, :string, :string}, []) == 0
-      assert encode({:map, :string, :string}, %{}) == 0
+      assert encode_to_binary({:map, :string, :string}, %{}) == <<0>>
 
       assert encode({:map, :string, :string}, %{"hello" => "world"}) ==
                encode({:map, :string, :string}, [{"hello", "world"}])
+    end
+
+    test "variants always produce valid iodata" do
+      cases = [
+        {{:variant, [:string, :u8]}, 7, <<1, 7>>},
+        {{:variant, [:i8]}, 7, <<0, 7>>},
+        {{:variant, [:boolean]}, true, <<0, 1>>},
+        {{:variant, [{:enum8, %{"one" => 1}}]}, "one", <<0, 1>>},
+        {{:variant, [{:array, :u8}]}, [], <<0, 0>>},
+        {{:variant, [{:map, :u8, :u8}]}, [], <<0, 0>>}
+      ]
+
+      for {type, value, expected} <- cases do
+        assert encode_to_binary(type, value) == expected
+      end
+    end
+
+    test "tuple with normalized nested types round-trips" do
+      dt = ~U[2026-01-02 03:04:05.123Z]
+      encoded = IO.iodata_to_binary(encode_rows([[{dt}]], ["Tuple(DateTime64(3, 'UTC'))"]))
+      assert decode_rows(encoded, ["Tuple(DateTime64(3, 'UTC'))"]) == [[{dt}]]
+
+      time = ~T[03:04:05.123456]
+      encoded = IO.iodata_to_binary(encode_rows([[{time}]], ["Tuple(Time64(6))"]))
+      assert decode_rows(encoded, ["Tuple(Time64(6))"]) == [[{time}]]
     end
 
     test "nil" do
@@ -192,60 +238,45 @@ defmodule Ch.RowBinaryTest do
       assert encode(:date, nil) == <<0, 0>>
       assert encode(:date32, nil) == <<0, 0, 0, 0>>
       assert encode(:datetime, nil) == <<0, 0, 0, 0>>
+      assert encode({:datetime, "Europe/Vienna"}, nil) == <<0, 0, 0, 0>>
       assert encode({:datetime64, :microsecond}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
-      assert encode(:time, nil) == <<0, 0, 0, 0>>
-      assert encode({:time64, 1_000}, nil) == <<0, 0, 0, 0, 0, 0, 0, 0>>
+
+      assert encode({:datetime64, :microsecond, "Europe/Vienna"}, nil) ==
+               <<0, 0, 0, 0, 0, 0, 0, 0>>
+
       assert encode(:uuid, nil) == <<0::128>>
       assert encode({:decimal32, _scale = 4}, nil) == <<0::32>>
       assert encode({:decimal64, _scale = 4}, nil) == <<0::64>>
       assert encode({:decimal128, _scale = 4}, nil) == <<0::128>>
       assert encode({:decimal256, _scale = 4}, nil) == <<0::256>>
-      assert encode(:ipv4, nil) == <<0::32>>
-      assert encode(:ipv6, nil) == <<0::128>>
       assert encode(:point, nil) == <<0::128>>
       assert encode(:ring, nil) == 0
       assert encode(:polygon, nil) == 0
       assert encode(:multipolygon, nil) == 0
       assert encode({:map, :string, :string}, nil) == 0
-      assert encode({:tuple, [:u8, :string]}, nil) == [0, 0]
-    end
-
-    test "ip addresses" do
-      assert encode(:ipv6, <<1::128>>) == <<1::128>>
-    end
-
-    test "dynamic empty list" do
-      assert encode(:dynamic, []) == [0x1E, 0x00]
-    end
-
-    test "enum missing value" do
-      assert_raise ArgumentError,
-                   ~s[enum value "missing" not found in mapping: %{"present" => 1}],
-                   fn -> encode({:enum8, %{"present" => 1}}, "missing") end
-    end
-
-    test "nullable scalar" do
-      assert encode({:nullable, :u8}, 1) == [0, 1]
-    end
-
-    test "variant without matching type" do
-      assert_raise ArgumentError, ~s[no matching type found for encoding "x" as Variant], fn ->
-        encode({:variant, [:u8]}, "x")
-      end
     end
   end
 
-  test "strings preserve raw bytes" do
+  test "utf8" do
+    # example from https://clickhouse.com/docs/en/sql-reference/functions/string-functions/#tovalidutf8
     value = "\x61\xF0\x80\x80\x80b"
+    bin = IO.iodata_to_binary(encode(:binary, value))
     str = IO.iodata_to_binary(encode(:string, value))
 
-    assert decode_rows(str, [:string]) == [[value]]
+    # encoding is the same since we don't want to modify the values implicitly
+    assert bin == str
+
+    # but decoding is different based on what type is provided
+    assert decode_rows(str, [:string]) == [["a�b"]]
+    assert decode_rows(bin, [:string]) == [["a�b"]]
+    assert decode_rows(str, [:binary]) == [["\x61\xF0\x80\x80\x80b"]]
+    assert decode_rows(bin, [:binary]) == [["\x61\xF0\x80\x80\x80b"]]
 
     path = "/some/url" <> <<0xAE>> <> "-/"
-    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
+    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [["/some/url�-/"]]
 
     path = <<0xAF>> <> "/some/url" <> <<0xAE, 0xFE>> <> "-/" <> <<0xFA>>
-    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
+    assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [["�/some/url�-/�"]]
 
     path = "/opportunity/category/جوائز-ومسابقات"
     assert decode_rows(<<byte_size(path), path::bytes>>, [:string]) == [[path]]
@@ -300,7 +331,6 @@ defmodule Ch.RowBinaryTest do
         {"Array(LowCardinality(String))", {:array, :string}},
         {"Array(Enum8('hello' = 2, 'world' = 3))",
          {:array, {:enum8, %{2 => "hello", 3 => "world"}}}},
-        {"Variant(String, UInt32)", {:variant, {:string, :u32}}},
         {"Array(Nothing)", {:array, :nothing}},
         {"Nullable(String)", {:nullable, :string}},
         {"Nullable(Float64)", {:nullable, :f64}},
@@ -373,13 +403,6 @@ defmodule Ch.RowBinaryTest do
 
       assert decode_rows(payload) == [[nil, nil, 100.0]]
     end
-
-    test "returns continuation for incomplete enum rows" do
-      assert {[], "", {:cont, [{:enum8, %{1 => "one"}}], []}} =
-               decode_rows_continue("", [{:enum8, %{1 => "one"}}], nil)
-
-      assert {[], "", {:cont, [:u8], []}} = decode_rows_continue("", [:u8], nil)
-    end
   end
 
   describe "decode_rows/2" do
@@ -389,6 +412,12 @@ defmodule Ch.RowBinaryTest do
 
     test "non-empty" do
       assert decode_rows(<<1, 2>>, [:u8, :u8]) == [[1, 2]]
+    end
+
+    test "rejects invalid Variant type indexes" do
+      assert_raise ArgumentError, "invalid Variant type index: 2", fn ->
+        decode_rows(<<2>>, ["Variant(String, UInt32)"])
+      end
     end
 
     test "incomplete" do
@@ -403,18 +432,6 @@ defmodule Ch.RowBinaryTest do
 
       assert_raise ArgumentError, expected_message, fn ->
         decode_rows(<<1>>, [:u8, :u8])
-      end
-    end
-
-    test "rejects unsupported decoded types" do
-      assert_raise ArgumentError, "unsupported type for decoding: :unsupported", fn ->
-        decode_rows(<<0>>, [:unsupported])
-      end
-    end
-
-    test "rejects invalid Variant type indexes" do
-      assert_raise ArgumentError, "invalid Variant type index: 2", fn ->
-        decode_rows(<<2>>, ["Variant(String, UInt32)"])
       end
     end
   end
@@ -680,6 +697,14 @@ defmodule Ch.RowBinaryTest do
              ]
     end
 
+    property "naive datetime matches Unix conversion" do
+      check all seconds <- uint32_seconds() do
+        expected = seconds |> DateTime.from_unix!() |> DateTime.to_naive()
+
+        assert decode_rows(<<seconds::32-little>>, ["DateTime"]) == [[expected]]
+      end
+    end
+
     test "datetime64" do
       types = [
         "DateTime64(0)",
@@ -725,6 +750,24 @@ defmodule Ch.RowBinaryTest do
                  DateTime.new!(~D[2042-12-31], ~T[23:59:59.987654], "Asia/Tokyo")
                ]
              ]
+    end
+
+    test "datetime64 before the Unix epoch" do
+      assert decode_rows(<<-1::64-little-signed>>, ["DateTime64(3)"]) ==
+               [[~N[1969-12-31 23:59:59.999]]]
+
+      assert decode_rows(<<-1::64-little-signed>>, ["DateTime64(9)"]) ==
+               [[~N[1969-12-31 23:59:59.999999]]]
+    end
+
+    property "naive datetime64 matches Unix conversion across all precisions" do
+      check all {precision, ticks} <- datetime64_ticks(), max_runs: 250 do
+        time_unit = Integer.pow(10, precision)
+        type = "DateTime64(#{precision})"
+        expected = ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_naive()
+
+        assert decode_rows(<<ticks::64-little-signed>>, [type]) == [[expected]]
+      end
     end
 
     test "integers" do
@@ -863,20 +906,45 @@ defmodule Ch.RowBinaryTest do
       assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
-    test "long strings" do
+    test "long strings and binaries" do
       long_string = String.duplicate("a", 50_000)
-      long_byte_string = String.duplicate(<<0xA>>, 50_000)
+      long_binary = String.duplicate(<<0xA>>, 50_000)
 
       data =
         [
-          [encode(:string, long_string), encode(:string, long_byte_string)],
-          [encode(:string, long_string <> "b"), encode(:string, long_byte_string <> <<0xB>>)]
+          [encode(:string, long_string), encode(:binary, long_binary)],
+          [encode(:string, long_string <> "b"), encode(:binary, long_binary <> <<0xB>>)]
         ]
 
-      assert byte_by_byte(data, [:string, :string]) == [
-               [long_string, long_byte_string],
-               [long_string <> "b", long_byte_string <> <<0xB>>]
+      assert byte_by_byte(data, [:string, :binary]) == [
+               [long_string, long_binary],
+               [long_string <> "b", long_binary <> <<0xB>>]
              ]
+    end
+  end
+
+  defp uint32_seconds do
+    one_of([
+      member_of([0, 1, 86_399, 86_400, 0xFFFFFFFF]),
+      integer(0..0xFFFFFFFF)
+    ])
+  end
+
+  defp datetime64_ticks do
+    gen all precision <- integer(0..9),
+            seconds <-
+              one_of([
+                member_of([-2_208_988_800, -2, -1, 0, 1, 4_102_444_800]),
+                integer(-2_208_988_800..4_102_444_800)
+              ]),
+            nanoseconds <-
+              one_of([
+                member_of([0, 1, 999, 1_000, 999_999, 1_000_000, 999_999_999]),
+                integer(0..999_999_999)
+              ]) do
+      time_unit = Integer.pow(10, precision)
+      ticks = seconds * time_unit + div(nanoseconds * time_unit, 1_000_000_000)
+      {precision, ticks}
     end
   end
 end

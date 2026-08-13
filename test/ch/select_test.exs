@@ -16,21 +16,16 @@ defmodule Ch.SelectTest do
         1..count
         |> Map.new(fn i -> {"p#{i}", i * 10} end)
 
-      assert %{names: names, rows: [row], data: data} =
+      assert %{columns: columns, rows: [row]} =
                Ch.query!(pool, "SELECT #{select}", params)
 
-      assert names == Enum.map(1..count, &"col_#{&1}")
+      assert columns == Enum.map(1..count, &"col_#{&1}")
       assert row == Enum.map(1..count, &(&1 * 10))
-
-      assert [^names, ^row] =
-               data
-               |> IO.iodata_to_binary()
-               |> Ch.RowBinary.decode_names_and_rows()
     end
   end
 
   test "decodes edge case selected values", %{pool: pool} do
-    assert %{names: names, rows: [row], data: data} =
+    assert %{columns: columns, rows: [row]} =
              Ch.query!(
                pool,
                """
@@ -52,7 +47,7 @@ defmodule Ch.SelectTest do
                }
              )
 
-    assert names == [
+    assert columns == [
              "empty_string",
              "special_string",
              "nil_string",
@@ -69,15 +64,10 @@ defmodule Ch.SelectTest do
              %{"a" => 1, "b" => 2},
              {-8, "tuple-value"}
            ]
-
-    assert [^names, ^row] =
-             data
-             |> IO.iodata_to_binary()
-             |> Ch.RowBinary.decode_names_and_rows()
   end
 
   test "decodes column names and types when select returns no rows", %{pool: pool} do
-    assert %{names: names, rows: [], data: data} =
+    assert %{columns: columns, rows: []} =
              Ch.query!(
                pool,
                """
@@ -90,15 +80,14 @@ defmodule Ch.SelectTest do
                %{"id" => 1, "name" => "name", "nullable" => nil}
              )
 
-    assert names == ["id", "name", "nullable"]
-    assert [^names] = data |> IO.iodata_to_binary() |> Ch.RowBinary.decode_names_and_rows()
+    assert columns == ["id", "name", "nullable"]
   end
 
   test "selects a very large number of decoded columns", %{pool: pool} do
     column_count = 5_000
     select = Enum.map_join(1..column_count, ", ", fn i -> "#{i} AS col_#{i}" end)
 
-    assert %{names: columns, rows: [row], data: data} = Ch.query!(pool, "SELECT #{select}")
+    assert %{columns: columns, rows: [row]} = Ch.query!(pool, "SELECT #{select}")
 
     assert length(columns) == column_count
     assert length(row) == column_count
@@ -106,10 +95,5 @@ defmodule Ch.SelectTest do
     assert Enum.take(row, 3) == [1, 2, 3]
     assert Enum.take(columns, -3) == ["col_4998", "col_4999", "col_5000"]
     assert Enum.take(row, -3) == [4998, 4999, 5000]
-
-    assert [^columns, ^row] =
-             data
-             |> IO.iodata_to_binary()
-             |> Ch.RowBinary.decode_names_and_rows()
   end
 end

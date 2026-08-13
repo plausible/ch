@@ -1,9 +1,15 @@
 defmodule Ch.DecimalParamTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case,
+    parameterize: [%{query_options: []}, %{query_options: [multipart: true]}],
+    async: true
+
   use ExUnitProperties
 
-  setup do
-    {:ok, pool: start_supervised!(Ch), query_options: []}
+  import Ch.Test, only: [parameterize_query: 4, parameterize_query!: 4]
+
+  setup ctx do
+    {:ok, conn} = Ch.start_link()
+    {:ok, conn: conn, query_options: ctx[:query_options] || []}
   end
 
   test "decimal parameter boundaries", ctx do
@@ -86,9 +92,9 @@ defmodule Ch.DecimalParamTest do
   end
 
   defp assert_decimal_param(ctx, decimal, type, expected) do
-    assert %{rows: [[actual, ^type]]} =
-             Ch.query!(
-               ctx.pool,
+    assert %Ch.Result{rows: [[actual, ^type]]} =
+             parameterize_query!(
+               ctx,
                "select {d:#{type}} as x, toTypeName(x)",
                %{"d" => decimal},
                ctx.query_options
@@ -99,8 +105,8 @@ defmodule Ch.DecimalParamTest do
 
   defp decimal_error(ctx, decimal, type) do
     assert {:error, error} =
-             Ch.query(
-               ctx.pool,
+             parameterize_query(
+               ctx,
                "select {d:#{type}}",
                %{"d" => decimal},
                ctx.query_options
@@ -126,12 +132,14 @@ defmodule Ch.DecimalParamTest do
   end
 
   defp encoded_decimal_param(query_options, decimal) do
-    query_options
-    |> Keyword.get(:settings, [])
-    |> then(&Ch.HTTP.path(%{"d" => decimal}, &1))
-    |> URI.parse()
-    |> Map.fetch!(:query)
-    |> URI.decode_query()
-    |> Map.fetch!("param_d")
+    query = Ch.Query.build("select {d:Decimal(76, 0)}", query_options)
+
+    {query_params, _headers, body} =
+      DBConnection.Query.encode(query, %{"d" => decimal}, [])
+
+    case query_params do
+      [{"param_d", value}] -> value
+      [] -> IO.iodata_to_binary(body)
+    end
   end
 end

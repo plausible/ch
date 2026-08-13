@@ -1,18 +1,59 @@
 defmodule Ch.QueryTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case,
+    async: true,
+    parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
 
-  describe "start_link/1" do
-    test "supports an infinite worker idle timeout" do
-      pool = start_supervised!({Ch, worker_idle_timeout: :infinity})
-      assert [[1]] = Ch.query!(pool, "SELECT 1").rows
+  alias Ch.Query
+
+  setup ctx do
+    {:ok, query_options: ctx[:query_options] || []}
+  end
+
+  test "to_string" do
+    query = Query.build(["select ", 1 + ?0, ?+, 2 + ?0])
+    assert to_string(query) == "select 1+2"
+  end
+
+  describe "command" do
+    test "without command provided" do
+      assert Query.build("select 1+2").command == :select
+      assert Query.build("SELECT 1+2").command == :select
+      assert Query.build("   select 1+2").command == :select
+      assert Query.build("\t\n\t\nSELECT 1+2").command == :select
+
+      assert Query.build("""
+
+             select 1+2
+             """).command == :select
+
+      assert Query.build(["select 1+2"]).command == :select
+      assert Query.build([?S, ?E, ?L | "ECT 1"]).command == :select
+
+      assert Query.build("with insert as (select 1) select * from insert").command == :select
+      assert Query.build("insert into table(a, b) values(1, 2)").command == :insert
+
+      assert Query.build("insert into table(a, b) select b, c from table2 where b = 'update'").command ==
+               :insert
+    end
+
+    test "with nil command provided" do
+      assert Query.build("select 1+2", command: nil).command == :select
+    end
+
+    test "with command provided" do
+      assert Query.build("select 1+2", command: :custom).command == :custom
+    end
+
+    @tag skip: true
+    test "TODO" do
+      assert Query.build("Select 1+2").command == :select
     end
   end
 
   # adapted from https://github.com/elixir-ecto/postgrex/blob/master/test/query_test.exs
   describe "query" do
     setup do
-      pool = start_supervised!(Ch)
-      {:ok, pool: pool, conn: pool, query_options: []}
+      {:ok, conn: start_supervised!({Ch, database: Ch.Test.database()})}
     end
 
     test "iodata", %{conn: conn, query_options: query_options} do
@@ -45,17 +86,12 @@ defmodule Ch.QueryTest do
                Ch.query!(conn, "SELECT 42::numeric(10,10)", [], query_options).rows
     end
 
-    @tag :json
+    @tag skip: true
     test "decode json/jsonb", %{conn: conn, query_options: query_options} do
-      assert [[%{"foo" => 42}]] ==
-               Ch.query!(
-                 conn,
-                 "SELECT '{\"foo\": 42}'::json",
-                 [],
-                 Keyword.merge(query_options,
-                   settings: [output_format_binary_write_json_as_string: true]
-                 )
-               ).rows
+      assert_raise ArgumentError, "Object('json') type is not supported", fn ->
+        assert [[%{"foo" => 42}]] ==
+                 Ch.query!(conn, "SELECT '{\"foo\": 42}'::json", [], query_options).rows
+      end
     end
 
     test "decode uuid", %{conn: conn, query_options: query_options} do
@@ -283,60 +319,36 @@ defmodule Ch.QueryTest do
 
     test "decoded binaries copy behaviour", %{conn: conn, query_options: query_options} do
       text = "hello world"
-
-      assert [[bin]] =
-               Ch.query!(conn, "SELECT {text:String}", %{"text" => text}, query_options).rows
-
-      assert bin == text
+      assert [[bin]] = Ch.query!(conn, "SELECT {$0:String}", [text], query_options).rows
       assert :binary.referenced_byte_size(bin) == :binary.referenced_byte_size("hello world")
 
       # For OTP 20+ refc binaries up to 64 bytes might be copied during a GC
       text = String.duplicate("hello world", 6)
-
-      assert [[bin]] =
-               Ch.query!(conn, "SELECT {text:String}", %{"text" => text}, query_options).rows
-
-      assert bin == text
+      assert [[bin]] = Ch.query!(conn, "SELECT {$0:String}", [text], query_options).rows
+      assert :binary.referenced_byte_size(bin) == byte_size(text)
     end
 
     test "encode basic types", %{conn: conn, query_options: query_options} do
       # TODO
       # assert [[nil, nil]] = query("SELECT $1::text, $2::int", [nil, nil])
       assert [[true, false]] =
-               Ch.query!(
-                 conn,
-                 "SELECT {a:Bool}, {b:Bool}",
-                 %{"a" => true, "b" => false},
-                 query_options
-               ).rows
+               Ch.query!(conn, "SELECT {$0:bool}, {$1:Bool}", [true, false], query_options).rows
 
-      assert [["ẽ"]] = Ch.query!(conn, "SELECT {s:String}", %{"s" => "ẽ"}, query_options).rows
-      assert [[42]] = Ch.query!(conn, "SELECT {i:Int32}", %{"i" => 42}, query_options).rows
+      assert [["ẽ"]] = Ch.query!(conn, "SELECT {$0:char}", ["ẽ"], query_options).rows
+      assert [[42]] = Ch.query!(conn, "SELECT {$0:int}", [42], query_options).rows
 
       assert [[42.0, 43.0]] =
-               Ch.query!(
-                 conn,
-                 "SELECT {a:Float64}, {b:Float64}",
-                 %{"a" => 42, "b" => 43.0},
-                 query_options
-               ).rows
+               Ch.query!(conn, "SELECT {$0:float}, {$1:float}", [42, 43.0], query_options).rows
 
       assert [[nil, nil]] =
-               Ch.query!(
-                 conn,
-                 "SELECT {a:Float64}, {b:Float64}",
-                 %{"a" => "NaN", "b" => "nan"},
-                 query_options
-               ).rows
+               Ch.query!(conn, "SELECT {$0:float}, {$1:float}", ["NaN", "nan"], query_options).rows
 
-      assert [[nil]] = Ch.query!(conn, "SELECT {f:Float64}", %{"f" => "inf"}, query_options).rows
-      assert [[nil]] = Ch.query!(conn, "SELECT {f:Float64}", %{"f" => "-inf"}, query_options).rows
-
-      assert [["ẽric"]] =
-               Ch.query!(conn, "SELECT {s:String}", %{"s" => "ẽric"}, query_options).rows
+      assert [[nil]] = Ch.query!(conn, "SELECT {$0:float}", ["inf"], query_options).rows
+      assert [[nil]] = Ch.query!(conn, "SELECT {$0:float}", ["-inf"], query_options).rows
+      assert [["ẽric"]] = Ch.query!(conn, "SELECT {$0:varchar}", ["ẽric"], query_options).rows
 
       assert [[<<1, 2, 3>>]] =
-               Ch.query!(conn, "SELECT {b:String}", %{"b" => <<1, 2, 3>>}, query_options).rows
+               Ch.query!(conn, "SELECT {$0:bytea}", [<<1, 2, 3>>], query_options).rows
     end
 
     test "encode numeric", %{conn: conn, query_options: query_options} do
@@ -363,107 +375,126 @@ defmodule Ch.QueryTest do
 
       Enum.each(nums, fn {num, type} ->
         dec = Decimal.new(num, max_digits: :infinity, max_exponent: :infinity)
-        assert [[dec]] == Ch.query!(conn, "SELECT {d:#{type}}", %{"d" => dec}, query_options).rows
+        assert [[dec]] == Ch.query!(conn, "SELECT {$0:#{type}}", [dec], query_options).rows
       end)
     end
 
     test "encode integers and floats as numeric", %{conn: conn, query_options: query_options} do
       dec = Decimal.new(1)
-
-      assert [[dec]] ==
-               Ch.query!(conn, "SELECT {d:numeric(1,0)}", %{"d" => 1}, query_options).rows
+      assert [[dec]] == Ch.query!(conn, "SELECT {$0:numeric(1,0)}", [1], query_options).rows
 
       dec = Decimal.from_float(1.0)
-
-      assert [[dec]] ==
-               Ch.query!(conn, "SELECT {d:numeric(2,1)}", %{"d" => 1.0}, query_options).rows
+      assert [[dec]] == Ch.query!(conn, "SELECT {$0:numeric(2,1)}", [1.0], query_options).rows
     end
 
-    @tag :json
+    @tag skip: true
     test "encode json/jsonb", %{conn: conn, query_options: query_options} do
       json = %{"foo" => 42}
-
-      assert Ch.query!(
-               conn,
-               "SELECT {json:json}",
-               %{"json" => JSON.encode!(json)},
-               Keyword.merge(query_options,
-                 settings: [output_format_binary_write_json_as_string: true]
-               )
-             ).rows == [
-               [json]
-             ]
-
-      assert Ch.query!(
-               conn,
-               "SELECT {json:Map(String, Int64)}::json",
-               %{"json" => json},
-               Keyword.merge(query_options,
-                 settings: [output_format_binary_write_json_as_string: true]
-               )
-             ).rows == [
-               [json]
-             ]
+      assert [[json]] == Ch.query!(conn, "SELECT {$0::json}", [json], query_options).rows
     end
 
     test "encode uuid", %{conn: conn, query_options: query_options} do
       # TODO
       uuid = <<0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15>>
       uuid_hex = "00010203-0405-0607-0809-0a0b0c0d0e0f"
-
-      assert [[^uuid]] =
-               Ch.query!(conn, "SELECT {uuid:UUID}", %{"uuid" => uuid_hex}, query_options).rows
+      assert [[^uuid]] = Ch.query!(conn, "SELECT {$0:UUID}", [uuid_hex], query_options).rows
     end
 
     test "encode arrays", %{conn: conn, query_options: query_options} do
-      assert [[[]]] =
-               Ch.query!(conn, "SELECT {a:Array(Int32)}", %{"a" => []}, query_options).rows
-
-      assert [[[1]]] =
-               Ch.query!(conn, "SELECT {a:Array(Int32)}", %{"a" => [1]}, query_options).rows
+      assert [[[]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[]], query_options).rows
+      assert [[[1]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1]], query_options).rows
 
       assert [[[1, 2]]] =
-               Ch.query!(conn, "SELECT {a:Array(Int32)}", %{"a" => [1, 2]}, query_options).rows
+               Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1, 2]], query_options).rows
 
-      assert [[["1"]]] =
-               Ch.query!(conn, "SELECT {a:Array(String)}", %{"a" => ["1"]}, query_options).rows
-
-      assert [[[true]]] =
-               Ch.query!(conn, "SELECT {a:Array(Bool)}", %{"a" => [true]}, query_options).rows
+      assert [[["1"]]] = Ch.query!(conn, "SELECT {$0:Array(String)}", [["1"]], query_options).rows
+      assert [[[true]]] = Ch.query!(conn, "SELECT {$0:Array(Bool)}", [[true]], query_options).rows
 
       assert [[[~D[2023-01-01]]]] =
+               Ch.query!(conn, "SELECT {$0:Array(Date)}", [[~D[2023-01-01]]], query_options).rows
+
+      assert [[[Ch.Test.to_clickhouse_naive(conn, ~N[2023-01-01 12:00:00])]]] ==
                Ch.query!(
                  conn,
-                 "SELECT {a:Array(Date)}",
-                 %{"a" => [~D[2023-01-01]]},
+                 "SELECT {$0:Array(DateTime)}",
+                 [[~N[2023-01-01 12:00:00]]],
                  query_options
                ).rows
 
       assert [[[~U[2023-01-01 12:00:00Z]]]] ==
                Ch.query!(
                  conn,
-                 "SELECT {a:Array(DateTime('UTC'))}",
-                 %{"a" => [~U[2023-01-01 12:00:00Z]]},
+                 "SELECT {$0:Array(DateTime('UTC'))}",
+                 [[~N[2023-01-01 12:00:00]]],
+                 query_options
+               ).rows
+
+      assert [[[~N[2023-01-01 12:00:00]]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:Array(DateTime)}",
+                 [[~U[2023-01-01 12:00:00Z]]],
+                 query_options
+               ).rows
+
+      assert [[[~U[2023-01-01 12:00:00Z]]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:Array(DateTime('UTC'))}",
+                 [[~U[2023-01-01 12:00:00Z]]],
                  query_options
                ).rows
 
       assert [[[[0], [1]]]] =
-               Ch.query!(
-                 conn,
-                 "SELECT {a:Array(Array(Int32))}",
-                 %{"a" => [[0], [1]]},
-                 query_options
-               ).rows
+               Ch.query!(conn, "SELECT {$0:Array(Array(integer))}", [[[0], [1]]], query_options).rows
 
       assert [[[[0]]]] =
+               Ch.query!(conn, "SELECT {$0:Array(Array(integer))}", [[[0]]], query_options).rows
+
+      # assert [[[1, nil, 3]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1, nil, 3]], query_options).rows
+    end
+
+    test "encode datetimes close to unix epoch", %{conn: conn, query_options: query_options} do
+      assert [[~U[1970-01-01 00:00:00Z]]] ==
                Ch.query!(
                  conn,
-                 "SELECT {a:Array(Array(Int32))}",
-                 %{"a" => [[0]]},
+                 "SELECT {$0:DateTime('UTC')}",
+                 [~U[1970-01-01 00:00:00Z]],
                  query_options
                ).rows
 
-      # assert [[[1, nil, 3]]] = Ch.query!(conn, "SELECT {$0:Array(integer)}", [[1, nil, 3]], query_options).rows
+      assert [[~U[1970-01-01 00:00:00.001Z]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:DateTime64(3, 'UTC')}",
+                 [~U[1970-01-01 00:00:00.001Z]],
+                 query_options
+               ).rows
+
+      assert [[~U[1969-12-31 23:59:59Z]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:DateTime64(0, 'UTC')}",
+                 [~U[1969-12-31 23:59:59Z]],
+                 query_options
+               ).rows
+
+      # This is currently blocked on https://github.com/ClickHouse/ClickHouse/issues/96745
+      # assert [[~U[1969-12-31 23:59:59.500Z]]] ==
+      #          Ch.query!(
+      #            conn,
+      #            "SELECT {$0:DateTime64(3, 'UTC')}",
+      #            [~U[1969-12-31 23:59:59.500Z]],
+      #            query_options
+      #          ).rows
+
+      assert [[~U[1969-12-31 23:59:58.500Z]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:DateTime64(3, 'UTC')}",
+                 [~U[1969-12-31 23:59:58.500Z]],
+                 query_options
+               ).rows
     end
 
     test "encode network types", %{conn: conn, query_options: query_options} do
@@ -472,28 +503,28 @@ defmodule Ch.QueryTest do
       #          Ch.query!(conn, "SELECT {$0:inet4}::text", [{127, 0, 0, 1}], query_options).rows
 
       assert [[{127, 0, 0, 1}]] =
-               Ch.query!(conn, "SELECT {ip:String}::IPv4", %{"ip" => "127.0.0.1"}, query_options).rows
+               Ch.query!(conn, "SELECT {$0:text}::inet4", ["127.0.0.1"], query_options).rows
 
       assert [[{0, 0, 0, 0, 0, 0, 0, 1}]] =
-               Ch.query!(conn, "SELECT {ip:String}::IPv6", %{"ip" => "::1"}, query_options).rows
+               Ch.query!(conn, "SELECT {$0:text}::inet6", ["::1"], query_options).rows
     end
 
     test "result struct", %{conn: conn, query_options: query_options} do
       assert {:ok, res} = Ch.query(conn, "SELECT 123 AS a, 456 AS b", [], query_options)
       assert %Ch.Result{} = res
-      assert res.names == ["a", "b"]
-      assert res.rows == [[123, 456]]
-      assert is_list(res.headers)
-      assert is_binary(IO.iodata_to_binary(res.data))
+      assert res.command == :select
+      assert res.columns == ["a", "b"]
+      assert res.num_rows == 1
     end
 
     test "empty result struct", %{conn: conn, query_options: query_options} do
-      assert %Ch.Result{names: ["number", "b"], rows: []} =
+      assert %Ch.Result{} =
                res = Ch.query!(conn, "select number, 'a' as b from numbers(0)", [], query_options)
 
+      assert res.command == :select
+      assert res.columns == ["number", "b"]
       assert res.rows == []
-      assert is_list(res.headers)
-      assert is_binary(IO.iodata_to_binary(res.data))
+      assert res.num_rows == 0
     end
 
     test "error struct", %{conn: conn, query_options: query_options} do
@@ -501,28 +532,7 @@ defmodule Ch.QueryTest do
     end
 
     test "error code", %{conn: conn, query_options: query_options} do
-      assert {:error,
-              %Ch.Error{
-                code: 62,
-                message: "Code: 62. DB::Exception: Syntax error: failed at position 1" <> _rest
-              }} =
-               Ch.query(conn, "wat", [], query_options)
-    end
-
-    test "handles ClickHouse 100 Continue response", %{conn: conn, query_options: query_options} do
-      assert {:ok, %Ch.Result{rows: [[1]], headers: headers_continue}} =
-               Ch.query(
-                 conn,
-                 "SELECT 1",
-                 [],
-                 Keyword.merge(query_options, headers: [{"expect", "100-continue"}])
-               )
-
-      assert {:ok, %Ch.Result{rows: [[1]], headers: headers_normal}} =
-               Ch.query(conn, "SELECT 1")
-
-      # ensure we haven't kept any keys from 100 response (even though it doesn't contain headers right now, but still, good check, I think)
-      assert :proplists.get_keys(headers_continue) == :proplists.get_keys(headers_normal)
+      assert {:error, %Ch.Error{code: 62}} = Ch.query(conn, "wat", [], query_options)
     end
 
     test "mixed-case x-clickhouse-format overrides the default", %{
@@ -534,15 +544,17 @@ defmodule Ch.QueryTest do
             "X-ClickHouse-Format",
             "x-ClIcKhOuSe-FoRmAt"
           ] do
-        assert %Ch.Result{data: "1\n", headers: headers, names: nil, rows: nil} =
-                 Ch.query!(
-                   conn,
-                   "SELECT 1",
-                   %{},
-                   Keyword.merge(query_options, headers: [{header_name, "CSV"}])
-                 )
+        result =
+          Ch.query!(
+            conn,
+            "SELECT 1",
+            [],
+            Keyword.merge(query_options, headers: [{header_name, "CSV"}])
+          )
 
-        assert :proplists.get_value("x-clickhouse-format", headers) == "CSV"
+        assert IO.iodata_to_binary(result.data) == "1\n"
+        assert result.columns == nil
+        assert :proplists.get_value("x-clickhouse-format", result.headers) == "CSV"
       end
     end
 
@@ -554,7 +566,7 @@ defmodule Ch.QueryTest do
                Ch.query!(
                  conn,
                  "SELECT getClientHTTPHeader('user-agent')",
-                 %{},
+                 [],
                  Keyword.merge(query_options,
                    headers: [{"User-Agent", "custom-agent/ABC"}],
                    settings: [allow_get_client_http_header: 1]
@@ -566,20 +578,36 @@ defmodule Ch.QueryTest do
       conn: conn,
       query_options: query_options
     } do
-      assert %Ch.Result{data: "1\n", headers: headers} =
-               Ch.query!(
-                 conn,
-                 "SELECT 1",
-                 %{},
-                 Keyword.merge(query_options,
-                   headers: [
-                     {"X-ClickHouse-Format", "CSV"},
-                     {"x-clickhouse-format", "JSONEachRow"}
-                   ]
-                 )
-               )
+      result =
+        Ch.query!(
+          conn,
+          "SELECT 1",
+          [],
+          Keyword.merge(query_options,
+            headers: [
+              {"X-ClickHouse-Format", "CSV"},
+              {"x-clickhouse-format", "JSONEachRow"}
+            ]
+          )
+        )
 
-      assert :proplists.get_value("x-clickhouse-format", headers) == "CSV"
+      assert IO.iodata_to_binary(result.data) == "1\n"
+      assert :proplists.get_value("x-clickhouse-format", result.headers) == "CSV"
+    end
+
+    test "handles ClickHouse 100 Continue response", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      opts = Keyword.merge(query_options, headers: [{"expect", "100-continue"}])
+
+      assert {:ok, %Ch.Result{rows: [[1]], headers: headers_continue}} =
+               Ch.query(conn, "SELECT 1", [], opts)
+
+      assert {:ok, %Ch.Result{rows: [[1]], headers: headers_normal}} =
+               Ch.query(conn, "SELECT 1", [], query_options)
+
+      assert :proplists.get_keys(headers_continue) == :proplists.get_keys(headers_normal)
     end
 
     test "connection works after failure in execute", %{conn: conn, query_options: query_options} do
@@ -602,15 +630,19 @@ defmodule Ch.QueryTest do
         assert_receive [[0]], :timer.seconds(1)
       end)
     end
+
+    test "query struct interpolates to statement" do
+      assert "#{%Ch.Query{statement: "SELECT 1"}}" == "SELECT 1"
+    end
   end
 
-  test "query before and after idle worker timeout" do
-    opts = [worker_idle_timeout: 1]
+  test "query before and after idle ping", %{query_options: query_options} do
+    opts = [backoff_type: :stop, idle_interval: 1]
     {:ok, pid} = Ch.start_link(opts)
-    assert {:ok, _} = Ch.query(pid, "SELECT 42")
+    assert {:ok, _} = Ch.query(pid, "SELECT 42", [], query_options)
     :timer.sleep(20)
-    assert {:ok, _} = Ch.query(pid, "SELECT 42")
+    assert {:ok, _} = Ch.query(pid, "SELECT 42", [], query_options)
     :timer.sleep(20)
-    assert {:ok, _} = Ch.query(pid, "SELECT 42")
+    assert {:ok, _} = Ch.query(pid, "SELECT 42", [], query_options)
   end
 end

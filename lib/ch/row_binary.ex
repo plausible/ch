@@ -91,6 +91,7 @@ defmodule Ch.RowBinary do
   defp encoding_type(t)
        when t in [
               :string,
+              :binary,
               :json,
               :dynamic,
               :boolean,
@@ -106,11 +107,7 @@ defmodule Ch.RowBinary do
             ],
        do: t
 
-  defp encoding_type({:datetime = d, "UTC"}), do: d
-
-  defp encoding_type({:datetime, tz}) do
-    raise ArgumentError, "can't encode DateTime with non-UTC timezone: #{inspect(tz)}"
-  end
+  defp encoding_type({:datetime = d, tz}) when is_binary(tz), do: {d, tz}
 
   defp encoding_type({:fixed_string, _len} = t), do: t
 
@@ -155,11 +152,7 @@ defmodule Ch.RowBinary do
 
   defp encoding_type({:datetime64 = t, p}), do: {t, time_unit(p)}
 
-  defp encoding_type({:datetime64 = t, p, "UTC"}), do: {t, time_unit(p)}
-
-  defp encoding_type({:datetime64, _, tz}) do
-    raise ArgumentError, "can't encode DateTime64 with non-UTC timezone: #{inspect(tz)}"
-  end
+  defp encoding_type({:datetime64 = t, p, tz}) when is_binary(tz), do: {t, time_unit(p), tz}
 
   defp encoding_type({:time64 = t, p}), do: {t, time_unit(p)}
 
@@ -187,7 +180,7 @@ defmodule Ch.RowBinary do
     raise ArgumentError, "invalid varint: #{inspect(i)}"
   end
 
-  def encode(:string, str) do
+  def encode(type, str) when type in [:string, :binary] do
     case str do
       _ when is_binary(str) -> [encode(:varint, byte_size(str)) | str]
       _ when is_list(str) -> [encode(:varint, IO.iodata_length(str)) | str]
@@ -199,7 +192,7 @@ defmodule Ch.RowBinary do
     # assuming it can be sent as text and not "native" binary JSON
     # i.e. assumes `settings: [input_format_binary_read_json_as_string: 1]`
     # TODO
-    encode(:string, JSON.encode_to_iodata!(json))
+    encode(:string, Jason.encode_to_iodata!(json))
   end
 
   def encode({:fixed_string, size}, str) when byte_size(str) == size do
@@ -284,14 +277,16 @@ defmodule Ch.RowBinary do
     type = :"decimal#{size}"
 
     def encode({unquote(type), scale} = t, %Decimal{sign: sign, coef: coef, exp: exp} = d) do
+      # RowBinary stores decimals as signed scaled integers. Use the corresponding integer
+      # encoder so coefficients that exceed the storage width are rejected instead of truncated.
       cond do
         scale == -exp ->
           i = sign * coef
-          <<i::unquote(size)-little>>
+          encode(unquote(:"i#{size}"), i)
 
         exp >= 0 ->
           i = sign * coef * Integer.pow(10, exp + scale)
-          <<i::unquote(size)-little>>
+          encode(unquote(:"i#{size}"), i)
 
         true ->
           encode(t, Decimal.round(d, scale))
@@ -316,7 +311,13 @@ defmodule Ch.RowBinary do
     [encode(:varint, length(m)) | encode_many_kv(m, k, v)]
   end
 
-  def encode({:map, _k, _v} = t, m) when is_map(m), do: encode(t, Map.to_list(m))
+  def encode({:map, k, v}, m) when is_map(m) do
+    [
+      encode(:varint, map_size(m))
+      | :maps.fold(fn key, value, acc -> [encode(k, key), encode(v, value) | acc] end, [], m)
+    ]
+  end
+
   def encode({:map, _k, _v}, []), do: 0
   def encode({:map, _k, _v}, nil), do: 0
 
@@ -325,7 +326,9 @@ defmodule Ch.RowBinary do
   end
 
   def encode({:tuple, types}, values) when is_list(types) and is_list(values) do
-    encode_row(values, types)
+    # types were already normalized by encoding_type({:tuple, ts}); use the
+    # private encoder so we don't re-run encoding_types/1 on normalized types
+    _encode_row(values, types)
   end
 
   def encode({:tuple, types}, nil) when is_list(types) do
@@ -340,14 +343,22 @@ defmodule Ch.RowBinary do
 
   def encode(:datetime, %NaiveDateTime{} = datetime) do
     {seconds, _micros} = NaiveDateTime.to_gregorian_seconds(datetime)
-    <<seconds - @epoch_gregorian_seconds::32-little>>
+    encode_datetime(seconds - @epoch_gregorian_seconds, datetime)
   end
 
   def encode(:datetime, %DateTime{} = datetime) do
-    <<DateTime.to_unix(datetime, :second)::32-little>>
+    datetime |> DateTime.to_unix(:second) |> encode_datetime(datetime)
   end
 
   def encode(:datetime, nil), do: <<0::32>>
+
+  # RowBinary stores Unix timestamps, so the type timezone only matters when a
+  # naive wall-clock value needs to be resolved to an instant.
+  def encode({:datetime, timezone}, %NaiveDateTime{} = datetime) when is_binary(timezone) do
+    encode(:datetime, DateTime.from_naive!(datetime, timezone))
+  end
+
+  def encode({:datetime, timezone}, value) when is_binary(timezone), do: encode(:datetime, value)
 
   def encode({:datetime64, time_unit}, %NaiveDateTime{} = datetime) do
     {seconds, micros} = NaiveDateTime.to_gregorian_seconds(datetime)
@@ -360,6 +371,15 @@ defmodule Ch.RowBinary do
   end
 
   def encode({:datetime64, _time_unit}, nil), do: <<0::64>>
+
+  def encode({:datetime64, time_unit, timezone}, %NaiveDateTime{} = datetime)
+      when is_binary(timezone) do
+    encode({:datetime64, time_unit}, DateTime.from_naive!(datetime, timezone))
+  end
+
+  def encode({:datetime64, time_unit, timezone}, value) when is_binary(timezone) do
+    encode({:datetime64, time_unit}, value)
+  end
 
   def encode(:date, %Date{} = date) do
     <<Date.to_gregorian_days(date) - @epoch_gregorian_days::16-little>>
@@ -478,6 +498,18 @@ defmodule Ch.RowBinary do
     end
   end
 
+  @compile inline: [encode_datetime: 2]
+  defp encode_datetime(seconds, datetime) when seconds < 0 do
+    raise ArgumentError, "cannot encode #{datetime} as DateTime since it's before Unix epoch"
+  end
+
+  defp encode_datetime(seconds, datetime) when seconds > 0xFFFFFFFF do
+    raise ArgumentError,
+          "cannot encode #{datetime} as DateTime since it's after the maximum Unix timestamp"
+  end
+
+  defp encode_datetime(seconds, _datetime), do: <<seconds::32-little>>
+
   defp encode_varint_cont(i) when i < 128, do: <<i>>
 
   defp encode_varint_cont(i) do
@@ -502,7 +534,7 @@ defmodule Ch.RowBinary do
     try do
       encode(type, value)
     else
-      encoded -> [idx | encoded]
+      encoded -> [idx, encoded]
     rescue
       _e -> try_encode_variant(types, idx + 1, value)
     end
@@ -718,6 +750,7 @@ defmodule Ch.RowBinary do
   defp decoding_type(t)
        when t in [
               :string,
+              :binary,
               :json,
               :dynamic,
               :boolean,
@@ -838,13 +871,54 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [s | row], rows, types)
+      decode_rows(types_rest, bin, [to_utf8(s) | row], rows, types)
     end
   end
 
   defp decode_string_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
     to_be_continued(rows, bin, [:string | types_rest], row)
   end
+
+  @doc false
+  def to_utf8(str) do
+    utf8 = to_utf8(str, 0, 0, str, [])
+    IO.iodata_to_binary(utf8)
+  end
+
+  @dialyzer {:no_improper_lists, to_utf8: 5, to_utf8_escape: 5}
+
+  defp to_utf8(<<valid::utf8, rest::bytes>>, from, len, original, acc) do
+    to_utf8(rest, from, len + utf8_size(valid), original, acc)
+  end
+
+  defp to_utf8(<<_invalid, rest::bytes>>, from, len, original, acc) do
+    acc = [acc | binary_part(original, from, len)]
+    to_utf8_escape(rest, from + len, 1, original, acc)
+  end
+
+  defp to_utf8(<<>>, from, len, original, acc) do
+    [acc | binary_part(original, from, len)]
+  end
+
+  defp to_utf8_escape(<<valid::utf8, rest::bytes>>, from, len, original, acc) do
+    acc = [acc | "�"]
+    to_utf8(rest, from + len, utf8_size(valid), original, acc)
+  end
+
+  defp to_utf8_escape(<<_invalid, rest::bytes>>, from, len, original, acc) do
+    to_utf8_escape(rest, from, len + 1, original, acc)
+  end
+
+  defp to_utf8_escape(<<>>, _from, _len, _original, acc) do
+    [acc | "�"]
+  end
+
+  # UTF-8 encodes code points in one to four bytes
+  @compile inline: [utf8_size: 1]
+  defp utf8_size(codepoint) when codepoint <= 0x7F, do: 1
+  defp utf8_size(codepoint) when codepoint <= 0x7FF, do: 2
+  defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
+  defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
   @compile inline: [decode_string_json_decode_rows: 5]
 
@@ -856,12 +930,30 @@ defmodule Ch.RowBinary do
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [JSON.decode!(s) | row], rows, types)
+      decode_rows(types_rest, bin, [Jason.decode!(s) | row], rows, types)
     end
   end
 
   defp decode_string_json_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
     to_be_continued(rows, bin, [:json | types_rest], row)
+  end
+
+  @compile inline: [decode_binary_decode_rows: 5]
+
+  for {pattern, size} <- varints do
+    defp decode_binary_decode_rows(
+           <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
+           types_rest,
+           row,
+           rows,
+           types
+         ) do
+      decode_rows(types_rest, bin, [s | row], rows, types)
+    end
+  end
+
+  defp decode_binary_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
+    to_be_continued(rows, bin, [:binary | types_rest], row)
   end
 
   @compile inline: [decode_array_decode_rows: 6]
@@ -1280,6 +1372,9 @@ defmodule Ch.RowBinary do
       :string ->
         decode_string_decode_rows(bin, types_rest, row, rows, types)
 
+      :binary ->
+        decode_binary_decode_rows(bin, types_rest, row, rows, types)
+
       :json ->
         # assuming it arrives as text and not "native" binary JSON
         # i.e. assumes `settings: [output_format_binary_write_json_as_string: 1]`
@@ -1292,6 +1387,7 @@ defmodule Ch.RowBinary do
       {:dynamic, dynamic} ->
         decode_dynamic(bin, dynamic, types_rest, row, rows, types)
 
+      # TODO utf8?
       {:fixed_string, size} ->
         case bin do
           <<s::size(^size)-bytes, rest::bytes>> ->
@@ -1329,13 +1425,11 @@ defmodule Ch.RowBinary do
       {:datetime, timezone} ->
         case bin do
           <<s::32-little, bin::bytes>> ->
-            dt = DateTime.from_unix!(s)
-
             dt =
               case timezone do
-                nil -> DateTime.to_naive(dt)
-                "UTC" -> dt
-                _ -> DateTime.shift_zone!(dt, timezone)
+                nil -> NaiveDateTime.from_gregorian_seconds(s + @epoch_gregorian_seconds)
+                "UTC" -> DateTime.from_unix!(s)
+                _ -> s |> DateTime.from_unix!() |> DateTime.shift_zone!(timezone)
               end
 
             decode_rows(types_rest, bin, [dt | row], rows, types)
@@ -1411,14 +1505,12 @@ defmodule Ch.RowBinary do
 
       {:datetime64, time_unit, timezone} ->
         case bin do
-          <<s::64-little-signed, bin::bytes>> ->
-            dt = DateTime.from_unix!(s, time_unit)
-
+          <<ticks::64-little-signed, bin::bytes>> ->
             dt =
               case timezone do
-                nil -> DateTime.to_naive(dt)
-                "UTC" -> dt
-                _ -> DateTime.shift_zone!(dt, timezone)
+                nil -> naive_datetime_from_unix(ticks, time_unit)
+                "UTC" -> DateTime.from_unix!(ticks, time_unit)
+                _ -> ticks |> DateTime.from_unix!(time_unit) |> DateTime.shift_zone!(timezone)
               end
 
             decode_rows(types_rest, bin, [dt | row], rows, types)
@@ -1482,16 +1574,26 @@ defmodule Ch.RowBinary do
     end
   end
 
-  @compile inline: [time_unit: 1]
+  @compile inline: [time_unit: 1, time_precision: 1]
   for precision <- 0..9 do
     time_unit = Integer.pow(10, precision)
     defp time_unit(unquote(precision)), do: unquote(time_unit)
+
+    if precision <= 6 do
+      defp time_precision(unquote(time_unit)), do: unquote(precision)
+    end
   end
 
   @compile inline: [time_after_midnight: 2]
+  defp time_after_midnight(ticks, 1) when ticks >= 0 and ticks < 86400 do
+    Time.from_seconds_after_midnight(ticks)
+  end
+
   defp time_after_midnight(ticks, time_unit) do
     if ticks >= 0 and ticks < 86400 * time_unit do
-      ticks |> DateTime.from_unix!(time_unit) |> DateTime.to_time()
+      seconds = div(ticks, time_unit)
+      subsecond_ticks = rem(ticks, time_unit)
+      Time.from_seconds_after_midnight(seconds, microsecond_precision(subsecond_ticks, time_unit))
     else
       # since ClickHouse supports Time64 values of [-999:59:59.999999999, 999:59:59.999999999]
       # and Elixir's Time supports values of [00:00:00.000000, 23:59:59.999999]
@@ -1501,5 +1603,36 @@ defmodule Ch.RowBinary do
 
       # TODO: we could potentially decode ClickHouse's Time/Time64 values as Elixir's Duration when it's out of Elixir's Time range
     end
+  end
+
+  @compile inline: [naive_datetime_from_unix: 2]
+  defp naive_datetime_from_unix(ticks, 1) do
+    NaiveDateTime.from_gregorian_seconds(ticks + @epoch_gregorian_seconds)
+  end
+
+  defp naive_datetime_from_unix(ticks, time_unit) do
+    seconds = div(ticks, time_unit)
+    subsecond_ticks = rem(ticks, time_unit)
+
+    {seconds, subsecond_ticks} =
+      if subsecond_ticks < 0 do
+        {seconds - 1, subsecond_ticks + time_unit}
+      else
+        {seconds, subsecond_ticks}
+      end
+
+    NaiveDateTime.from_gregorian_seconds(
+      seconds + @epoch_gregorian_seconds,
+      microsecond_precision(subsecond_ticks, time_unit)
+    )
+  end
+
+  @compile inline: [microsecond_precision: 2]
+  defp microsecond_precision(subsecond_ticks, time_unit) when time_unit <= 1_000_000 do
+    {subsecond_ticks * div(1_000_000, time_unit), time_precision(time_unit)}
+  end
+
+  defp microsecond_precision(subsecond_ticks, time_unit) do
+    {div(subsecond_ticks, div(time_unit, 1_000_000)), 6}
   end
 end
