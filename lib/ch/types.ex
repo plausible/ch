@@ -29,7 +29,7 @@ defmodule Ch.Types do
       {"Time", :time, []},
       {"Date32", :date32, []},
       {"Date", :date, []},
-      {"JSON", :json, []},
+      {"JSON", :json, [:json_options]},
       {"Dynamic", :dynamic, [:identifier, :eq, :int]},
       # {"Dynamic", :dynamic, []},
       {"LowCardinality", :low_cardinality, [:type]},
@@ -67,6 +67,21 @@ defmodule Ch.Types do
     """
     def unquote(name)(), do: unquote(name)
   end
+
+  @doc """
+  Helper for `JSON` ClickHouse type:
+
+      iex> json()
+      :json
+
+      iex> encode(json())
+      "JSON"
+
+      iex> decode("JSON")
+      json()
+
+  """
+  def json, do: :json
 
   @doc """
   Helper for `DateTime` ClickHouse type:
@@ -359,7 +374,7 @@ defmodule Ch.Types do
 
   def decode("DateTime"), do: :datetime
   def decode("Dynamic"), do: :dynamic
-  def decode("JSON" <> _options), do: :json
+  def decode("JSON"), do: :json
 
   def decode(type) do
     try do
@@ -430,6 +445,11 @@ defmodule Ch.Types do
     decode_identifier(rest, 0, rest, stack, acc)
   end
 
+  defp decode([:json_options | stack], <<rest::bytes>>, acc) do
+    # Options can contain nested types and quoted regexes, so find the matching closing parenthesis.
+    decode_json_options(rest, 0, nil, stack, acc)
+  end
+
   for {encoded, decoded, [_ | _] = args} <- types do
     defp decode([:maybe_named_column | stack], unquote(encoded) <> rest, acc) do
       [:close, {:tuple, [:maybe_named_column]} | stack] = stack
@@ -493,6 +513,7 @@ defmodule Ch.Types do
   defp build_type(:time64 = t, [precision]), do: {t, precision}
   defp build_type(:variant = v, ts), do: {v, build_variant(ts)}
   defp build_type(:dynamic, _max_types), do: :dynamic
+  defp build_type(:json, _options), do: :json
 
   defp build_enum_mapping(mapping) do
     mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)
@@ -562,6 +583,48 @@ defmodule Ch.Types do
     decode(stack, rest, [int * multiplier | acc])
   end
 
+  # The JSON type's closing parenthesis ends the options list.
+  defp decode_json_options(<<?), rest::bytes>>, 0, nil, stack, acc) do
+    decode(stack, <<?), rest::bytes>>, acc)
+  end
+
+  # Opening parentheses belong to nested type hints, such as Tuple(...).
+  defp decode_json_options(<<?(, rest::bytes>>, depth, nil, stack, acc) do
+    decode_json_options(rest, depth + 1, nil, stack, acc)
+  end
+
+  # A closing parenthesis inside the options list finishes one nested type hint.
+  defp decode_json_options(<<?), rest::bytes>>, depth, nil, stack, acc) do
+    decode_json_options(rest, depth - 1, nil, stack, acc)
+  end
+
+  # ClickHouse strings use single quotes; quoted identifiers use double quotes or backticks.
+  defp decode_json_options(<<quote, rest::bytes>>, depth, nil, stack, acc)
+       when quote in [?', ?", ?`] do
+    decode_json_options(rest, depth, quote, stack, acc)
+  end
+
+  # A backslash protects the following character from ending a quoted value.
+  defp decode_json_options(<<?\\, _escaped::utf8, rest::bytes>>, depth, quote, stack, acc)
+       when not is_nil(quote) do
+    decode_json_options(rest, depth, quote, stack, acc)
+  end
+
+  # The matching quote ends a string literal or quoted identifier.
+  defp decode_json_options(<<quote, rest::bytes>>, depth, quote, stack, acc) do
+    decode_json_options(rest, depth, nil, stack, acc)
+  end
+
+  # Other characters do not affect parenthesis or quote tracking.
+  defp decode_json_options(<<_char::utf8, rest::bytes>>, depth, quote, stack, acc) do
+    decode_json_options(rest, depth, quote, stack, acc)
+  end
+
+  # Reaching EOF before the JSON type closes is invalid.
+  defp decode_json_options(<<>>, _depth, _quote, _stack, _acc) do
+    raise ArgumentError, "unexpected end of type while decoding"
+  end
+
   @doc """
   Encodes a type from Elixir atom / tuple to proper ClickHouse name.
 
@@ -579,6 +642,7 @@ defmodule Ch.Types do
   end
 
   def encode(:datetime), do: "DateTime"
+  def encode(:json), do: "JSON"
   def encode({:time64, p}), do: ["Time64(", Integer.to_string(p), ?)]
   def encode({:nullable, type}), do: ["Nullable(", encode(type), ?)]
   def encode({:fixed_string, n}), do: ["FixedString(", Integer.to_string(n), ?)]

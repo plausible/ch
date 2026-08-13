@@ -108,7 +108,25 @@ defmodule Ch.TypesTest do
       assert decode("JSON") == :json
       assert decode(" JSON ") == :json
 
-      # TODO JSON(...)
+      assert decode("JSON(max_dynamic_types=10)") == :json
+
+      assert decode(" JSON ( max_dynamic_paths = 1024, max_dynamic_types = 32 ) ") == :json
+
+      assert decode("""
+             JSON(
+               max_dynamic_paths = 1024,
+               max_dynamic_types = 32,
+               "payload)" Map(String, Tuple(UInt8, String)),
+               SKIP ignored.path,
+               SKIP REGEXP 'tmp_[,()]'
+             )
+             """) == :json
+
+      assert decode("Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))") ==
+               {:array, :json}
+
+      assert decode("Tuple(payload JSON(SKIP `ignored)`), id UInt8)") ==
+               {:tuple, [:json, :u8]}
     end
 
     test "datetime" do
