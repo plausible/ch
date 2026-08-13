@@ -29,28 +29,13 @@ inputs =
   end
 
 version =
-  System.get_env("BENCHMARK_VERSION") ||
-    case System.cmd("git", ["rev-parse", "HEAD"], stderr_to_stdout: true) do
-      {sha, 0} -> String.trim(sha)
-      _ -> "working-tree"
-    end
-
-output_root = System.get_env("BENCHMARK_OUTPUT_DIR", "bench/output")
-
-seconds = fn name, default ->
-  case System.get_env(name) do
-    nil -> default
-    value -> String.to_float(value)
+  case System.cmd("git", ["rev-parse", "HEAD"], stderr_to_stdout: true) do
+    {sha, 0} -> String.trim(sha)
+    _ -> "working-tree"
   end
-end
 
-profile_after =
-  case System.get_env("BENCHMARK_PROFILE") do
-    nil -> false
-    "" -> false
-    "false" -> false
-    profiler -> String.to_existing_atom(profiler)
-  end
+github_actions? = System.get_env("GITHUB_ACTIONS") == "true"
+profile_after = if github_actions? or "--profile" in System.argv(), do: :tprof, else: false
 
 Benchee.run(
   %{
@@ -60,8 +45,8 @@ Benchee.run(
     end
   },
   inputs: inputs,
-  time: seconds.("BENCHMARK_TIME", 5.0),
-  warmup: seconds.("BENCHMARK_WARMUP", 2.0),
+  time: 3,
+  warmup: 1,
   max_sample_size: 20_000,
   measure_function_call_overhead: true,
   pre_check: true,
@@ -69,12 +54,8 @@ Benchee.run(
   formatters: [
     {Benchee.Formatters.Console, extended_statistics: true},
     {Ch.Bench.JSONFormatter,
-     output_root: output_root,
+     output_root: "bench/output",
      benchmark_version: version,
-     machine_prefix:
-       System.get_env(
-         "BENCHMARK_MACHINE_PREFIX",
-         if(System.get_env("CI") == "true", do: "ci", else: "local")
-       )}
+     machine_prefix: if(github_actions?, do: "github-actions", else: "local")}
   ]
 )

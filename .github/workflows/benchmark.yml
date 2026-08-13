@@ -19,13 +19,6 @@ concurrency:
 jobs:
   row-binary:
     runs-on: ubuntu-latest
-    env:
-      MIX_ENV: dev
-      BENCHMARK_MACHINE_PREFIX: github-actions
-      BENCHMARK_VERSION: ${{ github.event.pull_request.head.sha || github.sha }}
-      BENCHMARK_TIME: "3.0"
-      BENCHMARK_WARMUP: "1.0"
-      BENCHMARK_PROFILE: tprof
 
     steps:
       - uses: actions/checkout@v7
@@ -52,11 +45,14 @@ jobs:
       - run: mix benchmark
 
       - name: Locate benchmark result
+        id: benchmark-result
         run: |
           result_path=$(cat bench/output/current-result-path)
           machine=$(jq --raw-output .machine "$result_path")
-          echo "BENCHMARK_RESULT_PATH=$result_path" >> "$GITHUB_ENV"
-          echo "BENCHMARK_MACHINE=$machine" >> "$GITHUB_ENV"
+          version=$(jq --raw-output .benchmark_version "$result_path")
+          echo "path=$result_path" >> "$GITHUB_OUTPUT"
+          echo "machine=$machine" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Install ClickHouse Local
         env:
@@ -67,7 +63,11 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Load benchmark history
+        id: benchmark-history
         run: |
+          result_path="${{ steps.benchmark-result.outputs.path }}"
+          machine="${{ steps.benchmark-result.outputs.machine }}"
+
           if git fetch origin benchmark-results; then
             git worktree add bench-history FETCH_HEAD
           else
@@ -76,33 +76,39 @@ jobs:
           fi
 
           mkdir -p bench/compare
-          cp "$BENCHMARK_RESULT_PATH" bench/compare/current.json
+          cp "$result_path" bench/compare/current.json
 
-          if test -f "bench-history/latest/$BENCHMARK_MACHINE/benchmark.json"; then
-            cp "bench-history/latest/$BENCHMARK_MACHINE/benchmark.json" bench/compare/baseline.json
+          if test -f "bench-history/latest/$machine/benchmark.json"; then
+            cp "bench-history/latest/$machine/benchmark.json" bench/compare/baseline.json
           else
             cp bench/compare/current.json bench/compare/baseline.json
-            echo "BENCHMARK_BASELINE_NOTE=No prior baseline exists; this run establishes it." >> "$GITHUB_ENV"
+            echo "note=No prior baseline exists; this run establishes it." >> "$GITHUB_OUTPUT"
           fi
 
       - name: Compare with latest master benchmark
         run: |
+          version="${{ steps.benchmark-result.outputs.version }}"
+          machine="${{ steps.benchmark-result.outputs.machine }}"
+          baseline_note="${{ steps.benchmark-history.outputs.note }}"
+          if test -z "$baseline_note"; then
+            baseline_note="Compared with the latest master result from the same CI machine. Changes below 5% are reported as noise."
+          fi
           clickhouse local --queries-file bench/compare.sql > bench/compare/comment.md
           {
             echo "## RowBinary benchmark"
             echo
-            echo "${BENCHMARK_BASELINE_NOTE:-Compared with the latest master result from the same CI machine. Changes below 5% are reported as noise.}"
+            echo "$baseline_note"
             echo
             cat bench/compare/comment.md
             echo
-            echo "Commit: \`$BENCHMARK_VERSION\` · Machine: \`$BENCHMARK_MACHINE\` · Profiler: TProf · Full JSON results are attached to this workflow run."
+            echo "Commit: \`$version\` · Machine: \`$machine\` · Profiler: TProf · Full JSON results are attached to this workflow run."
           } > bench/compare/pr-comment.md
           cat bench/compare/pr-comment.md
 
       - uses: actions/upload-artifact@v7
         with:
-          name: row-binary-benchmark-${{ env.BENCHMARK_VERSION }}
-          path: bench/output/machine=*/version=${{ env.BENCHMARK_VERSION }}/benchmark.json
+          name: row-binary-benchmark-${{ steps.benchmark-result.outputs.version }}
+          path: ${{ steps.benchmark-result.outputs.path }}
 
       - name: Comment on pull request
         if: github.event_name == 'pull_request'
@@ -113,12 +119,15 @@ jobs:
       - name: Store master result
         if: github.event_name == 'push' || github.event_name == 'schedule'
         run: |
-          destination="data/machine=$BENCHMARK_MACHINE/version=$BENCHMARK_VERSION"
-          mkdir -p "bench-history/$destination" "bench-history/latest/$BENCHMARK_MACHINE"
-          cp -R "bench/output/machine=$BENCHMARK_MACHINE/version=$BENCHMARK_VERSION/." "bench-history/$destination/"
-          cp "bench-history/$destination/benchmark.json" "bench-history/latest/$BENCHMARK_MACHINE/benchmark.json"
+          result_path="${{ steps.benchmark-result.outputs.path }}"
+          machine="${{ steps.benchmark-result.outputs.machine }}"
+          version="${{ steps.benchmark-result.outputs.version }}"
+          destination="data/machine=$machine/version=$version"
+          mkdir -p "bench-history/$destination" "bench-history/latest/$machine"
+          cp "$result_path" "bench-history/$destination/benchmark.json"
+          cp "bench-history/$destination/benchmark.json" "bench-history/latest/$machine/benchmark.json"
           git -C bench-history add data latest
           git -C bench-history config user.name github-actions[bot]
           git -C bench-history config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git -C bench-history commit -m "Benchmark $BENCHMARK_VERSION"
+          git -C bench-history commit -m "Benchmark $version"
           git -C bench-history push origin HEAD:benchmark-results

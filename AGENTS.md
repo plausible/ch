@@ -11,7 +11,7 @@ Machine partitions are derived from the execution environment, OS, CPU model, on
 
 The queries below use `clickhouse local`. If the ClickHouse binary is not installed, install it with `curl https://clickhouse.com/cli | sh` followed by `~/.local/bin/clickhousectl local use latest`.
 
-Run benchmarks locally with `mix benchmark`. To include Benchee's built-in TProf pass, use `BENCHMARK_PROFILE=tprof mix benchmark`. JSON results are written below `bench/output/`, partitioned by detected machine specifications and SHA. Each file includes schema/run identity; timestamp and CI provenance; OS, architecture, CPU, cores, memory, Elixir, Erlang, and JIT details; benchmark configuration and units; and raw samples plus runtime, memory, and reduction statistics for every scenario. Override `BENCHMARK_MACHINE_PREFIX`, `BENCHMARK_VERSION`, `BENCHMARK_TIME`, or `BENCHMARK_WARMUP` when a reproducible series needs fixed settings; hardware fields are always detected.
+Run benchmarks locally with `mix benchmark`. Use `mix benchmark --profile` to include Benchee's built-in TProf pass; CI profiles automatically. JSON results are written below `bench/output/`, partitioned by the detected machine specifications and current Git SHA. Each file includes schema/run identity; timestamp and CI provenance; OS, architecture, CPU, cores, memory, Elixir, Erlang, and JIT details; benchmark configuration and units; and raw samples plus runtime, memory, and reduction statistics for every scenario.
 
 An abridged result from the demo RowBinary benchmark looks like this. Actual files contain all samples and statistics, plus similarly shaped `memory_usage` and `reductions` collections for each scenario.
 
