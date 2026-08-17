@@ -702,7 +702,7 @@ defmodule Ch.RowBinary do
   end
 
   defp decode_rows!(data, types) do
-    {rows, remaining_data, state} = decode_rows(types, data, [], [], types)
+    {rows, remaining_data, state} = decode_rows(types, data, 1, [], [], types)
 
     case state do
       nil ->
@@ -717,14 +717,25 @@ defmodule Ch.RowBinary do
         Partial row: #{inspect(row)}
         Completed rows: #{length(rows)}
         """
+
+      {:cont, types_rest, _count, row} ->
+        raise ArgumentError, """
+        incomplete RowBinary data: ran out of bytes while decoding
+
+        Expected to decode: #{inspect(types_rest)}
+        Remaining bytes: #{byte_size(remaining_data)} bytes
+        Partial row: #{inspect(row)}
+        Completed rows: #{length(rows)}
+        """
     end
   end
 
   @doc false
   def decode_rows_continue(<<data::bytes>>, types, state) do
     case state do
-      {:cont, types_rest, row} -> decode_rows(types_rest, data, row, [], types)
-      nil -> decode_rows(types, data, [], [], types)
+      {:cont, types_rest, row} -> decode_rows(types_rest, data, 1, row, [], types)
+      {:cont, types_rest, count, row} -> decode_rows(types_rest, data, count, row, [], types)
+      nil -> decode_rows(types, data, 1, [], [], types)
     end
   end
 
@@ -861,22 +872,23 @@ defmodule Ch.RowBinary do
     end
   end
 
-  @compile inline: [decode_string_decode_rows: 5]
+  @compile inline: [decode_string_decode_rows: 6]
 
   for {pattern, size} <- varints do
     defp decode_string_decode_rows(
            <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
-           types_rest,
+           row_types,
+           count,
            row,
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [to_utf8(s) | row], rows, types)
+      decoded(row_types, bin, count, [to_utf8(s) | row], rows, types)
     end
   end
 
-  defp decode_string_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
-    to_be_continued(rows, bin, [:string | types_rest], row)
+  defp decode_string_decode_rows(<<bin::bytes>>, row_types, count, row, rows, _types) do
+    to_be_continued(rows, bin, row_types, count, row)
   end
 
   @doc false
@@ -920,77 +932,106 @@ defmodule Ch.RowBinary do
   defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
   defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
-  @compile inline: [decode_string_json_decode_rows: 5]
+  @compile inline: [decode_string_json_decode_rows: 6]
 
   for {pattern, size} <- varints do
     defp decode_string_json_decode_rows(
            <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
-           types_rest,
+           row_types,
+           count,
            row,
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [Jason.decode!(s) | row], rows, types)
+      decoded(row_types, bin, count, [Jason.decode!(s) | row], rows, types)
     end
   end
 
-  defp decode_string_json_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
-    to_be_continued(rows, bin, [:json | types_rest], row)
+  defp decode_string_json_decode_rows(<<bin::bytes>>, row_types, count, row, rows, _types) do
+    to_be_continued(rows, bin, row_types, count, row)
   end
 
-  @compile inline: [decode_binary_decode_rows: 5]
+  @compile inline: [decode_binary_decode_rows: 6]
 
   for {pattern, size} <- varints do
     defp decode_binary_decode_rows(
            <<unquote(pattern), s::size(unquote(size))-bytes, bin::bytes>>,
-           types_rest,
+           row_types,
+           count,
            row,
            rows,
            types
          ) do
-      decode_rows(types_rest, bin, [s | row], rows, types)
+      decoded(row_types, bin, count, [s | row], rows, types)
     end
   end
 
-  defp decode_binary_decode_rows(<<bin::bytes>>, types_rest, row, rows, _types) do
-    to_be_continued(rows, bin, [:binary | types_rest], row)
+  defp decode_binary_decode_rows(<<bin::bytes>>, row_types, count, row, rows, _types) do
+    to_be_continued(rows, bin, row_types, count, row)
   end
 
-  @compile inline: [decode_array_decode_rows: 6]
-  defp decode_array_decode_rows(<<0, bin::bytes>>, _type, types_rest, row, rows, types) do
-    decode_rows(types_rest, bin, [[] | row], rows, types)
+  @compile inline: [decode_array_decode_rows: 7]
+  defp decode_array_decode_rows(<<0, bin::bytes>>, _type, row_types, count, row, rows, types) do
+    decoded(row_types, bin, count, [[] | row], rows, types)
   end
 
   for {pattern, size} <- varints do
     defp decode_array_decode_rows(
            <<unquote(pattern), bin::bytes>>,
            type,
-           types_rest,
+           row_types,
+           count,
            row,
            rows,
            types
          ) do
-      array_types = List.duplicate(type, unquote(size))
-      types_rest = array_types ++ [{:array_over, row} | types_rest]
-      decode_rows(types_rest, bin, [], rows, types)
+      case unquote(size) do
+        0 ->
+          decoded(row_types, bin, count, [[] | row], rows, types)
+
+        size ->
+          decode_array_items(type, bin, size, row_types, count, row, rows, types)
+      end
     end
   end
 
-  defp decode_array_decode_rows(<<bin::bytes>>, type, types_rest, row, rows, _types) do
-    to_be_continued(rows, bin, [{:array, type} | types_rest], row)
+  defp decode_array_decode_rows(
+         <<bin::bytes>>,
+         _type,
+         row_types,
+         count,
+         row,
+         rows,
+         _types
+       ) do
+    to_be_continued(rows, bin, row_types, count, row)
   end
 
-  @compile inline: [decode_map_decode_rows: 7]
+  # UInt8 arrays are already byte lists in their wire representation. This also makes small
+  # nested arrays cheap without generating a second decoder for every scalar type.
+  defp decode_array_items(:u8, bin, size, row_types, count, row, rows, types)
+       when byte_size(bin) >= size do
+    <<items::size(^size)-bytes, rest::bytes>> = bin
+    decoded(row_types, rest, count, [:binary.bin_to_list(items) | row], rows, types)
+  end
+
+  defp decode_array_items(type, bin, size, row_types, count, row, rows, types) do
+    frame = {:array_over, row_types, count, row}
+    decode_rows([type, frame], bin, size, [], rows, types)
+  end
+
+  @compile inline: [decode_map_decode_rows: 8]
   defp decode_map_decode_rows(
          <<0, bin::bytes>>,
          _key_type,
          _value_type,
-         types_rest,
+         row_types,
+         count,
          row,
          rows,
          types
        ) do
-    decode_rows(types_rest, bin, [%{} | row], rows, types)
+    decoded(row_types, bin, count, [%{} | row], rows, types)
   end
 
   for {pattern, size} <- varints do
@@ -998,20 +1039,35 @@ defmodule Ch.RowBinary do
            <<unquote(pattern), bin::bytes>>,
            key_type,
            value_type,
-           types_rest,
+           row_types,
+           count,
            row,
            rows,
            types
          ) do
-      types_rest =
-        map_types(unquote(size), key_type, value_type) ++ [{:map_over, row} | types_rest]
+      case unquote(size) do
+        0 ->
+          decoded(row_types, bin, count, [%{} | row], rows, types)
 
-      decode_rows(types_rest, bin, [], rows, types)
+        size ->
+          frame = {:map_over, row_types, count, row}
+          inner_types = map_types(size, key_type, value_type) ++ [frame]
+          decode_rows(inner_types, bin, 1, [], rows, types)
+      end
     end
   end
 
-  defp decode_map_decode_rows(<<bin::bytes>>, key_type, value_type, types_rest, row, rows, _types) do
-    to_be_continued(rows, bin, [{:map, key_type, value_type} | types_rest], row)
+  defp decode_map_decode_rows(
+         <<bin::bytes>>,
+         _key_type,
+         _value_type,
+         row_types,
+         count,
+         row,
+         rows,
+         _types
+       ) do
+    to_be_continued(rows, bin, row_types, count, row)
   end
 
   defp map_types(count, key_type, value_type) when count > 0 do
@@ -1240,7 +1296,7 @@ defmodule Ch.RowBinary do
       decode_dynamic(rest, dynamic, types_rest, row, rows, types)
     else
       type = build_dynamic_type(:lists.reverse(dynamic))
-      decode_rows([type | types_rest], rest, row, rows, types)
+      decode_rows([type | types_rest], rest, 1, row, rows, types)
     end
   end
 
@@ -1312,77 +1368,93 @@ defmodule Ch.RowBinary do
 
   for {type, clauses} <- simple_types do
     fun = :"decode_#{type}_decode_rows"
-    @compile inline: [{fun, 5}]
+    @compile inline: [{fun, 6}]
 
     for %{pattern: pattern, value: value} <- List.wrap(clauses) do
-      defp unquote(fun)(<<unquote(pattern), rest::bytes>>, types_rest, row, rows, types) do
-        decode_rows(types_rest, rest, [unquote(value) | row], rows, types)
+      defp unquote(fun)(<<unquote(pattern), rest::bytes>>, row_types, count, row, rows, types) do
+        decoded(row_types, rest, count, [unquote(value) | row], rows, types)
       end
     end
 
-    defp unquote(fun)(<<bin::bytes>>, types_rest, row, rows, _types) do
-      to_be_continued(rows, bin, [unquote(type) | types_rest], row)
+    defp unquote(fun)(<<bin::bytes>>, row_types, count, row, rows, _types) do
+      to_be_continued(rows, bin, row_types, count, row)
     end
   end
 
-  defp decode_rows([type | types_rest], <<bin::bytes>>, row, rows, types) do
+  @compile inline: [decoded: 6]
+  defp decoded([_type | types_rest], bin, 1, row, rows, types) do
+    decode_rows(types_rest, bin, 1, row, rows, types)
+  end
+
+  defp decoded(row_types, bin, count, row, rows, types) when count > 1 do
+    decode_rows(row_types, bin, count - 1, row, rows, types)
+  end
+
+  # The head type remains active while `count` changes, so arrays do not allocate a type or
+  # continuation tuple per item. Frames are added only when entering a nested value.
+  defp decode_rows([type | types_rest] = row_types, <<bin::bytes>>, count, row, rows, types) do
     case type do
       :u8 ->
-        decode_u8_decode_rows(bin, types_rest, row, rows, types)
+        decode_u8_decode_rows(bin, row_types, count, row, rows, types)
 
       :u16 ->
-        decode_u16_decode_rows(bin, types_rest, row, rows, types)
+        decode_u16_decode_rows(bin, row_types, count, row, rows, types)
 
       :u32 ->
-        decode_u32_decode_rows(bin, types_rest, row, rows, types)
+        decode_u32_decode_rows(bin, row_types, count, row, rows, types)
 
       :u64 ->
-        decode_u64_decode_rows(bin, types_rest, row, rows, types)
+        decode_u64_decode_rows(bin, row_types, count, row, rows, types)
 
       :u128 ->
-        decode_u128_decode_rows(bin, types_rest, row, rows, types)
+        decode_u128_decode_rows(bin, row_types, count, row, rows, types)
 
       :u256 ->
-        decode_u256_decode_rows(bin, types_rest, row, rows, types)
+        decode_u256_decode_rows(bin, row_types, count, row, rows, types)
 
       :i8 ->
-        decode_i8_decode_rows(bin, types_rest, row, rows, types)
+        decode_i8_decode_rows(bin, row_types, count, row, rows, types)
 
       :i16 ->
-        decode_i16_decode_rows(bin, types_rest, row, rows, types)
+        decode_i16_decode_rows(bin, row_types, count, row, rows, types)
 
       :i32 ->
-        decode_i32_decode_rows(bin, types_rest, row, rows, types)
+        decode_i32_decode_rows(bin, row_types, count, row, rows, types)
 
       :i64 ->
-        decode_i64_decode_rows(bin, types_rest, row, rows, types)
+        decode_i64_decode_rows(bin, row_types, count, row, rows, types)
 
       :i128 ->
-        decode_i128_decode_rows(bin, types_rest, row, rows, types)
+        decode_i128_decode_rows(bin, row_types, count, row, rows, types)
 
       :i256 ->
-        decode_i256_decode_rows(bin, types_rest, row, rows, types)
+        decode_i256_decode_rows(bin, row_types, count, row, rows, types)
 
       :f32 ->
-        decode_f32_decode_rows(bin, types_rest, row, rows, types)
+        decode_f32_decode_rows(bin, row_types, count, row, rows, types)
 
       :f64 ->
-        decode_f64_decode_rows(bin, types_rest, row, rows, types)
+        decode_f64_decode_rows(bin, row_types, count, row, rows, types)
 
       :string ->
-        decode_string_decode_rows(bin, types_rest, row, rows, types)
+        decode_string_decode_rows(bin, row_types, count, row, rows, types)
 
       :binary ->
-        decode_binary_decode_rows(bin, types_rest, row, rows, types)
+        decode_binary_decode_rows(bin, row_types, count, row, rows, types)
 
       :json ->
         # assuming it arrives as text and not "native" binary JSON
         # i.e. assumes `settings: [output_format_binary_write_json_as_string: 1]`
         # TODO
-        decode_string_json_decode_rows(bin, types_rest, row, rows, types)
+        decode_string_json_decode_rows(bin, row_types, count, row, rows, types)
 
       :dynamic ->
-        decode_dynamic(bin, _dynamic = [], types_rest, row, rows, types)
+        if count == 1 do
+          decode_dynamic(bin, _dynamic = [], types_rest, row, rows, types)
+        else
+          frame = {:repeat, row_types, count - 1}
+          decode_dynamic(bin, _dynamic = [], [frame], row, rows, types)
+        end
 
       {:dynamic, dynamic} ->
         decode_dynamic(bin, dynamic, types_rest, row, rows, types)
@@ -1391,35 +1463,35 @@ defmodule Ch.RowBinary do
       {:fixed_string, size} ->
         case bin do
           <<s::size(^size)-bytes, rest::bytes>> ->
-            decode_rows(types_rest, rest, [s | row], rows, types)
+            decoded(row_types, rest, count, [s | row], rows, types)
 
           _ ->
-            to_be_continued(rows, bin, [type | types_rest], row)
+            to_be_continued(rows, bin, row_types, count, row)
         end
 
       :boolean ->
-        decode_boolean_decode_rows(bin, types_rest, row, rows, types)
+        decode_boolean_decode_rows(bin, row_types, count, row, rows, types)
 
       :uuid ->
-        decode_uuid_decode_rows(bin, types_rest, row, rows, types)
+        decode_uuid_decode_rows(bin, row_types, count, row, rows, types)
 
       :date ->
-        decode_date_decode_rows(bin, types_rest, row, rows, types)
+        decode_date_decode_rows(bin, row_types, count, row, rows, types)
 
       :date32 ->
-        decode_date32_decode_rows(bin, types_rest, row, rows, types)
+        decode_date32_decode_rows(bin, row_types, count, row, rows, types)
 
       :time ->
-        decode_time_decode_rows(bin, types_rest, row, rows, types)
+        decode_time_decode_rows(bin, row_types, count, row, rows, types)
 
       {:time64, time_unit} ->
         case bin do
           <<ticks::64-little-signed, bin::bytes>> ->
             time = time_after_midnight(ticks, time_unit)
-            decode_rows(types_rest, bin, [time | row], rows, types)
+            decoded(row_types, bin, count, [time | row], rows, types)
 
           _ ->
-            to_be_continued(rows, bin, [type | types_rest], row)
+            to_be_continued(rows, bin, row_types, count, row)
         end
 
       {:datetime, timezone} ->
@@ -1432,10 +1504,10 @@ defmodule Ch.RowBinary do
                 _ -> s |> DateTime.from_unix!() |> DateTime.shift_zone!(timezone)
               end
 
-            decode_rows(types_rest, bin, [dt | row], rows, types)
+            decoded(row_types, bin, count, [dt | row], rows, types)
 
           _ ->
-            to_be_continued(rows, bin, [type | types_rest], row)
+            to_be_continued(rows, bin, row_types, count, row)
         end
 
       {:decimal, size, scale} ->
@@ -1443,65 +1515,110 @@ defmodule Ch.RowBinary do
           <<val::size(^size)-little-signed, bin::bytes>> ->
             sign = if val < 0, do: -1, else: 1
             d = Decimal.new(sign, abs(val), -scale)
-            decode_rows(types_rest, bin, [d | row], rows, types)
+            decoded(row_types, bin, count, [d | row], rows, types)
 
           _ ->
-            to_be_continued(rows, bin, [type | types_rest], row)
+            to_be_continued(rows, bin, row_types, count, row)
         end
 
       {:nullable, inner_type} ->
         case bin do
           <<b, bin::bytes>> ->
             case b do
-              0 -> decode_rows([inner_type | types_rest], bin, row, rows, types)
-              1 -> decode_rows(types_rest, bin, [nil | row], rows, types)
+              0 ->
+                if count == 1 do
+                  decode_rows([inner_type | types_rest], bin, 1, row, rows, types)
+                else
+                  frame = {:repeat, row_types, count - 1}
+                  decode_rows([inner_type, frame], bin, 1, row, rows, types)
+                end
+
+              1 ->
+                decoded(row_types, bin, count, [nil | row], rows, types)
             end
 
           _ ->
-            to_be_continued(rows, bin, [type | types_rest], row)
+            to_be_continued(rows, bin, row_types, count, row)
         end
 
       :nothing ->
-        decode_rows(types_rest, bin, [nil | row], rows, types)
+        decoded(row_types, bin, count, [nil | row], rows, types)
 
       {:array, inner_type} ->
-        decode_array_decode_rows(bin, inner_type, types_rest, row, rows, types)
+        decode_array_decode_rows(bin, inner_type, row_types, count, row, rows, types)
 
+      # Continuations produced by decoder versions before the counted loop remain resumable.
       {:array_over, original_row} ->
-        decode_rows(types_rest, bin, [:lists.reverse(row) | original_row], rows, types)
+        decode_rows(types_rest, bin, 1, [:lists.reverse(row) | original_row], rows, types)
+
+      {:array_over, parent_types, original_count, original_row} when is_list(parent_types) ->
+        decoded(
+          parent_types,
+          bin,
+          original_count,
+          [:lists.reverse(row) | original_row],
+          rows,
+          types
+        )
 
       {:map, key_type, value_type} ->
-        decode_map_decode_rows(bin, key_type, value_type, types_rest, row, rows, types)
+        decode_map_decode_rows(bin, key_type, value_type, row_types, count, row, rows, types)
 
       {:map_over, original_row} ->
         map = row |> Enum.chunk_every(2) |> Enum.map(fn [v, k] -> {k, v} end) |> Map.new()
-        decode_rows(types_rest, bin, [map | original_row], rows, types)
+        decode_rows(types_rest, bin, 1, [map | original_row], rows, types)
+
+      {:map_over, parent_types, original_count, original_row} ->
+        map = row |> Enum.chunk_every(2) |> Enum.map(fn [v, k] -> {k, v} end) |> Map.new()
+        decoded(parent_types, bin, original_count, [map | original_row], rows, types)
 
       {:tuple, tuple_types} ->
-        decode_rows(tuple_types ++ [{:tuple_over, row} | types_rest], bin, [], rows, types)
+        frame = {:tuple_over, row_types, count, row}
+        decode_rows(tuple_types ++ [frame], bin, 1, [], rows, types)
 
       {:tuple_over, original_row} ->
         tuple = row |> :lists.reverse() |> List.to_tuple()
-        decode_rows(types_rest, bin, [tuple | original_row], rows, types)
+        decode_rows(types_rest, bin, 1, [tuple | original_row], rows, types)
+
+      {:tuple_over, parent_types, original_count, original_row} ->
+        tuple = row |> :lists.reverse() |> List.to_tuple()
+
+        decoded(
+          parent_types,
+          bin,
+          original_count,
+          [tuple | original_row],
+          rows,
+          types
+        )
 
       {:variant, variant_types} ->
         case bin do
           <<255, bin::bytes>> ->
             # 255 is the variant type index for "nothing"
-            decode_rows(types_rest, bin, [nil | row], rows, types)
+            decoded(row_types, bin, count, [nil | row], rows, types)
 
           # TODO varint?
           <<variant_type_index::8, bin::bytes>>
           when variant_type_index < tuple_size(variant_types) ->
             variant_type = elem(variant_types, variant_type_index)
-            decode_rows([variant_type | types_rest], bin, row, rows, types)
+
+            if count == 1 do
+              decode_rows([variant_type | types_rest], bin, 1, row, rows, types)
+            else
+              frame = {:repeat, row_types, count - 1}
+              decode_rows([variant_type, frame], bin, 1, row, rows, types)
+            end
 
           <<variant_type_index::8, _bin::bytes>> ->
             raise ArgumentError, "invalid Variant type index: #{variant_type_index}"
 
           _ ->
-            to_be_continued(rows, bin, [type | types_rest], row)
+            to_be_continued(rows, bin, row_types, count, row)
         end
+
+      {:repeat, parent_types, left} ->
+        decode_rows(parent_types, bin, left, row, rows, types)
 
       {:datetime64, time_unit, timezone} ->
         case bin do
@@ -1513,54 +1630,62 @@ defmodule Ch.RowBinary do
                 _ -> ticks |> DateTime.from_unix!(time_unit) |> DateTime.shift_zone!(timezone)
               end
 
-            decode_rows(types_rest, bin, [dt | row], rows, types)
+            decoded(row_types, bin, count, [dt | row], rows, types)
 
           _ ->
-            to_be_continued(rows, bin, [type | types_rest], row)
+            to_be_continued(rows, bin, row_types, count, row)
         end
 
       {:enum8, mapping} ->
         case bin do
           <<v::signed, bin::bytes>> ->
-            decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
+            decoded(row_types, bin, count, [Map.fetch!(mapping, v) | row], rows, types)
 
           _ ->
-            to_be_continued(rows, bin, [type | types_rest], row)
+            to_be_continued(rows, bin, row_types, count, row)
         end
 
       {:enum16, mapping} ->
         case bin do
           <<v::16-little-signed, bin::bytes>> ->
-            decode_rows(types_rest, bin, [Map.fetch!(mapping, v) | row], rows, types)
+            decoded(row_types, bin, count, [Map.fetch!(mapping, v) | row], rows, types)
 
           _ ->
-            to_be_continued(rows, bin, [type | types_rest], row)
+            to_be_continued(rows, bin, row_types, count, row)
         end
 
       :ipv4 ->
-        decode_ipv4_decode_rows(bin, types_rest, row, rows, types)
+        decode_ipv4_decode_rows(bin, row_types, count, row, rows, types)
 
       :ipv6 ->
-        decode_ipv6_decode_rows(bin, types_rest, row, rows, types)
+        decode_ipv6_decode_rows(bin, row_types, count, row, rows, types)
 
       :point ->
-        decode_point_decode_rows(bin, types_rest, row, rows, types)
+        decode_point_decode_rows(bin, row_types, count, row, rows, types)
     end
   end
 
-  defp decode_rows([], <<>> = empty, row, rows, _types) do
+  defp decode_rows([], <<>> = empty, _count, row, rows, _types) do
     rows = :lists.reverse([:lists.reverse(row) | rows])
     {rows, empty, _no_state = nil}
   end
 
-  defp decode_rows([], <<bin::bytes>>, row, rows, types) do
+  defp decode_rows([], <<bin::bytes>>, _count, row, rows, types) do
     row = :lists.reverse(row)
-    decode_rows(types, bin, [], [row | rows], types)
+    decode_rows(types, bin, 1, [], [row | rows], types)
   end
 
-  @compile inline: [to_be_continued: 4]
+  @compile inline: [to_be_continued: 4, to_be_continued: 5]
   defp to_be_continued(rows, bin, types_rest, row) do
+    to_be_continued(rows, bin, types_rest, 1, row)
+  end
+
+  defp to_be_continued(rows, bin, types_rest, 1, row) do
     {:lists.reverse(rows), bin, {:cont, types_rest, row}}
+  end
+
+  defp to_be_continued(rows, bin, types_rest, count, row) do
+    {:lists.reverse(rows), bin, {:cont, types_rest, count, row}}
   end
 
   @compile inline: [decimal_size: 1]
