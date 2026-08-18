@@ -218,6 +218,27 @@ defmodule Ch.TypesTest do
   end
 
   describe "encode/1" do
+    test "escapes enum labels and decodes them losslessly" do
+      for type <- [
+            {:enum8,
+             [
+               {"", 0},
+               {"can't", 1},
+               {"back\\slash", 2},
+               {"comma, equals= parens()", 3},
+               {"é€𐍈", 4},
+               {"controls\0\b\t\n\f\r", 5}
+             ]},
+            {:enum16, [{"quote' and slash\\", -1}, {"plain", 2}]}
+          ] do
+        encoded = type |> encode() |> IO.iodata_to_binary()
+
+        assert encoded =~ "\\'"
+        assert encoded =~ "\\\\"
+        assert decode(encoded) == type
+      end
+    end
+
     test "rejects empty enum mappings" do
       assert_raise ArgumentError, "Enum8 requires at least one mapping", fn ->
         encode({:enum8, []})
@@ -225,6 +246,58 @@ defmodule Ch.TypesTest do
 
       assert_raise ArgumentError, "Enum16 requires at least one mapping", fn ->
         encode({:enum16, []})
+      end
+    end
+
+    test "rejects invalid decimal definitions" do
+      for type <- [
+            {:decimal, 0, 0},
+            {:decimal, 77, 0},
+            {:decimal, 9, -1},
+            {:decimal, 9, 10},
+            {:decimal32, 10},
+            {:decimal64, 19},
+            {:decimal128, 39},
+            {:decimal256, 77}
+          ] do
+        assert_raise ArgumentError, ~r/invalid Decimal precision and scale/, fn ->
+          encode(type)
+        end
+      end
+
+      for type <- ["Decimal(0, 0)", "Decimal(77, 0)", "Decimal(9, -1)", "Decimal32(10)"] do
+        assert_raise ArgumentError, ~r/invalid Decimal precision and scale/, fn ->
+          decode(type)
+        end
+      end
+    end
+
+    test "rejects invalid or ambiguous enum mappings" do
+      for type <- [
+            {:enum8, [{"too-large", 128}]},
+            {:enum8, [{"too-small", -129}]},
+            {:enum16, [{"too-large", 32_768}]},
+            {:enum16, [{"too-small", -32_769}]},
+            {:enum8, [{"not-an-integer", "1"}]},
+            {:enum8, [{:not_a_string, 1}]}
+          ] do
+        assert_raise ArgumentError, ~r/invalid Enum/, fn -> encode(type) end
+      end
+
+      for type <- [
+            "Enum8('too-large' = 128)",
+            "Enum16('too-small' = -32769)",
+            "Enum8('same' = 1, 'same' = 2)",
+            "Enum16('one' = 1, 'two' = 1)"
+          ] do
+        assert_raise ArgumentError, fn -> decode(type) end
+      end
+
+      for type <- [
+            {:enum8, [{"same", 1}, {"same", 2}]},
+            {:enum16, [{"one", 1}, {"two", 1}]}
+          ] do
+        assert_raise ArgumentError, ~r/must be unique/, fn -> encode(type) end
       end
     end
   end

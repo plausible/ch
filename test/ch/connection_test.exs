@@ -788,6 +788,38 @@ defmodule Ch.ConnectionTest do
       # TODO nil enum
     end
 
+    test "enum labels with quotes, backslashes, and controls round-trip", ctx do
+      type =
+        {:enum8,
+         [
+           {"can't", 1},
+           {"back\\slash", 2},
+           {"comma, equals= parens()", 3},
+           {"line\nbreak", 4},
+           {"null\0byte", 5}
+         ]}
+
+      encoded_type = type |> Ch.Types.encode() |> IO.iodata_to_binary()
+
+      parameterize_query!(
+        ctx,
+        "CREATE TABLE t_enum_escaping(x #{encoded_type}) ENGINE Memory"
+      )
+
+      on_exit(fn -> Ch.Test.query("DROP TABLE t_enum_escaping") end)
+
+      rows = Enum.map(elem(type, 1), fn {label, _value} -> [label] end)
+
+      parameterize_query!(ctx, "INSERT INTO t_enum_escaping FORMAT RowBinary", rows,
+        types: [encoded_type]
+      )
+
+      assert parameterize_query!(
+               ctx,
+               "SELECT x FROM t_enum_escaping ORDER BY CAST(x, 'Int8')"
+             ).rows == rows
+    end
+
     test "map", ctx do
       assert parameterize_query!(
                ctx,
