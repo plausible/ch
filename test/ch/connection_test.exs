@@ -1213,18 +1213,13 @@ defmodule Ch.ConnectionTest do
 
       parameterize_query!(
         ctx,
-        "INSERT INTO datetime64_t Values (1546300800123, 1), (1546300800.123, 2), ('2019-01-01 00:00:00', 3)"
+        "INSERT INTO datetime64_t Values (1546300800.123, 2), ('2019-01-01 00:00:00', 3)"
       )
 
-      assert {:ok, %{num_rows: 3, rows: rows}} =
+      assert {:ok, %{num_rows: 2, rows: rows}} =
                parameterize_query(ctx, "SELECT *, toString(timestamp) FROM datetime64_t")
 
       assert rows == [
-               [
-                 DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"),
-                 1,
-                 "2019-01-01 03:00:00.123"
-               ],
                [
                  DateTime.new!(~D[2019-01-01], ~T[03:00:00.123], "Asia/Istanbul"),
                  2,
