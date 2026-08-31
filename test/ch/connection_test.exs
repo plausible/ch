@@ -1407,7 +1407,9 @@ defmodule Ch.ConnectionTest do
       # to make our RowBinary is not garbage in garbage out we also test a text format response
       assert parameterize_query!(
                ctx,
-               "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC FORMAT JSONCompact"
+               "SELECT p, toTypeName(p) FROM geo_point ORDER BY p ASC",
+               [],
+               format: "JSONCompact"
              ).rows
              |> Jason.decode!()
              |> Map.fetch!("data") == [
@@ -1450,7 +1452,9 @@ defmodule Ch.ConnectionTest do
       # to make our RowBinary is not garbage in garbage out we also test a text format response
       assert parameterize_query!(
                ctx,
-               "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC FORMAT JSONCompact"
+               "SELECT r, toTypeName(r) FROM geo_ring ORDER BY r ASC",
+               [],
+               format: "JSONCompact"
              ).rows
              |> Jason.decode!()
              |> Map.fetch!("data") == [
@@ -1506,7 +1510,9 @@ defmodule Ch.ConnectionTest do
       # to make our RowBinary is not garbage in garbage out we also test a text format response
       assert parameterize_query!(
                ctx,
-               "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC FORMAT JSONCompact"
+               "SELECT pg, toTypeName(pg) FROM geo_polygon ORDER BY pg ASC",
+               [],
+               format: "JSONCompact"
              ).rows
              |> Jason.decode!()
              |> Map.fetch!("data") == [
@@ -1592,7 +1598,9 @@ defmodule Ch.ConnectionTest do
       # to make our RowBinary is not garbage in garbage out we also test a text format response
       assert parameterize_query!(
                ctx,
-               "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC FORMAT JSONCompact"
+               "SELECT mpg, toTypeName(mpg) FROM geo_multipolygon ORDER BY mpg ASC",
+               [],
+               format: "JSONCompact"
              ).rows
              |> Jason.decode!()
              |> Map.fetch!("data") == [

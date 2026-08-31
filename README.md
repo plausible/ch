@@ -66,6 +66,25 @@ Note on datetime encoding in query parameters:
 - `%NaiveDateTime{}` is encoded as text to make it assume the column's or ClickHouse server's timezone
 - `%DateTime{}` is encoded as unix timestamp and is treated as UTC timestamp by ClickHouse
 
+#### Select rows in a custom [format](https://clickhouse.com/docs/en/interfaces/formats)
+
+Use the `:format` option to request a custom response format:
+
+```elixir
+%Ch.Result{rows: json} =
+  Ch.query!(pid, "SELECT * FROM system.numbers LIMIT 3", [], format: "JSONCompact")
+
+%{"data" => [[0], [1], [2]]} = Jason.decode!(json)
+```
+
+> [!IMPORTANT]
+>
+> Starting with [ClickHouse 26.8](https://github.com/ClickHouse/ClickHouse/pull/105249), the
+> `X-ClickHouse-Format` request header takes precedence over a `FORMAT` clause when selecting the
+> response format. Ch always sends this header, using `RowBinaryWithNamesAndTypes` by default, so
+> pass a custom response format with the `:format` option instead of writing, for example,
+> `SELECT ... FORMAT JSONCompact`. This does not affect `INSERT ... FORMAT ...` input formats.
+
 #### Select rows (lots of params, reverse proxy)
 
 > [!NOTE]
@@ -248,7 +267,9 @@ utf8 = "a�b"
   Ch.query!(pid, "SELECT * FROM ch_utf8")
 
 %Ch.Result{rows: %{"data" => [[^utf8]]}} =
-  pid |> Ch.query!("SELECT * FROM ch_utf8 FORMAT JSONCompact") |> Map.update!(:rows, &Jason.decode!/1)
+  pid
+  |> Ch.query!("SELECT * FROM ch_utf8", [], format: "JSONCompact")
+  |> Map.update!(:rows, &Jason.decode!/1)
 ```
 
 To get raw binary from `String` columns use `:binary` type that skips UTF-8 checks.
