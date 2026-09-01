@@ -88,6 +88,20 @@ defmodule Ch.RowBinaryFloatTest do
     assert message =~ "query parameter"
   end
 
+  test "RowBinary rejects values that overflow their float width" do
+    for value <- [3.5e38, -3.5e38, 1.0e300, -1.0e300] do
+      assert_raise ArgumentError, ~r/invalid Float32/, fn ->
+        RowBinary.encode(:f32, value)
+      end
+    end
+
+    huge_integer = Integer.pow(10, 1_000)
+
+    assert_raise ArgumentError, ~r/invalid Float64/, fn ->
+      RowBinary.encode(:f64, huge_integer)
+    end
+  end
+
   property "RowBinary float inserts round-trip through ClickHouse", %{pool: pool} do
     Ch.Test.query("""
     CREATE TABLE row_binary_float_property (
