@@ -525,6 +525,131 @@ defmodule Ch.RowBinaryTest do
       assert rows |> encode_rows(types) |> byte_by_byte(types) == rows
     end
 
+    test "arrays resume across multi-byte length and element boundaries" do
+      types = decoding_types(["UInt8", "Array(UInt8)", "UInt8"])
+      prefix = encode(:varint, 128) |> IO.iodata_to_binary()
+      <<first_prefix_byte, second_prefix_byte>> = prefix
+
+      assert {[], buffer = <<^first_prefix_byte>>, prefix_state} =
+               decode_rows_continue(<<9, first_prefix_byte>>, types, nil)
+
+      refute is_nil(prefix_state)
+
+      assert {[], "", element_state} =
+               decode_rows_continue(buffer <> <<second_prefix_byte>>, types, prefix_state)
+
+      assert {[], "", final_element_state} =
+               decode_rows_continue(:binary.copy(<<7>>, 127), types, element_state)
+
+      expected = List.duplicate(7, 127) ++ [8]
+
+      assert {[[9, ^expected, 10]], "", nil} =
+               decode_rows_continue(<<8, 10>>, types, final_element_state)
+    end
+
+    test "arrays resume continuations created by the previous decoder" do
+      types = decoding_types(["Array(UInt8)", "UInt8"])
+      state = {:cont, [:u8, :u8, {:array_over, []}, :u8], [1]}
+
+      assert {[[[1, 2, 3], 4]], "", nil} =
+               decode_rows_continue(<<2, 3, 4>>, types, state)
+    end
+
+    test "array continuation state is independent of the declared length" do
+      types = decoding_types(["Array(UInt8)"])
+
+      state_sizes =
+        for count <- [10, 1_000, 100_000] do
+          prefix = IO.iodata_to_binary([encode(:varint, count)])
+          assert {[], "", state} = decode_rows_continue(prefix, types, nil)
+          :erts_debug.flat_size(state)
+        end
+
+      assert Enum.uniq(state_sizes) == [hd(state_sizes)]
+      assert hd(state_sizes) < 64
+    end
+
+    test "nested array continuation state is independent of both declared lengths" do
+      types = decoding_types(["Array(Array(UInt8))"])
+
+      state_sizes =
+        for {outer_count, inner_count} <- [{10, 20}, {100_000, 200_000}] do
+          prefixes = [encode(:varint, outer_count), encode(:varint, inner_count)]
+          assert {[], "", state} = decode_rows_continue(IO.iodata_to_binary(prefixes), types, nil)
+          :erts_debug.flat_size(state)
+        end
+
+      assert Enum.uniq(state_sizes) == [hd(state_sizes)]
+      assert hd(state_sizes) < 64
+    end
+
+    test "arrays preserve non-canonical zero and one length prefixes" do
+      types = decoding_types(["Array(UInt8)", "UInt8"])
+
+      for zero_prefix <- [<<0x80, 0>>, <<0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0>>] do
+        assert decode_rows(zero_prefix <> <<42>>, types) == [[[], 42]]
+      end
+
+      assert decode_rows(<<0x81, 0, 7, 42>>, types) == [[[7], 42]]
+    end
+
+    test "arrays cover varint length boundaries" do
+      types = ["Array(UInt8)"]
+
+      for count <- [127, 128, 16_383, 16_384] do
+        row = [List.duplicate(7, count)]
+        encoded = encode_rows([row], types) |> IO.iodata_to_binary()
+        assert decode_rows(encoded, types) == [row]
+      end
+    end
+
+    test "fixed-width array elements resume within an element" do
+      types = ["Array(UInt16)"]
+      rows = [[[0, 1, 256, 65_535]]]
+      data = encode_rows(rows, types)
+
+      assert byte_by_byte(data, types) == rows
+    end
+
+    test "float arrays decode non-finite values as nil" do
+      types = ["Array(Float32)"]
+
+      data =
+        <<3, 1.5::32-little-float, 0x7F800000::32-little, 0x7FC00000::32-little>>
+
+      assert decode_rows(data, types) == [[[1.5, nil, nil]]]
+      assert byte_by_byte(data, types) == [[[1.5, nil, nil]]]
+    end
+
+    test "arrays of structured values resume byte-by-byte" do
+      types = [
+        "Array(Tuple(UInt8, String))",
+        "Array(Nullable(UInt16))",
+        "Array(Map(String, UInt8))",
+        "Array(Variant(String, UInt32))",
+        "Array(Dynamic)",
+        "Array(Nothing)"
+      ]
+
+      rows = [
+        [
+          [{1, "one"}, {2, "two"}],
+          [1, nil, 65_535],
+          [%{"a" => 1}, %{}, %{"b" => 2}],
+          ["variant", 42, nil],
+          ["dynamic", 42, 3.5],
+          [nil, nil, nil]
+        ]
+      ]
+
+      data = [
+        encode_rows([rows |> hd() |> Enum.take(5)], Enum.take(types, 5)),
+        encode(:varint, 3)
+      ]
+
+      assert byte_by_byte(data, types) == rows
+    end
+
     test "decimals" do
       types = [
         "Decimal32(4)",
