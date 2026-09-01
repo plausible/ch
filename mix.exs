@@ -11,6 +11,7 @@ defmodule Ch.MixProject do
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
+      aliases: aliases(),
       name: "Ch",
       description: "HTTP ClickHouse driver for Elixir",
       docs: docs(),
@@ -23,6 +24,10 @@ defmodule Ch.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [extra_applications: [:logger | extra_applications(Mix.env())]]
+  end
+
+  def cli do
+    [preferred_envs: [benchmark: :dev]]
   end
 
   # Specifies which paths to compile per environment.
@@ -41,11 +46,16 @@ defmodule Ch.MixProject do
       {:jason, "~> 1.0"},
       {:decimal, "~> 3.0"},
       {:ecto, "~> 3.14.0", optional: true},
+      {:benchee, "~> 1.5", only: :dev},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :docs},
       {:tz, "~> 0.28.1", only: [:dev, :test]},
       {:stream_data, "~> 1.3", only: [:dev, :test]}
     ]
+  end
+
+  defp aliases do
+    [benchmark: "run bench/benchmark.exs"]
   end
 
   defp docs do
