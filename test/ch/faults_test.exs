@@ -545,7 +545,138 @@ defmodule Ch.FaultsTest do
     end
   end
 
+  describe "transactions" do
+    test "sends begin and commit over the same session", %{
+      port: port,
+      listen: listen,
+      clickhouse: clickhouse
+    } do
+      test = self()
+      {:ok, conn} = Ch.start_link(port: port)
+
+      {:ok, mint} = :gen_tcp.accept(listen)
+
+      # handshake
+      :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+      :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+      task =
+        Task.async(fn ->
+          DBConnection.transaction(conn, fn conn ->
+            assert DBConnection.status(conn) == :transaction
+            send(test, :inside_transaction)
+            :committed
+          end)
+        end)
+
+      begin_request = parse_request(intercept_packets(mint))
+      assert begin_request.body == "BEGIN TRANSACTION"
+
+      begin_params = begin_request.query_params
+      assert begin_params["session_id"]
+      assert begin_params["session_timeout"] == "300"
+      :ok = :gen_tcp.send(mint, response())
+
+      assert_receive :inside_transaction
+
+      commit_request = parse_request(intercept_packets(mint))
+      assert commit_request.body == "COMMIT"
+      assert commit_request.query_params == begin_params
+      :ok = :gen_tcp.send(mint, response())
+
+      assert Task.await(task) == {:ok, :committed}
+      assert DBConnection.status(conn) == :idle
+    end
+
+    test "marks the transaction as failed after a query error", %{
+      port: port,
+      listen: listen,
+      clickhouse: clickhouse
+    } do
+      test = self()
+      {:ok, conn} = Ch.start_link(port: port)
+
+      {:ok, mint} = :gen_tcp.accept(listen)
+
+      # handshake
+      :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+      :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
+
+      task =
+        Task.async(fn ->
+          DBConnection.transaction(conn, fn conn ->
+            assert DBConnection.status(conn) == :transaction
+
+            assert {:error, %Ch.Error{code: 47}} =
+                     Ch.query(conn, "select missing_transaction_column")
+
+            send(test, {:transaction_status, DBConnection.status(conn)})
+            DBConnection.rollback(conn, :query_failed)
+          end)
+        end)
+
+      begin_request = parse_request(intercept_packets(mint))
+      begin_params = begin_request.query_params
+      assert begin_request.body == "BEGIN TRANSACTION"
+      :ok = :gen_tcp.send(mint, response())
+
+      query_request = parse_request(intercept_packets(mint))
+      assert query_request.body == "select missing_transaction_column"
+      assert query_request.query_params == begin_params
+
+      :ok =
+        :gen_tcp.send(
+          mint,
+          response(
+            500,
+            [{"X-ClickHouse-Exception-Code", "47"}],
+            "Code: 47. DB::Exception: Unknown expression identifier"
+          )
+        )
+
+      assert_receive {:transaction_status, :error}
+      rollback_request = parse_request(intercept_packets(mint))
+      assert rollback_request.body == "ROLLBACK"
+      assert rollback_request.query_params == begin_params
+      :ok = :gen_tcp.send(mint, response())
+
+      assert Task.await(task) == {:error, :query_failed}
+      assert DBConnection.status(conn) == :idle
+    end
+  end
+
   defp first_byte(binary) do
     :binary.part(binary, 0, 1)
   end
+
+  defp response(status_code \\ 200, headers \\ [], body \\ "")
+
+  defp response(status_code, headers, body) do
+    "HTTP/1.1 #{status_code} #{reason_phrase(status_code)}\r\n" <>
+      Enum.map_join(headers, "", fn {name, value} -> "#{name}: #{value}\r\n" end) <>
+      "Content-Length: #{byte_size(body)}\r\n\r\n" <> body
+  end
+
+  defp parse_request(request) do
+    {head, body} =
+      case String.split(request, "\r\n\r\n", parts: 2) do
+        [head, body] -> {head, body}
+        [head] -> {head, ""}
+      end
+
+    [request_line | _headers] = String.split(head, "\r\n", parts: 2)
+    [_method, target, _version] = String.split(request_line, " ", parts: 3)
+
+    %{
+      body: body,
+      query_params:
+        target
+        |> URI.parse()
+        |> Map.get(:query, "")
+        |> URI.decode_query()
+    }
+  end
+
+  defp reason_phrase(200), do: "OK"
+  defp reason_phrase(500), do: "Internal Server Error"
 end
