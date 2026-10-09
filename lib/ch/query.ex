@@ -339,12 +339,17 @@ defimpl DBConnection.Query, for: Ch.Query do
   defp encode_param(%Time{} = time), do: Time.to_iso8601(time)
 
   defp encode_param(%DateTime{microsecond: {_value, precision}} = dt) when precision > 0 do
+    # Padding needed for small values, as below: without it, 1000 to 9999 seconds since the epoch
+    # ("1600.000000") are read as a year and fail to parse.
     unix = DateTime.to_unix(dt, Integer.pow(10, precision))
-    sign = if unix < 0, do: -1, else: 1
 
-    sign
-    |> Decimal.new(abs(unix), -precision)
-    |> Decimal.to_string(:normal)
+    unsigned =
+      1
+      |> Decimal.new(abs(unix), -precision)
+      |> Decimal.to_string(:normal)
+      |> String.pad_leading(5 + 1 + precision, "0")
+
+    if unix < 0, do: "-" <> unsigned, else: unsigned
   end
 
   defp encode_param(%DateTime{} = dt) do

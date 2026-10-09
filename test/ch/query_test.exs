@@ -495,6 +495,23 @@ defmodule Ch.QueryTest do
                  [~U[1969-12-31 23:59:58.500Z]],
                  query_options
                ).rows
+
+      # 1000 to 9999 seconds after the epoch: a four-digit integer part would be read as a year
+      for dt <- [~U[1970-01-01 00:16:40.000000Z], ~U[1970-01-01 00:26:40.123456Z]] do
+        assert [[^dt]] =
+                 Ch.query!(conn, "SELECT {$0:DateTime64(6, 'UTC')}", [dt], query_options).rows
+
+        assert [[[^dt]]] =
+                 Ch.query!(conn, "SELECT {$0:Array(DateTime64(6, 'UTC'))}", [[dt]], query_options).rows
+      end
+
+      assert [[~U[1969-12-31 21:13:20.000Z]]] ==
+               Ch.query!(
+                 conn,
+                 "SELECT {$0:DateTime64(3, 'UTC')}",
+                 [~U[1969-12-31 21:13:20.000Z]],
+                 query_options
+               ).rows
     end
 
     test "encode network types", %{conn: conn, query_options: query_options} do
