@@ -420,7 +420,9 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
           # disconnect before insert
+          :ok = DBConnection.run(conn, fn _conn -> :ok end)
           :ok = :gen_tcp.close(mint)
+          Ch.Test.query("select 1")
 
           insert =
             Task.async(fn ->
@@ -439,7 +441,7 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          # insert
+          # The stale socket was detected before sending, so the insert can be attempted safely.
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
@@ -447,10 +449,10 @@ defmodule Ch.FaultsTest do
           assert message =~ ~r/UNKNOWN_TABLE/
         end)
 
-      assert log =~ "disconnected: ** (Mint.TransportError) socket closed"
+      assert log =~ "disconnected: ** (Mint."
     end
 
-    test "reconnects after closed while streaming request", ctx do
+    test "returns an insert error after closed while streaming request and reconnects", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
 
       rows = [[1, 2], [3, 4]]
@@ -481,6 +483,8 @@ defmodule Ch.FaultsTest do
           assert_receive {:tcp, ^mint, _packet}
           :ok = :gen_tcp.close(mint)
 
+          assert {:error, %Mint.TransportError{reason: :closed}} = Task.await(insert)
+
           # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
 
@@ -488,12 +492,13 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          # insert
+          select = Task.async(fn -> Ch.query(conn, "select 1 + 1", [], query_options) end)
+
+          # Only the next query is sent after reconnecting; the insert is not replayed.
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          assert {:error, %Ch.Error{code: 60, message: message}} = Task.await(insert)
-          assert message =~ ~r/UNKNOWN_TABLE/
+          assert {:ok, %{rows: [[2]]}} = Task.await(select)
         end)
 
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"

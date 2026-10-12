@@ -124,7 +124,8 @@ defmodule Ch.Connection do
     headers = headers(conn, extra_headers, opts)
     timeout = timeout(conn, opts)
 
-    with {:ok, conn, _ref} <- send_request(conn, "POST", path, headers, body),
+    with {:ok, conn} <- prepare_request(conn),
+         {:ok, conn, _ref} <- send_request(conn, "POST", path, headers, body),
          {:ok, conn, columns, headers, reader} <- recv_declare(conn, decode, timeout) do
       result = %Result{
         command: command,
@@ -138,7 +139,8 @@ defmodule Ch.Connection do
       {:ok, query, result, {conn, reader}}
     else
       {:error, _reason, _conn} = client_error -> client_error
-      {:disconnect, reason, conn} -> {:disconnect_and_retry, reason, conn}
+      {:disconnect, _reason, _conn} = disconnect -> disconnect
+      {:disconnect_and_retry, reason, conn} -> {:disconnect, reason, conn}
     end
   end
 
@@ -282,7 +284,56 @@ defmodule Ch.Connection do
   end
 
   @impl true
-  def handle_execute(%Query{} = query, {:stream, params}, opts, conn) do
+  def handle_execute(query, {:stream, ref, _body} = params, opts, conn)
+      when is_reference(ref) do
+    execute(query, params, opts, conn)
+  end
+
+  def handle_execute(query, params, opts, conn) do
+    with {:ok, conn} <- prepare_request(conn) do
+      execute(query, params, opts, conn)
+    end
+  end
+
+  defp prepare_request(conn) do
+    cond do
+      not HTTP.open?(conn) ->
+        ensure_open(conn)
+
+      HTTP.open_request_count(conn) > 0 ->
+        {:ok, conn}
+
+      true ->
+        # Mint 1.11 keeps a healthy connection open when this nonblocking probe times out.
+        # Probe only idle connections so an in-flight response is never consumed here.
+        case HTTP.recv(conn, 0, 0) do
+          {:ok, conn, []} ->
+            ensure_open(conn)
+
+          {:error, conn, %Mint.TransportError{reason: :timeout}, []} ->
+            ensure_open(conn)
+
+          {:error, conn, reason, _responses} ->
+            {:disconnect_and_retry, reason, conn}
+
+          {:ok, conn, _responses} ->
+            reason = Error.exception("unexpected HTTP response before sending a request")
+            {:disconnect_and_retry, reason, conn}
+        end
+    end
+  end
+
+  defp ensure_open(conn) do
+    if HTTP.open?(conn) do
+      {:ok, conn}
+    else
+      # The current request has not been sent, so DBConnection can safely replace the connection.
+      reason = Mint.HTTPError.exception(reason: :closed, module: HTTP)
+      {:disconnect_and_retry, reason, conn}
+    end
+  end
+
+  defp execute(%Query{} = query, {:stream, params}, opts, conn) do
     {query_params, extra_headers, body} = params
 
     path = path(conn, query_params, opts)
@@ -291,12 +342,12 @@ defmodule Ch.Connection do
     with {:ok, conn, ref} <- send_request(conn, "POST", path, headers, :stream) do
       case HTTP.stream_request_body(conn, ref, body) do
         {:ok, conn} -> {:ok, query, ref, conn}
-        {:error, conn, reason} -> {:disconnect_and_retry, reason, conn}
+        {:error, conn, reason} -> {:disconnect, reason, conn}
       end
     end
   end
 
-  def handle_execute(%Query{} = query, {:stream, ref, body}, opts, conn) do
+  defp execute(%Query{} = query, {:stream, ref, body}, opts, conn) do
     case HTTP.stream_request_body(conn, ref, body) do
       {:ok, conn} ->
         case body do
@@ -310,11 +361,11 @@ defmodule Ch.Connection do
         end
 
       {:error, conn, reason} ->
-        {:disconnect_and_retry, reason, conn}
+        {:disconnect, reason, conn}
     end
   end
 
-  def handle_execute(%Query{command: :insert} = query, params, opts, conn) do
+  defp execute(%Query{command: :insert} = query, params, opts, conn) do
     {query_params, extra_headers, body} = params
 
     path = path(conn, query_params, opts)
@@ -330,20 +381,29 @@ defmodule Ch.Connection do
     case result do
       {:ok, conn, responses} -> {:ok, query, responses, conn}
       {:error, _reason, _conn} = client_error -> client_error
-      {:disconnect, reason, conn} -> {:disconnect_and_retry, reason, conn}
+      {:disconnect, _reason, _conn} = disconnect -> disconnect
     end
   end
 
-  def handle_execute(query, params, opts, conn) do
+  defp execute(query, params, opts, conn) do
     {query_params, extra_headers, body} = params
 
     path = path(conn, query_params, opts)
     headers = headers(conn, extra_headers, opts)
 
     case request(conn, "POST", path, headers, body, opts) do
-      {:ok, conn, responses} -> {:ok, query, responses, conn}
-      {:error, _reason, _conn} = client_error -> client_error
-      {:disconnect, reason, conn} -> {:disconnect_and_retry, reason, conn}
+      {:ok, conn, responses} ->
+        {:ok, query, responses, conn}
+
+      {:error, _reason, _conn} = client_error ->
+        client_error
+
+      {:disconnect, reason, conn} ->
+        if Query.read_only?(query) do
+          {:disconnect_and_retry, reason, conn}
+        else
+          {:disconnect, reason, conn}
+        end
     end
   end
 

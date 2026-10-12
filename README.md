@@ -203,6 +203,28 @@ settings = [async_insert: 1]
 
 ## Caveats
 
+#### Connection errors and retries
+
+Before sending a request, Ch checks idle HTTP connections for a queued close.
+If a pooled connection has closed, Ch can replace it and attempt the query on a
+new connection before sending any data.
+
+Once sending starts, Ch automatically retries only conservatively identified
+read statements (`SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`, and read-only `WITH`).
+Statements containing possible write keywords, `PARALLEL`, or multiple statements
+are not retried. This conservative check can also disable retries when those
+keywords appear in comments, identifiers, or string literals. The `:command`
+option does not override this check. Pass `checkout_retries: 0` on a query to
+disable automatic pool retries entirely.
+
+Writes return a connection error after a send or receive failure. An insert may
+already have completed even if its response was lost, so check its outcome before
+resending it. Chunked inserts and stream continuations follow the same rule.
+
+Automatic pool retries do not switch the connection held by an existing
+`DBConnection.run/3` checkout. A failed checked-out connection returns an error;
+the pool reconnects for subsequent checkouts.
+
 #### NULL in RowBinary
 
 It's the same as in [ch-go](https://clickhouse.com/docs/en/integrations/go#nullable)
