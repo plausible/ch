@@ -84,26 +84,6 @@ defmodule Ch.Query do
   """
   @type command :: unquote(command_union)
 
-  @read_statement ~r/\A\s*(?:SELECT|SHOW|DESCRIBE|EXISTS|WITH)\b/i
-  @with_statement ~r/\A\s*WITH\b/i
-  @select_keyword ~r/\bSELECT\b/i
-  @unsafe_retry_keyword ~r/\b(?:INSERT|CREATE|ALTER|DELETE|SYSTEM|GRANT|REVOKE|UPDATE|ATTACH|CHECK|DETACH|DROP|KILL|OPTIMIZE|RENAME|EXCHANGE|SET|TRUNCATE|USE|WATCH|MOVE|UNDROP|BACKUP|RESTORE|COPY|EXECUTE|PARALLEL)\b/i
-  @multiple_statements ~r/;(?!\s*\z)/
-
-  # The command option controls encoding and decoding, so it cannot establish retry safety.
-  # Inspect the SQL itself conservatively: unrecognized prefixes and possible writes disable
-  # retries. Keywords inside comments, identifiers, or string literals may also disable them.
-  @doc false
-  @spec read_only?(t()) :: boolean
-  def read_only?(%__MODULE__{statement: statement}) do
-    statement = IO.iodata_to_binary(statement)
-
-    Regex.match?(@read_statement, statement) and
-      not Regex.match?(@unsafe_retry_keyword, statement) and
-      not Regex.match?(@multiple_statements, statement) and
-      (not Regex.match?(@with_statement, statement) or Regex.match?(@select_keyword, statement))
-  end
-
   defp extract_command(statement)
 
   for {statement, command} <- statements do

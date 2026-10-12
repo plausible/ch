@@ -258,7 +258,7 @@ defmodule Ch.FaultsTest do
   end
 
   describe "query" do
-    test "reconnects after timeout", %{
+    test "returns a query error after a response timeout and reconnects", %{
       port: port,
       listen: listen,
       clickhouse: clickhouse,
@@ -284,6 +284,8 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
 
+          assert {:error, %Mint.TransportError{reason: :timeout}} = Task.await(select)
+
           # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
 
@@ -291,17 +293,22 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          # select 1 + 1
-          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          select = Task.async(fn -> Ch.query(conn, "select 2 + 2", [], query_options) end)
+
+          # The failed query is not replayed; only this separate query is sent.
+          request = intercept_packets(mint)
+          assert request =~ "select 2 + 2"
+          refute request =~ "select 1 + 1"
+          :ok = :gen_tcp.send(clickhouse, request)
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          assert {:ok, %Ch.Result{rows: [[2]]}} = Task.await(select)
+          assert {:ok, %Ch.Result{rows: [[4]]}} = Task.await(select)
         end)
 
       assert log =~ "disconnected: ** (Mint.TransportError) timeout"
     end
 
-    test "reconnects after closed on response", ctx do
+    test "returns a query error after a closed response and reconnects", ctx do
       %{port: port, listen: listen, clickhouse: clickhouse, query_options: query_options} = ctx
 
       log =
@@ -325,6 +332,8 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(mint, first_byte(intercept_packets(clickhouse)))
           :ok = :gen_tcp.close(mint)
 
+          assert {:error, %Mint.TransportError{reason: :closed}} = Task.await(select)
+
           # reconnect
           {:ok, mint} = :gen_tcp.accept(listen)
 
@@ -332,11 +341,16 @@ defmodule Ch.FaultsTest do
           :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          # select 1 + 1
-          :ok = :gen_tcp.send(clickhouse, intercept_packets(mint))
+          select = Task.async(fn -> Ch.query(conn, "select 2 + 2", [], query_options) end)
+
+          # The failed query is not replayed; only this separate query is sent.
+          request = intercept_packets(mint)
+          assert request =~ "select 2 + 2"
+          refute request =~ "select 1 + 1"
+          :ok = :gen_tcp.send(clickhouse, request)
           :ok = :gen_tcp.send(mint, intercept_packets(clickhouse))
 
-          assert {:ok, %{rows: [[2]]}} = Task.await(select)
+          assert {:ok, %{rows: [[4]]}} = Task.await(select)
         end)
 
       assert log =~ "disconnected: ** (Mint.TransportError) socket closed"

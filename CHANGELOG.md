@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Detect closed idle HTTP connections before sending queries and retry them through the pool. Restrict retries after transmission to conservatively identified reads, preventing lost responses from silently duplicating inserts. https://github.com/plausible/ch/pull/467
+- Check idle HTTP connections before sending queries and retry through the pool if the check fails. Stop automatically retrying queries once sending starts, preventing lost responses from silently duplicating inserts. https://github.com/plausible/ch/pull/467
 
   - Require Mint 1.11 or newer so nonblocking receive probes keep healthy connections open on timeout.
 

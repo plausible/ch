@@ -296,40 +296,22 @@ defmodule Ch.Connection do
   end
 
   defp prepare_request(conn) do
-    cond do
-      not HTTP.open?(conn) ->
-        ensure_open(conn)
-
-      HTTP.open_request_count(conn) > 0 ->
-        {:ok, conn}
-
-      true ->
-        # Mint 1.11 keeps a healthy connection open when this nonblocking probe times out.
-        # Probe only idle connections so an in-flight response is never consumed here.
-        case HTTP.recv(conn, 0, 0) do
-          {:ok, conn, []} ->
-            ensure_open(conn)
-
-          {:error, conn, %Mint.TransportError{reason: :timeout}, []} ->
-            ensure_open(conn)
-
-          {:error, conn, reason, _responses} ->
-            {:disconnect_and_retry, reason, conn}
-
-          {:ok, conn, _responses} ->
-            reason = Error.exception("unexpected HTTP response before sending a request")
-            {:disconnect_and_retry, reason, conn}
-        end
-    end
-  end
-
-  defp ensure_open(conn) do
-    if HTTP.open?(conn) do
+    if HTTP.open_request_count(conn) > 0 do
       {:ok, conn}
     else
-      # The current request has not been sent, so DBConnection can safely replace the connection.
-      reason = Mint.HTTPError.exception(reason: :closed, module: HTTP)
-      {:disconnect_and_retry, reason, conn}
+      # Mint 1.11 keeps a healthy connection open when this nonblocking probe times out.
+      # Probe only idle connections so an in-flight response is never consumed here.
+      case HTTP.recv(conn, 0, 0) do
+        {:error, conn, %Mint.TransportError{reason: :timeout}, []} ->
+          {:ok, conn}
+
+        {:error, conn, reason, _responses} ->
+          {:disconnect_and_retry, reason, conn}
+
+        {:ok, conn, _responses} ->
+          reason = Error.exception("unexpected HTTP response before sending a request")
+          {:disconnect_and_retry, reason, conn}
+      end
     end
   end
 
@@ -398,12 +380,8 @@ defmodule Ch.Connection do
       {:error, _reason, _conn} = client_error ->
         client_error
 
-      {:disconnect, reason, conn} ->
-        if Query.read_only?(query) do
-          {:disconnect_and_retry, reason, conn}
-        else
-          {:disconnect, reason, conn}
-        end
+      {:disconnect, _reason, _conn} = disconnect ->
+        disconnect
     end
   end
 

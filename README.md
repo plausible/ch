@@ -205,21 +205,14 @@ settings = [async_insert: 1]
 
 #### Connection errors and retries
 
-Before sending a request, Ch checks idle HTTP connections for a queued close.
-If a pooled connection has closed, Ch can replace it and attempt the query on a
-new connection before sending any data.
+Before sending a request, Ch checks idle connections. If that check fails, Ch can
+replace the pooled connection and attempt the query before sending any data.
+Pass `checkout_retries: 0` on a query to disable automatic pool retries.
 
-Once sending starts, Ch automatically retries only conservatively identified
-read statements (`SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`, and read-only `WITH`).
-Statements containing possible write keywords, `PARALLEL`, or multiple statements
-are not retried. This conservative check can also disable retries when those
-keywords appear in comments, identifiers, or string literals. The `:command`
-option does not override this check. Pass `checkout_retries: 0` on a query to
-disable automatic pool retries entirely.
-
-Writes return a connection error after a send or receive failure. An insert may
-already have completed even if its response was lost, so check its outcome before
-resending it. Chunked inserts and stream continuations follow the same rule.
+Once sending starts, Ch does not automatically retry any query after a send or
+receive failure. A write may already have completed even if its response was
+lost, so check its outcome before resending it. Chunked inserts and stream
+continuations follow the same rule.
 
 Automatic pool retries do not switch the connection held by an existing
 `DBConnection.run/3` checkout. A failed checked-out connection returns an error;
