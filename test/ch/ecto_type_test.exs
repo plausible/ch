@@ -706,6 +706,57 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, {0, 0, 0, 0, 0, 0, 0, 1}} = Ecto.Type.load(type, {0, 0, 0, 0, 0, 0, 0, 1})
   end
 
+  for {encoded, arity, maximum, text} <- [
+        {"IPv4", 4, 255, "1.1.1.1"},
+        {"IPv6", 8, 65535, "1:1:1:1:1:1:1:1"}
+      ] do
+    test "#{encoded} tuple components must be integers in range" do
+      type = Ecto.ParameterizedType.init(Ch, type: unquote(encoded))
+      minimum = :erlang.make_tuple(unquote(arity), 0)
+      maximum = :erlang.make_tuple(unquote(arity), unquote(maximum))
+
+      assert {:ok, ^minimum} = Ecto.Type.cast(type, minimum)
+      assert {:ok, ^maximum} = Ecto.Type.cast(type, maximum)
+
+      for index <- 0..(unquote(arity) - 1),
+          value <- [-1, unquote(maximum) + 1, 1.0, 1.5, "1", :invalid, nil] do
+        assert :error = Ecto.Type.cast(type, put_elem(minimum, index, value))
+      end
+    end
+
+    test "#{encoded} rejects tuples with wrong arities" do
+      type = Ecto.ParameterizedType.init(Ch, type: unquote(encoded))
+
+      for arity <- [0, unquote(arity) - 1, unquote(arity) + 1] do
+        assert :error = Ecto.Type.cast(type, :erlang.make_tuple(arity, 0))
+      end
+    end
+
+    test "#{encoded} nested casts validate tuple components" do
+      encoded = unquote(encoded)
+      address = :erlang.make_tuple(unquote(arity), 1)
+      invalid = put_elem(address, 0, unquote(maximum) + 1)
+
+      for {raw, wrap} <- [
+            {"Nullable(#{encoded})", &Function.identity/1},
+            {"LowCardinality(#{encoded})", &Function.identity/1},
+            {"Array(Nullable(#{encoded}))", &[&1, nil]},
+            {"Tuple(#{encoded})", &{&1}},
+            {"Map(String, #{encoded})", &%{"address" => &1}},
+            {"Map(#{encoded}, String)", &%{&1 => "address"}}
+          ] do
+        type = Ecto.ParameterizedType.init(Ch, type: raw)
+        expected = wrap.(address)
+
+        assert {:ok, ^expected} = Ecto.Type.cast(type, wrap.(address))
+        assert {:ok, ^expected} = Ecto.Type.cast(type, wrap.(unquote(text)))
+        assert {:ok, ^expected} = Ecto.Type.cast(type, wrap.(to_charlist(unquote(text))))
+        assert {:ok, nil} = Ecto.Type.cast(type, nil)
+        assert :error = Ecto.Type.cast(type, wrap.(invalid))
+      end
+    end
+  end
+
   test "Point" do
     assert {:parameterized, {Ch, :point}} = type = Ecto.ParameterizedType.init(Ch, type: "Point")
 

@@ -434,15 +434,31 @@ defmodule Ch.RowBinary do
 
   def encode(:uuid, nil), do: <<0::128>>
 
-  def encode(:ipv4, {a, b, c, d}), do: [d, c, b, a]
+  def encode(:ipv4, {a, b, c, d})
+      when is_integer(a) and a in 0..255 and is_integer(b) and b in 0..255 and is_integer(c) and
+             c in 0..255 and is_integer(d) and d in 0..255,
+      do: [d, c, b, a]
+
   def encode(:ipv4, nil), do: <<0::32>>
 
-  def encode(:ipv6, {b1, b2, b3, b4, b5, b6, b7, b8}) do
+  def encode(:ipv4, address) do
+    raise ArgumentError, "invalid IPv4 address: #{inspect(address)}"
+  end
+
+  def encode(:ipv6, {b1, b2, b3, b4, b5, b6, b7, b8})
+      when is_integer(b1) and b1 in 0..65_535 and is_integer(b2) and b2 in 0..65_535 and
+             is_integer(b3) and b3 in 0..65_535 and is_integer(b4) and b4 in 0..65_535 and
+             is_integer(b5) and b5 in 0..65_535 and is_integer(b6) and b6 in 0..65_535 and
+             is_integer(b7) and b7 in 0..65_535 and is_integer(b8) and b8 in 0..65_535 do
     <<b1::16, b2::16, b3::16, b4::16, b5::16, b6::16, b7::16, b8::16>>
   end
 
   def encode(:ipv6, <<_::128>> = encoded), do: encoded
   def encode(:ipv6, nil), do: <<0::128>>
+
+  def encode(:ipv6, address) do
+    raise ArgumentError, "invalid IPv6 address: #{inspect(address)}"
+  end
 
   def encode(:point, {x, y}), do: [encode(:f64, x) | encode(:f64, y)]
   def encode(:point, nil), do: <<0::128>>

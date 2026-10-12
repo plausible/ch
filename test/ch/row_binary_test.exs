@@ -186,6 +186,100 @@ defmodule Ch.RowBinaryTest do
       assert encode(:uuid, hex) == encode(:uuid, uuid)
     end
 
+    for {type, name, size, max} <- [{:ipv4, "IPv4", 4, 255}, {:ipv6, "IPv6", 8, 65_535}] do
+      test "#{name} rejects invalid components in every position before returning iodata" do
+        type = unquote(type)
+        name = unquote(name)
+        address = List.duplicate(0, unquote(size)) |> List.to_tuple()
+
+        for position <- 0..(unquote(size) - 1),
+            invalid <- [-1, unquote(max) + 1, 1.0, 1.5, "1", :invalid, nil] do
+          invalid_address = put_elem(address, position, invalid)
+          message = "invalid #{name} address: #{inspect(invalid_address)}"
+
+          assert_raise ArgumentError, message, fn -> encode(type, invalid_address) end
+          assert_raise ArgumentError, message, fn -> encode_row([invalid_address], [name]) end
+          assert_raise ArgumentError, message, fn -> encode_rows([[invalid_address]], [name]) end
+        end
+      end
+
+      test "#{name} rejects malformed tuple lengths" do
+        for size <- [0, 1, unquote(size) - 1, unquote(size) + 1] do
+          address = List.duplicate(0, size) |> List.to_tuple()
+
+          assert_raise ArgumentError,
+                       "invalid #{unquote(name)} address: #{inspect(address)}",
+                       fn ->
+                         encode_rows([[address]], [unquote(name)])
+                       end
+        end
+      end
+
+      test "#{name} preserves component boundaries and nil defaults" do
+        min = List.duplicate(0, unquote(size)) |> List.to_tuple()
+        max = List.duplicate(unquote(max), unquote(size)) |> List.to_tuple()
+        rows = [[min], [max]]
+        types = [unquote(name)]
+
+        assert rows |> encode_rows(types) |> IO.iodata_to_binary() |> decode_rows(types) == rows
+        assert encode_to_binary(unquote(type), nil) == encode_to_binary(unquote(type), min)
+
+        for position <- 0..(unquote(size) - 1), value <- [0, unquote(max)] do
+          address = put_elem(min, position, value)
+          assert decode_rows(encode_to_binary(unquote(type), address), types) == [[address]]
+        end
+      end
+
+      test "#{name} preserves nested values and rejects nested invalid addresses" do
+        name = unquote(name)
+        min = List.duplicate(0, unquote(size)) |> List.to_tuple()
+        max = List.duplicate(unquote(max), unquote(size)) |> List.to_tuple()
+        invalid = put_elem(min, unquote(size) - 1, unquote(max) + 1)
+
+        cases = [
+          {"Array(#{name})", [min, max], [min, invalid]},
+          {"Array(Nullable(#{name}))", [min, nil, max], [nil, invalid]},
+          {"Tuple(#{name})", {max}, {invalid}},
+          {"Map(String, #{name})", %{"ip" => max}, %{"ip" => invalid}},
+          {"LowCardinality(#{name})", max, invalid},
+          {"SimpleAggregateFunction(any, #{name})", max, invalid}
+        ]
+
+        for {type, value, invalid_value} <- cases do
+          encoded = encode_rows([[value]], [type]) |> IO.iodata_to_binary()
+          assert decode_rows(encoded, [type]) == [[value]]
+
+          assert_raise ArgumentError, "invalid #{name} address: #{inspect(invalid)}", fn ->
+            encode_rows([[invalid_value]], [type])
+          end
+        end
+      end
+    end
+
+    test "IPv6 preserves its 16-byte binary representation" do
+      bytes = <<0x2001::16, 0xDB8::16, 0::16, 1::16, 0xFFFF::16, 0x8000::16, 0::16, 1::16>>
+      address = {0x2001, 0xDB8, 0, 1, 0xFFFF, 0x8000, 0, 1}
+
+      assert encode(:ipv6, bytes) == bytes
+      assert encode_to_binary(:ipv6, address) == bytes
+
+      assert decode_rows(IO.iodata_to_binary(encode_rows([[bytes]], ["IPv6"])), ["IPv6"]) ==
+               [[address]]
+    end
+
+    test "IP strings and charlists cast to encodable addresses" do
+      for {name, text, address} <- [
+            {"IPv4", "127.0.0.1", {127, 0, 0, 1}},
+            {"IPv6", "2001:db8::1", {0x2001, 0xDB8, 0, 0, 0, 0, 0, 1}}
+          ],
+          input <- [text, to_charlist(text)] do
+        type = Ecto.ParameterizedType.init(Ch, type: name)
+        assert {:ok, ^address} = Ecto.Type.cast(type, input)
+        encoded = encode_rows([[address]], [name]) |> IO.iodata_to_binary()
+        assert decode_rows(encoded, [name]) == [[address]]
+      end
+    end
+
     test "map" do
       assert encode({:map, :string, :string}, []) == 0
       assert encode_to_binary({:map, :string, :string}, %{}) == <<0>>

@@ -255,7 +255,9 @@ defmodule Ch do
 
     def cast(value, :ipv4) do
       case value do
-        {a, b, c, d} when is_number(a) and is_number(b) and is_number(c) and is_number(d) ->
+        {a, b, c, d}
+        when is_integer(a) and a in 0..255 and is_integer(b) and b in 0..255 and
+               is_integer(c) and c in 0..255 and is_integer(d) and d in 0..255 ->
           {:ok, value}
 
         _ when is_binary(value) ->
@@ -272,8 +274,10 @@ defmodule Ch do
     def cast(value, :ipv6) do
       case value do
         {a, s, d, f, g, h, j, k}
-        when is_number(a) and is_number(s) and is_number(d) and is_number(f) and
-               is_number(g) and is_number(h) and is_number(j) and is_number(k) ->
+        when is_integer(a) and a in 0..65535 and is_integer(s) and s in 0..65535 and
+               is_integer(d) and d in 0..65535 and is_integer(f) and f in 0..65535 and
+               is_integer(g) and g in 0..65535 and is_integer(h) and h in 0..65535 and
+               is_integer(j) and j in 0..65535 and is_integer(k) and k in 0..65535 ->
           {:ok, value}
 
         _ when is_binary(value) ->
