@@ -2,8 +2,10 @@
 
 ## Unreleased
 
-- Detect closed idle HTTP connections before sending queries and retry them through the pool. Restrict retries after transmission to conservatively identified reads, preventing lost responses from silently duplicating inserts. https://github.com/plausible/ch/issues/442
-- Require Mint 1.11 or newer so nonblocking receive probes keep healthy connections open on timeout.
+- Detect closed idle HTTP connections before sending queries and retry them through the pool. Restrict retries after transmission to conservatively identified reads, preventing lost responses from silently duplicating inserts. https://github.com/plausible/ch/pull/467
+
+  - Require Mint 1.11 or newer so nonblocking receive probes keep healthy connections open on timeout.
+
 - Preserve fractional seconds when Ecto casts `Time64` values; RowBinary encoding applies the declared precision. https://github.com/plausible/ch/pull/469
 - Pad small DateTime64 query parameters https://github.com/plausible/ch/pull/440
 
