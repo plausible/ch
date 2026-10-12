@@ -376,14 +376,9 @@ defmodule Ch.Connection do
     headers = headers(conn, extra_headers, opts)
 
     case request(conn, "POST", path, headers, body, opts) do
-      {:ok, conn, responses} ->
-        {:ok, query, responses, conn}
-
-      {:error, _reason, _conn} = client_error ->
-        client_error
-
-      {:disconnect, _reason, _conn} = disconnect ->
-        disconnect
+      {:ok, conn, responses} -> {:ok, query, responses, conn}
+      {:error, _reason, _conn} = client_error -> client_error
+      {:disconnect, _reason, _conn} = disconnect -> disconnect
     end
   end
 
