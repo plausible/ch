@@ -57,6 +57,64 @@ defmodule Ch.TimeIntegrationTest do
            ]
   end
 
+  test "Ecto-cast Time and Time64 values retain their declared precision when inserted", %{
+    pool: pool
+  } do
+    Ch.Test.query("""
+    CREATE TABLE time_integration_ecto(
+      t Time,
+      t64_0 Time64(0),
+      t64_3 Time64(3),
+      t64_6 Time64(6),
+      t64_9 Time64(9)
+    ) ENGINE Memory
+    """)
+
+    on_exit(fn -> Ch.Test.query("DROP TABLE time_integration_ecto") end)
+
+    types = ["Time", "Time64(0)", "Time64(3)", "Time64(6)", "Time64(9)"]
+
+    rows =
+      for input <- [~T[12:34:56.987654], "12:34:57.123456"] do
+        Enum.map(types, fn type ->
+          ecto_type = Ecto.ParameterizedType.init(Ch, type: type)
+          assert {:ok, time} = Ecto.Type.cast(ecto_type, input)
+          time
+        end)
+      end
+
+    Ch.query!(pool, "INSERT INTO time_integration_ecto FORMAT RowBinary", rows, types: types)
+
+    query = "SELECT * FROM time_integration_ecto ORDER BY t"
+
+    assert Ch.query!(pool, query).rows == [
+             [
+               ~T[12:34:56],
+               ~T[12:34:56],
+               ~T[12:34:56.987],
+               ~T[12:34:56.987654],
+               ~T[12:34:56.987654]
+             ],
+             [
+               ~T[12:34:57],
+               ~T[12:34:57],
+               ~T[12:34:57.123],
+               ~T[12:34:57.123456],
+               ~T[12:34:57.123456]
+             ]
+           ]
+
+    result = Ch.query!(pool, query, [], format: "RowBinary", decode: false)
+
+    # Read the stored ticks as integers so decoding Time64(9) cannot hide lost precision.
+    assert result.data
+           |> IO.iodata_to_binary()
+           |> Ch.RowBinary.decode_rows(["Int32", "Int64", "Int64", "Int64", "Int64"]) == [
+             [45_296, 45_296, 45_296_987, 45_296_987_654, 45_296_987_654_000],
+             [45_297, 45_297, 45_297_123, 45_297_123_456, 45_297_123_456_000]
+           ]
+  end
+
   defp time_gen do
     gen all hour <- integer(0..23),
             minute <- integer(0..59),

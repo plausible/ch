@@ -28,7 +28,7 @@ defmodule Ch.TimeRowBinaryTest do
     end
   end
 
-  test "Time64 encoder truncates fractional ticks for sub-microsecond precision" do
+  test "Time64 encoder truncates or pads fractional ticks to the declared precision" do
     time = ~T[12:34:56.987654]
 
     assert RowBinary.encode({:time64, 1}, time) ==
@@ -42,6 +42,12 @@ defmodule Ch.TimeRowBinaryTest do
 
     assert RowBinary.encode({:time64, 1_000}, time) ==
              <<45_296_000 + 987::64-little-signed>>
+
+    assert RowBinary.encode({:time64, 1_000_000}, time) ==
+             <<45_296_000_000 + 987_654::64-little-signed>>
+
+    assert RowBinary.encode({:time64, 1_000_000_000}, time) ==
+             <<45_296_000_000_000 + 987_654_000::64-little-signed>>
   end
 
   test "Time64 decoder rejects ClickHouse values outside Elixir's Time range" do
