@@ -124,7 +124,7 @@ defmodule Ch.Connection do
     headers = headers(conn, extra_headers, opts)
     timeout = timeout(conn, opts)
 
-    with {:ok, conn} <- prepare_request(conn),
+    with {:ok, conn} <- ensure_connected(conn),
          {:ok, conn, _ref} <- send_request(conn, "POST", path, headers, body),
          {:ok, conn, columns, headers, reader} <- recv_declare(conn, decode, timeout) do
       result = %Result{
@@ -290,12 +290,12 @@ defmodule Ch.Connection do
   end
 
   def handle_execute(query, params, opts, conn) do
-    with {:ok, conn} <- prepare_request(conn) do
+    with {:ok, conn} <- ensure_connected(conn) do
       execute(query, params, opts, conn)
     end
   end
 
-  defp prepare_request(conn) do
+  defp ensure_connected(conn) do
     if HTTP.open?(conn) do
       # Mint 1.11 keeps a healthy connection open when this nonblocking probe times out.
       # Mint PR: https://github.com/elixir-mint/mint/pull/486
