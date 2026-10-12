@@ -114,7 +114,7 @@ defmodule Ch.InsertRetryTest do
     query = Ch.Query.build("INSERT INTO example VALUES (42)")
     params = DBConnection.Query.encode(query, [], [])
 
-    assert {:disconnect_and_retry, %Mint.TransportError{reason: :closed}, _conn} =
+    assert {:disconnect_and_retry, %Mint.HTTPError{reason: :closed}, _conn} =
              Ch.Connection.handle_execute(query, params, [], conn)
   end
 

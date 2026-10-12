@@ -296,11 +296,8 @@ defmodule Ch.Connection do
   end
 
   defp prepare_request(conn) do
-    if HTTP.open_request_count(conn) > 0 do
-      {:ok, conn}
-    else
+    if HTTP.open?(conn) do
       # Mint 1.11 keeps a healthy connection open when this nonblocking probe times out.
-      # Probe only idle connections so an in-flight response is never consumed here.
       # Mint PR: https://github.com/elixir-mint/mint/pull/486
       # Ch discussion: https://github.com/plausible/ch/pull/304
       case HTTP.recv(conn, 0, 0) do
@@ -314,6 +311,9 @@ defmodule Ch.Connection do
           reason = Error.exception("unexpected HTTP response before sending a request")
           {:disconnect_and_retry, reason, conn}
       end
+    else
+      reason = Mint.HTTPError.exception(reason: :closed, module: HTTP)
+      {:disconnect_and_retry, reason, conn}
     end
   end
 
