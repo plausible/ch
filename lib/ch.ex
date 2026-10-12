@@ -83,12 +83,13 @@ defmodule Ch do
   Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
   `{:error, Exception.t()}` if there was a database error.
 
-  Pool queries can retry when a stale connection is detected before sending the
-  request. After sending starts, only conservatively identified read statements
-  can retry; writes return the connection error because they may already have
-  completed. The `:command` option does not establish retry safety.
+  When querying through a connection pool, Ch can reconnect and retry if the
+  connection closes before sending starts. After sending starts, only read queries
+  may be retried. Writes return a connection error because they may already have
+  completed.
 
-  Automatic pool retries do not apply to an existing `DBConnection.run/3` checkout.
+  Queries using the connection passed to a `DBConnection.run/3` callback are not
+  retried. A connection failure returns an error.
 
   See `t:query_option/0` for available options.
   """
