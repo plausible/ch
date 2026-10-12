@@ -5,6 +5,10 @@ defmodule Ch.InsertRetryTest do
 
   alias Mint.HTTP
 
+  setup ctx do
+    {:ok, query_options: ctx[:query_options] || []}
+  end
+
   describe "insert retries" do
     setup do
       direct = start_supervised!({Ch, database: Ch.Test.database()}, id: :direct)
