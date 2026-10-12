@@ -301,6 +301,8 @@ defmodule Ch.Connection do
     else
       # Mint 1.11 keeps a healthy connection open when this nonblocking probe times out.
       # Probe only idle connections so an in-flight response is never consumed here.
+      # Mint PR: https://github.com/elixir-mint/mint/pull/486
+      # Ch discussion: https://github.com/plausible/ch/pull/304
       case HTTP.recv(conn, 0, 0) do
         {:error, conn, %Mint.TransportError{reason: :timeout}, []} ->
           {:ok, conn}
