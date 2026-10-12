@@ -83,14 +83,6 @@ defmodule Ch do
   Runs a query and returns the result as `{:ok, %Ch.Result{}}` or
   `{:error, Exception.t()}` if there was a database error.
 
-  When querying through a connection pool, Ch can reconnect and retry if its
-  connection check fails before sending starts. After sending starts, connection
-  failures return an error without retrying the query. A write may already have
-  completed even if its response was lost.
-
-  Queries using the connection passed to a `DBConnection.run/3` callback are not
-  retried. A connection failure returns an error.
-
   See `t:query_option/0` for available options.
   """
   @spec query(DBConnection.conn(), iodata, params, [query_option]) ::
