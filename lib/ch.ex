@@ -133,7 +133,7 @@ defmodule Ch do
     def type(:date), do: :date
     def type(:date32), do: :date
     def type(:time), do: :time
-    def type({:time64, _p}), do: :time
+    def type({:time64, _p}), do: :time_usec
     def type(:datetime), do: :naive_datetime
     def type({:datetime, _tz}), do: :utc_datetime
     def type({:datetime64, _p}), do: :naive_datetime_usec
@@ -196,7 +196,7 @@ defmodule Ch do
     def cast(value, :date = type), do: Ecto.Type.cast(type, value)
     def cast(value, :date32), do: Ecto.Type.cast(:date, value)
     def cast(value, :time = type), do: Ecto.Type.cast(type, value)
-    def cast(value, {:time64, _p}), do: Ecto.Type.cast(:time, value)
+    def cast(value, {:time64, _p}), do: Ecto.Type.cast(:time_usec, value)
     def cast(value, :datetime), do: Ecto.Type.cast(:naive_datetime, value)
     def cast(value, {:datetime, _tz}), do: Ecto.Type.cast(:utc_datetime, value)
     def cast(value, {:datetime64, _p}), do: Ecto.Type.cast(:naive_datetime_usec, value)

@@ -337,6 +337,8 @@ defmodule Ch.EctoTypeTest do
 
     assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, ~T[12:34:56])
     assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, "12:34:56")
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, ~T[12:34:56.123456])
+    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, "12:34:56.123456")
     assert {:ok, nil} = Ecto.Type.cast(type, nil)
 
     assert :error = Ecto.Type.cast(type, "asdf")
@@ -345,21 +347,65 @@ defmodule Ch.EctoTypeTest do
     assert {:ok, ~T[12:34:56]} = Ecto.Type.load(type, ~T[12:34:56])
   end
 
-  test "Time64(3)" do
-    assert {:parameterized, {Ch, {:time64, 6}}} =
-             type = Ecto.ParameterizedType.init(Ch, type: "Time64(6)")
+  for precision <- [0, 3, 6, 9] do
+    test "Time64(#{precision}) preserves microseconds until encoding" do
+      assert {:parameterized, {Ch, {:time64, unquote(precision)}}} =
+               type = Ecto.ParameterizedType.init(Ch, type: unquote("Time64(#{precision})"))
 
-    assert Ecto.Type.type(type) == :time
-    assert Ecto.Type.format(type) == "#Ch<Time64(6)>"
+      assert Ecto.Type.type(type) == :time_usec
+      assert Ecto.Type.format(type) == unquote("#Ch<Time64(#{precision})>")
 
-    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, ~T[12:34:56])
-    assert {:ok, ~T[12:34:56]} = Ecto.Type.cast(type, "12:34:56")
-    assert {:ok, nil} = Ecto.Type.cast(type, nil)
+      assert {:ok, ~T[12:34:56.123456]} = Ecto.Type.cast(type, ~T[12:34:56.123456])
+      assert {:ok, ~T[12:34:56.123456]} = Ecto.Type.cast(type, "12:34:56.123456")
+      assert {:ok, ~T[12:34:56.123000]} = Ecto.Type.cast(type, ~T[12:34:56.123])
+      assert {:ok, ~T[12:34:56.123000]} = Ecto.Type.cast(type, "12:34:56.123")
+      assert {:ok, ~T[12:34:56.000000]} = Ecto.Type.cast(type, ~T[12:34:56])
+      assert {:ok, ~T[12:34:56.000000]} = Ecto.Type.cast(type, "12:34:56")
+      assert {:ok, nil} = Ecto.Type.cast(type, nil)
 
-    assert :error = Ecto.Type.cast(type, "asdf")
+      assert :error = Ecto.Type.cast(type, "asdf")
+      assert :error = Ecto.Type.cast(type, "24:00:00")
 
-    assert {:ok, ~T[12:34:56]} = Ecto.Type.dump(type, ~T[12:34:56])
-    assert {:ok, ~T[12:34:56]} = Ecto.Type.load(type, ~T[12:34:56])
+      assert {:ok, ~T[12:34:56.123456]} = Ecto.Type.dump(type, ~T[12:34:56.123456])
+      assert {:ok, ~T[12:34:56.123456]} = Ecto.Type.load(type, ~T[12:34:56.123456])
+    end
+  end
+
+  test "Time64 wrappers preserve microseconds" do
+    for precision <- [0, 3, 6, 9],
+        raw <- [
+          "Nullable(Time64(#{precision}))",
+          "LowCardinality(Time64(#{precision}))",
+          "SimpleAggregateFunction(any, Time64(#{precision}))"
+        ] do
+      type = Ecto.ParameterizedType.init(Ch, type: raw)
+
+      assert Ecto.Type.type(type) == :time_usec
+      assert {:ok, ~T[12:34:56.123456]} = Ecto.Type.cast(type, ~T[12:34:56.123456])
+      assert {:ok, ~T[12:34:56.123456]} = Ecto.Type.cast(type, "12:34:56.123456")
+      assert {:ok, nil} = Ecto.Type.cast(type, nil)
+      assert :error = Ecto.Type.cast(type, "asdf")
+    end
+  end
+
+  test "arrays containing Time64 preserve microseconds" do
+    for precision <- [0, 3, 6, 9],
+        type <- [
+          Ecto.ParameterizedType.init(Ch, type: "Array(Time64(#{precision}))"),
+          Ecto.ParameterizedType.init(Ch,
+            type: "Array(LowCardinality(Nullable(Time64(#{precision}))))"
+          ),
+          {:array, Ecto.ParameterizedType.init(Ch, type: "Time64(#{precision})")}
+        ] do
+      assert Ecto.Type.type(type) == {:array, :time_usec}
+
+      assert {:ok, [~T[12:34:56.123456], ~T[12:34:56.123456], nil]} =
+               Ecto.Type.cast(type, [~T[12:34:56.123456], "12:34:56.123456", nil])
+
+      assert {:ok, []} = Ecto.Type.cast(type, [])
+      assert {:ok, nil} = Ecto.Type.cast(type, nil)
+      assert :error = Ecto.Type.cast(type, ["asdf"])
+    end
   end
 
   test "Bool" do
