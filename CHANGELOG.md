@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.3 (2026-10-15)
 
 - Preserve fractional seconds when Ecto casts `Time64` values; RowBinary encoding applies the declared precision. https://github.com/plausible/ch/pull/469
 - Pad small DateTime64 query parameters https://github.com/plausible/ch/issues/442
