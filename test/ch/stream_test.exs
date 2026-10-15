@@ -58,7 +58,44 @@ defmodule Ch.StreamTest do
     end
   end
 
+  describe "raw enumerable insert input" do
+    test "preserves rows with valid INSERT prefixes", %{conn: conn, query_options: query_options} do
+      table = "raw_stream_insert_#{System.unique_integer([:positive])}"
+      Ch.query!(conn, "CREATE TABLE #{table} (i UInt8) ENGINE = Memory")
+      on_exit(fn -> Ch.Test.query("DROP TABLE #{table}") end)
+
+      for statement <- insert_statements(table) do
+        Ch.query!(conn, "TRUNCATE TABLE #{table}")
+        data = Stream.map([123, 124], fn value -> <<value>> end)
+
+        Ch.query!(conn, statement, data, Keyword.put(query_options, :encode, false))
+
+        assert Ch.query!(conn, "SELECT i FROM #{table} ORDER BY i").rows == [[123], [124]]
+      end
+    end
+  end
+
   describe "collectable Ch.stream/4" do
+    test "preserves chunks with valid INSERT prefixes", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      table = "collect_stream_insert_#{System.unique_integer([:positive])}"
+      Ch.query!(conn, "CREATE TABLE #{table} (i UInt8) ENGINE = Memory")
+      on_exit(fn -> Ch.Test.query("DROP TABLE #{table}") end)
+
+      for statement <- insert_statements(table) do
+        Ch.query!(conn, "TRUNCATE TABLE #{table}")
+
+        DBConnection.run(conn, fn conn ->
+          [<<123>>, <<124>>]
+          |> Enum.into(Ch.stream(conn, statement, [], Keyword.put(query_options, :encode, false)))
+        end)
+
+        assert Ch.query!(conn, "SELECT i FROM #{table} ORDER BY i").rows == [[123], [124]]
+      end
+    end
+
     test "inserts chunks", %{conn: conn, query_options: query_options} do
       Ch.query!(conn, "create table collect_stream(i UInt64) engine Memory")
       on_exit(fn -> Ch.Test.query("DROP TABLE collect_stream") end)
@@ -80,5 +117,14 @@ defmodule Ch.StreamTest do
 
       assert Ch.query!(conn, "select count(*) from collect_stream").rows == [[1_000_000]]
     end
+  end
+
+  defp insert_statements(table) do
+    suffix = " INTO #{table}(i) FORMAT RowBinary"
+
+    Enum.map(
+      ["Insert", "/* trace */ INSERT", "-- trace\r\nINSERT", "\r\nINSERT"],
+      &(&1 <> suffix)
+    ) ++ [["/", "* trace *", "/\r", "\n-- trace\r", "\nIn", ["sE", ?r], "t", suffix]]
   end
 end
