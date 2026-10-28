@@ -359,4 +359,96 @@ defmodule Ch.JSONTest do
       )
     end
   end
+
+  test "encode matches system.columns", %{conn: conn, query_options: query_options} do
+    ddls = [
+      "JSON(max_dynamic_paths = 10, max_dynamic_types = 3)",
+      "JSON(max_dynamic_types=32)",
+      "JSON(b String, `a`.`b` UInt8)",
+      "JSON(SKIP z, SKIP a.b, SKIP z)",
+      "JSON(SKIP REGEXP 'a\\d\\.x')",
+      "JSON(`a\\d` UInt8)",
+      "JSON(SKIP REGEXP 'a\\%')",
+      "JSON(SKIP REGEXP 'a\\eb')",
+      "JSON(skip regexp 'tmp_[,()]', SKIP REGEXP 'a\\'b')",
+      "JSON(`select` UInt8, `from` UInt8)",
+      "JSON(`skip` UInt8)",
+      "JSON(SKIP skip)",
+      "JSON(SKIP z, x UInt8, max_dynamic_types=3, SKIP REGEXP 'q', max_dynamic_paths=7, a String)",
+      "JSON(`a b` String, `1a` UInt8, SKIP REGEXP 'x\\\\.y')",
+      "Array(JSON(a UInt8))",
+      "Nullable(JSON(SKIP q))",
+      "Map(String, JSON(max_dynamic_paths=3))"
+    ]
+
+    for ddl <- ddls do
+      Ch.query!(conn, "CREATE TABLE json_test (j #{ddl}) ENGINE = Memory", [], query_options)
+
+      rows =
+        try do
+          Ch.query!(
+            conn,
+            "SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'json_test' AND name = 'j'",
+            [],
+            query_options
+          ).rows
+        after
+          Ch.query!(conn, "DROP TABLE json_test", [], query_options)
+        end
+
+      assert [[server_type]] = rows
+      type = Ch.Types.decode(ddl)
+      assert IO.iodata_to_binary(Ch.Types.encode(type)) == server_type, ddl
+      assert Ch.Types.decode(server_type) == type, ddl
+    end
+  end
+
+  test "streams 10_000 rows through a typed JSON column", %{
+    conn: conn,
+    query_options: query_options
+  } do
+    Ch.query!(
+      conn,
+      "CREATE TABLE json_test (j JSON(max_dynamic_paths=8, a.b UInt32, SKIP s, SKIP REGEXP 'tmp_.*')) ENGINE = Memory",
+      [],
+      query_options
+    )
+
+    types =
+      Ch.RowBinary.encoding_types([
+        Ch.Types.decode("JSON(max_dynamic_paths=8, a.b UInt32, SKIP s, SKIP REGEXP 'tmp_.*')")
+      ])
+
+    header = Ch.RowBinary.encode_names_and_types(["j"], types)
+
+    chunks =
+      1..10_000
+      |> Stream.map(fn i -> [%{"a" => %{"b" => i}, "n" => "row#{i}"}] end)
+      |> Stream.chunk_every(1_000)
+      |> Stream.map(&Ch.RowBinary._encode_rows(&1, types))
+
+    DBConnection.run(conn, fn conn ->
+      Stream.concat([header], chunks)
+      |> Enum.into(
+        Ch.stream(
+          conn,
+          "INSERT INTO json_test FORMAT RowBinaryWithNamesAndTypes",
+          [],
+          Keyword.merge(query_options, encode: false)
+        )
+      )
+    end)
+
+    rows =
+      DBConnection.run(conn, fn conn ->
+        conn
+        |> Ch.stream("SELECT j FROM json_test", [], query_options)
+        |> Enum.flat_map(fn %Ch.Result{rows: rows} -> rows end)
+      end)
+
+    assert length(rows) == 10_000
+
+    assert [%{"a" => %{"b" => 7_777}, "n" => "row7777"}] =
+             for([%{"n" => "row7777"} = j] <- rows, do: j)
+  end
 end

@@ -140,6 +140,7 @@ defmodule Ch do
     def type({:datetime64, _p, _tz}), do: :utc_datetime_usec
     def type({:fixed_string, _s}), do: :string
     def type(:json), do: :map
+    def type({:json, _opts}), do: :map
     def type(:dynamic), do: :any
 
     for size <- [8, 16, 32, 64, 128, 256] do
@@ -203,6 +204,7 @@ defmodule Ch do
     def cast(value, {:datetime64, _p, _tz}), do: Ecto.Type.cast(:utc_datetime_usec, value)
     def cast(value, {:fixed_string, _s}), do: Ecto.Type.cast(:string, value)
     def cast(value, :json), do: Ecto.Type.cast(:map, value)
+    def cast(value, {:json, _opts}), do: Ecto.Type.cast(:map, value)
     def cast(value, :dynamic), do: {:ok, value}
 
     for size <- [8, 16, 32, 64] do

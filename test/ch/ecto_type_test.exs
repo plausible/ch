@@ -854,4 +854,13 @@ defmodule Ch.EctoTypeTest do
       assert {:ok, %Decimal{}} = Ecto.Type.load(type, Decimal.new("1.0"))
     end
   end
+
+  test "JSON with options" do
+    assert {:parameterized, {Ch, {:json, [typed_paths: [{"a.b", :u32}], skip_paths: ["x"]]}}} =
+             type = Ecto.ParameterizedType.init(Ch, type: "JSON(a.b UInt32, SKIP x)")
+
+    assert Ecto.Type.type(type) == :map
+    assert Ecto.Type.format(type) == "#Ch<JSON(`a.b` UInt32, SKIP x)>"
+    assert {:ok, %{"a" => 1}} = Ecto.Type.cast(type, %{"a" => 1})
+  end
 end
