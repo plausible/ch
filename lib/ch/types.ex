@@ -29,7 +29,7 @@ defmodule Ch.Types do
       {"Time", :time, []},
       {"Date32", :date32, []},
       {"Date", :date, []},
-      {"JSON", :json, [:json_options]},
+      {"JSON", :json, [:json_option]},
       {"Dynamic", :dynamic, [:identifier, :eq, :int]},
       # {"Dynamic", :dynamic, []},
       {"LowCardinality", :low_cardinality, [:type]},
@@ -82,6 +82,27 @@ defmodule Ch.Types do
 
   """
   def json, do: :json
+
+  @doc """
+  Builds a `JSON` type with options `:max_dynamic_types`, `:max_dynamic_paths`,
+  `:typed_paths` (`[{path, type}]`), `:skip_paths` and `:skip_regexps`.
+  Normalizes to the type name ClickHouse reports: drops defaults, sorts paths
+  and regexps, dedups `skip_paths`.
+
+      iex> json(max_dynamic_paths: 1024)
+      :json
+
+      iex> json(skip_paths: ["b", "a", "b"], max_dynamic_types: 3)
+      {:json, [max_dynamic_types: 3, skip_paths: ["a", "b"]]}
+
+      iex> IO.iodata_to_binary(encode(json(typed_paths: [{"b", :string}, {"a.b", :u8}])))
+      "JSON(`a.b` UInt8, b String)"
+
+      iex> decode("JSON(SKIP z, a UInt8, max_dynamic_types=3)")
+      json(max_dynamic_types: 3, typed_paths: [{"a", :u8}], skip_paths: ["z"])
+
+  """
+  def json(opts) when is_list(opts), do: normalize_json(opts)
 
   @doc """
   Helper for `DateTime` ClickHouse type:
@@ -387,9 +408,50 @@ defmodule Ch.Types do
   end
 
   defguardp is_whitespace(char) when char in [?\s, ?\t, ?\n, ?\r]
+  defguardp is_alpha(a) when (a >= ?a and a <= ?z) or (a >= ?A and a <= ?Z)
+  defguardp is_numeric(char) when char >= ?0 and char <= ?9
+  defguardp is_ident(a) when is_alpha(a) or is_numeric(a) or a == ?_
+  defguardp is_ci(char, upper) when char == upper or char == upper + 32
+
+  # Tag clauses go first: the whitespace, `,` and `)` clauses below match any stack
+  # and would close `JSON(` with a tag still pending.
+  defp decode([{:tag, :setting} | stack], <<rest::bytes>>, [value, name | acc]) do
+    decode(stack, rest, [{json_setting(name), value} | acc])
+  end
+
+  defp decode([{:tag, :typed_paths} | stack], <<rest::bytes>>, [type, path | acc]) do
+    decode(stack, rest, [{:typed_paths, [{path, type}]} | acc])
+  end
+
+  defp decode([{:tag, key} | stack], <<rest::bytes>>, [value | acc]) do
+    decode(stack, rest, [{key, [value]} | acc])
+  end
 
   defp decode(stack, <<whitespace, rest::bytes>>, acc) when is_whitespace(whitespace) do
     decode(stack, rest, acc)
+  end
+
+  # This clause must also come before the generic `,` and `)` clauses.
+  # A value still pending under a tag (`SKIP REGEXP )`, `max_dynamic_types=)`) is an error.
+  defp decode([_, {:tag, _} | _stack], <<c, _::bytes>>, _acc) when c in [?,, ?)] do
+    raise ArgumentError, "unexpected character #{inspect(<<c>>)} in type while decoding"
+  end
+
+  defp decode([:json_setting_or_hint | stack], <<?=, rest::bytes>>, acc) do
+    decode([:int, {:tag, :setting} | stack], rest, acc)
+  end
+
+  defp decode([:json_setting_or_hint | stack], <<rest::bytes>>, acc) do
+    decode([:type, {:tag, :typed_paths} | stack], rest, acc)
+  end
+
+  defp decode([:json_path | stack], <<rest::bytes>>, acc) do
+    decode_json_path(rest, [], stack, acc)
+  end
+
+  defp decode([:json_string | stack], <<?', rest::bytes>>, acc) do
+    {string, rest} = decode_json_quoted(rest, ?', [])
+    decode(stack, rest, [string | acc])
   end
 
   for {encoded, decoded, [_ | _] = args} <- types do
@@ -445,9 +507,25 @@ defmodule Ch.Types do
     decode_identifier(rest, 0, rest, stack, acc)
   end
 
-  defp decode([:json_options | stack], <<rest::bytes>>, acc) do
-    # Options can contain nested types and quoted regexes, so find the matching closing parenthesis.
-    decode_json_options(rest, 0, nil, stack, acc)
+  defp decode([:json_option | stack], <<s, k, i, p, sep, _::bytes>> = rest, acc)
+       when is_ci(s, ?S) and is_ci(k, ?K) and is_ci(i, ?I) and is_ci(p, ?P) and
+              (is_whitespace(sep) or sep in [?`, ?"]) do
+    <<_skip::4-bytes, rest::bytes>> = rest
+
+    case skip_whitespace(rest) do
+      <<r, e, g, e2, x, p, sep, _::bytes>> = rest
+      when is_ci(r, ?R) and is_ci(e, ?E) and is_ci(g, ?G) and is_ci(e2, ?E) and is_ci(x, ?X) and
+             is_ci(p, ?P) and (is_whitespace(sep) or sep == ?') ->
+        <<_regexp::6-bytes, rest::bytes>> = rest
+        decode([:json_string, {:tag, :skip_regexps} | stack], rest, acc)
+
+      rest ->
+        decode([:json_path, {:tag, :skip_paths} | stack], rest, acc)
+    end
+  end
+
+  defp decode([:json_option | stack], <<rest::bytes>>, acc) do
+    decode([:json_path, :json_setting_or_hint | stack], rest, acc)
   end
 
   for {encoded, decoded, [_ | _] = args} <- types do
@@ -513,7 +591,7 @@ defmodule Ch.Types do
   defp build_type(:time64 = t, [precision]), do: {t, precision}
   defp build_type(:variant = v, ts), do: {v, build_variant(ts)}
   defp build_type(:dynamic, _max_types), do: :dynamic
-  defp build_type(:json, _options), do: :json
+  defp build_type(:json, opts), do: normalize_json(:lists.reverse(opts))
 
   defp build_enum_mapping(mapping) do
     mapping |> :lists.reverse() |> Enum.chunk_every(2) |> Enum.map(fn [k, v] -> {k, v} end)
@@ -552,12 +630,9 @@ defmodule Ch.Types do
   defp utf8_size(codepoint) when codepoint <= 0xFFFF, do: 3
   defp utf8_size(codepoint) when codepoint <= 0x10FFFF, do: 4
 
-  defguardp is_alpha(a) when (a >= ?a and a <= ?z) or (a >= ?A and a <= ?Z)
-  defguardp is_numeric(char) when char >= ?0 and char <= ?9
-
   # TODO add ?$
   defp decode_identifier(<<a, rest::bytes>>, len, original, stack, acc)
-       when is_alpha(a) or is_numeric(a) or a == ?_ do
+       when is_ident(a) do
     decode_identifier(rest, len + 1, original, stack, acc)
   end
 
@@ -583,46 +658,149 @@ defmodule Ch.Types do
     decode(stack, rest, [int * multiplier | acc])
   end
 
-  # The JSON type's closing parenthesis ends the options list.
-  defp decode_json_options(<<?), rest::bytes>>, 0, nil, stack, acc) do
-    decode(stack, <<?), rest::bytes>>, acc)
+  defp skip_whitespace(<<whitespace, rest::bytes>>) when is_whitespace(whitespace) do
+    skip_whitespace(rest)
   end
 
-  # Opening parentheses belong to nested type hints, such as Tuple(...).
-  defp decode_json_options(<<?(, rest::bytes>>, depth, nil, stack, acc) do
-    decode_json_options(rest, depth + 1, nil, stack, acc)
+  defp skip_whitespace(rest), do: rest
+
+  defp json_setting("max_dynamic_types"), do: :max_dynamic_types
+  defp json_setting("max_dynamic_paths"), do: :max_dynamic_paths
+
+  defp json_setting(name) do
+    raise ArgumentError, "unknown JSON setting #{inspect(name)}"
   end
 
-  # A closing parenthesis inside the options list finishes one nested type hint.
-  defp decode_json_options(<<?), rest::bytes>>, depth, nil, stack, acc) do
-    decode_json_options(rest, depth - 1, nil, stack, acc)
+  # A path is one or more segments joined by `.`, each bare, `quoted` or "quoted".
+  defp decode_json_path(<<quote, rest::bytes>>, segments, stack, acc) when quote in [?`, ?"] do
+    {segment, rest} = decode_json_quoted(rest, quote, [])
+    decode_json_path_continue(rest, [segment | segments], stack, acc)
   end
 
-  # ClickHouse strings use single quotes; quoted identifiers use double quotes or backticks.
-  defp decode_json_options(<<quote, rest::bytes>>, depth, nil, stack, acc)
-       when quote in [?', ?", ?`] do
-    decode_json_options(rest, depth, quote, stack, acc)
+  defp decode_json_path(<<a, _::bytes>> = rest, segments, stack, acc)
+       when is_ident(a) do
+    {segment, rest} = decode_json_bare(rest, [])
+    decode_json_path_continue(rest, [segment | segments], stack, acc)
   end
 
-  # A backslash protects the following character from ending a quoted value.
-  defp decode_json_options(<<?\\, _escaped::utf8, rest::bytes>>, depth, quote, stack, acc)
-       when not is_nil(quote) do
-    decode_json_options(rest, depth, quote, stack, acc)
-  end
-
-  # The matching quote ends a string literal or quoted identifier.
-  defp decode_json_options(<<quote, rest::bytes>>, depth, quote, stack, acc) do
-    decode_json_options(rest, depth, nil, stack, acc)
-  end
-
-  # Other characters do not affect parenthesis or quote tracking.
-  defp decode_json_options(<<_char::utf8, rest::bytes>>, depth, quote, stack, acc) do
-    decode_json_options(rest, depth, quote, stack, acc)
-  end
-
-  # Reaching EOF before the JSON type closes is invalid.
-  defp decode_json_options(<<>>, _depth, _quote, _stack, _acc) do
+  defp decode_json_path(<<>>, _segments, _stack, _acc) do
     raise ArgumentError, "unexpected end of type while decoding"
+  end
+
+  defp decode_json_path(<<invalid::utf8, _rest::bytes>>, _segments, _stack, _acc) do
+    raise ArgumentError,
+          "unexpected character #{inspect(<<invalid::utf8>>)} in type while decoding"
+  end
+
+  defp decode_json_path_continue(rest, segments, stack, acc) do
+    case skip_whitespace(rest) do
+      <<?., rest::bytes>> ->
+        decode_json_path(skip_whitespace(rest), segments, stack, acc)
+
+      _ ->
+        path = segments |> :lists.reverse() |> Enum.intersperse(?.) |> IO.iodata_to_binary()
+        decode(stack, rest, [path | acc])
+    end
+  end
+
+  defp decode_json_bare(<<a, rest::bytes>>, buf) when is_ident(a) do
+    decode_json_bare(rest, [buf, a])
+  end
+
+  defp decode_json_bare(rest, buf), do: {IO.iodata_to_binary(buf), rest}
+
+  defp decode_json_quoted(<<quote, quote, rest::bytes>>, quote, buf) do
+    decode_json_quoted(rest, quote, [buf, quote])
+  end
+
+  defp decode_json_quoted(<<quote, rest::bytes>>, quote, buf) do
+    {IO.iodata_to_binary(buf), rest}
+  end
+
+  defp decode_json_quoted(<<?\\, c, rest::bytes>>, quote, buf) do
+    decode_json_quoted(rest, quote, [buf, unescape_json(c)])
+  end
+
+  defp decode_json_quoted(<<c, rest::bytes>>, quote, buf) do
+    decode_json_quoted(rest, quote, [buf, c])
+  end
+
+  defp decode_json_quoted(<<>>, _quote, _buf) do
+    raise ArgumentError, "unexpected end of type while decoding"
+  end
+
+  defp unescape_json(?b), do: ?\b
+  defp unescape_json(?f), do: ?\f
+  defp unescape_json(?n), do: ?\n
+  defp unescape_json(?r), do: ?\r
+  defp unescape_json(?t), do: ?\t
+  defp unescape_json(?0), do: 0
+  defp unescape_json(?a), do: ?\a
+  defp unescape_json(?v), do: ?\v
+  defp unescape_json(?e), do: 27
+  defp unescape_json(?N), do: []
+  defp unescape_json(c) when c in [?\\, ?', ?", ?`, ?/, ?=], do: c
+  # ClickHouse keeps the backslash of an unknown escape
+  defp unescape_json(c), do: [?\\, c]
+
+  # bare only if ClickHouse would parse it back as the same identifier
+  defp quote_json_path(path, position) do
+    lower = String.downcase(path)
+
+    if Regex.match?(~r/\A[A-Za-z_][A-Za-z0-9_]*\z/, path) and
+         lower not in ["null", "select", "all", "distinct", "table"] and
+         not (position == :hint and lower == "skip") do
+      path
+    else
+      [?`, escape_json(path, ?`), ?`]
+    end
+  end
+
+  defp escape_json(binary, quote_char) do
+    for <<c <- binary>>, into: "" do
+      case c do
+        ?\\ -> "\\\\"
+        ^quote_char -> <<?\\, c>>
+        ?\b -> "\\b"
+        ?\f -> "\\f"
+        ?\n -> "\\n"
+        ?\r -> "\\r"
+        ?\t -> "\\t"
+        0 -> "\\0"
+        _ -> <<c>>
+      end
+    end
+  end
+
+  defp valid_json_option?({k, n}) when k in [:max_dynamic_types, :max_dynamic_paths],
+    do: is_integer(n)
+
+  defp valid_json_option?({k, l}) when k in [:typed_paths, :skip_paths, :skip_regexps],
+    do: is_list(l)
+
+  defp valid_json_option?(_), do: false
+
+  defp normalize_json(opts) do
+    for option <- opts, not valid_json_option?(option) do
+      raise ArgumentError, "invalid JSON option #{inspect(option)}"
+    end
+
+    types = opts |> Keyword.get_values(:max_dynamic_types) |> List.last(32)
+    paths = opts |> Keyword.get_values(:max_dynamic_paths) |> List.last(1024)
+
+    opts =
+      [
+        max_dynamic_types: if(types != 32, do: types),
+        max_dynamic_paths: if(paths != 1024, do: paths),
+        typed_paths:
+          opts |> Keyword.get_values(:typed_paths) |> Enum.concat() |> Enum.sort_by(&elem(&1, 0)),
+        skip_paths:
+          opts |> Keyword.get_values(:skip_paths) |> Enum.concat() |> Enum.sort() |> Enum.dedup(),
+        skip_regexps: opts |> Keyword.get_values(:skip_regexps) |> Enum.concat() |> Enum.sort()
+      ]
+      |> Enum.reject(fn {_key, value} -> value in [nil, []] end)
+
+    if opts == [], do: :json, else: {:json, opts}
   end
 
   @doc """
@@ -643,6 +821,32 @@ defmodule Ch.Types do
 
   def encode(:datetime), do: "DateTime"
   def encode(:json), do: "JSON"
+
+  def encode({:json, opts}) do
+    case normalize_json(opts) do
+      :json ->
+        "JSON"
+
+      {:json, opts} ->
+        items =
+          Enum.flat_map(opts, fn
+            {setting, n} when setting in [:max_dynamic_types, :max_dynamic_paths] ->
+              ["#{setting}=" <> Integer.to_string(n)]
+
+            {:typed_paths, hints} ->
+              for {path, type} <- hints, do: [quote_json_path(path, :hint), ?\s, encode(type)]
+
+            {:skip_paths, paths} ->
+              for path <- paths, do: ["SKIP ", quote_json_path(path, :skip)]
+
+            {:skip_regexps, regexps} ->
+              for re <- regexps, do: ["SKIP REGEXP '", escape_json(re, ?\'), ?\']
+          end)
+
+        ["JSON(", Enum.intersperse(items, ", "), ?)]
+    end
+  end
+
   def encode({:time64, p}), do: ["Time64(", Integer.to_string(p), ?)]
   def encode({:nullable, type}), do: ["Nullable(", encode(type), ?)]
   def encode({:fixed_string, n}), do: ["FixedString(", Integer.to_string(n), ?)]
