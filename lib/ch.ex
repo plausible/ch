@@ -61,7 +61,7 @@ defmodule Ch do
 
   Includes all keys from `t:common_option/0` and `t:DBConnection.connection_option/0` plus:
 
-  * `:command` - Command tag for the query
+  * `:command` - Override the detected SQL command; use `command: :insert` for INSERT data when automatic detection is unavailable
   * `:headers` - Custom HTTP headers for the request
   * `:format` - Custom response format for the request
   * `:decode` - Whether to automatically decode the response

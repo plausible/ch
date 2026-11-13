@@ -3,7 +3,17 @@ defmodule Ch.QueryTest do
     async: true,
     parameterize: [%{query_options: []}, %{query_options: [multipart: true]}]
 
-  alias Ch.Query
+  alias Ch.{Query, RowBinary}
+
+  @insert_prefixes [
+    "Insert",
+    "\r\n\f\vInSeRt",
+    "/* trace */ INSERT",
+    "-- trace\r\ninsert",
+    "# trace\nINSERT",
+    "/* outer /* nested */ trace */\r\n-- trace\n\tInsert",
+    ["/", ["* trace *", ?/], ["\r", ?\n], ["I", [?n | "Se"]], "Rt"]
+  ]
 
   setup ctx do
     {:ok, query_options: ctx[:query_options] || []}
@@ -44,9 +54,192 @@ defmodule Ch.QueryTest do
       assert Query.build("select 1+2", command: :custom).command == :custom
     end
 
-    @tag skip: true
-    test "TODO" do
-      assert Query.build("Select 1+2").command == :select
+    test "mixed-case keywords" do
+      for {statement, command} <- [
+            {"Select 1+2", :select},
+            {"InSeRt INTO table VALUES (1)", :insert},
+            {"CrEaTe TABLE table (x UInt8) ENGINE = Memory", :create},
+            {"AlTeR TABLE table ADD COLUMN y UInt8", :alter},
+            {"DeScRiBe TABLE table", :describe},
+            {"WiTh 1 AS x SELECT x", :select}
+          ] do
+        assert Query.build(statement).command == command
+      end
+    end
+
+    test "leading SQL whitespace and comments" do
+      for prefix <- [
+            " \t\n\r\f\v",
+            "/* trace */",
+            "/* outer /* nested */ trace */",
+            "-- trace\n",
+            "-- trace\r\n",
+            "// trace\n",
+            "# trace\n",
+            "#! trace\n",
+            "\r\n/* first */\t-- second\r\n# third\n/* fourth */\f"
+          ] do
+        assert Query.build(prefix <> "Insert INTO table FORMAT RowBinary").command == :insert
+      end
+
+      assert Query.build("SELECT/* trace */ 1").command == :select
+      assert Query.build("INSERT-- trace\nINTO table FORMAT RowBinary").command == :insert
+    end
+
+    test "comments and keywords crossing iodata segments" do
+      for statement <- [
+            [[], ["In", [?s | "Er"]], "T INTO table FORMAT RowBinary"],
+            ["/", "* trace *", "/", "I", "nsert INTO table FORMAT RowBinary"],
+            ["/", ["* outer /", "* nested *", "/ trace *", ?/], "In", "sert INTO table"],
+            ["-", ["- trace", [?\r | "\n"]], [?I, ?n, ?s | "ert INTO table"]],
+            [?#, " trace\n", [?I, ?n | "sert INTO table"]],
+            [?\r, ?\n, [?/, ?* | " trace */"], ?I, ?n | "sert INTO table"]
+          ] do
+        assert Query.build(statement).command == :insert
+      end
+    end
+
+    test "keyword prefixes are not commands" do
+      for statement <- [
+            "INSERTION INTO table FORMAT RowBinary",
+            "insert_extra INTO table FORMAT RowBinary",
+            "INSERT$foo INTO table FORMAT RowBinary",
+            "SELECTED 1",
+            "select1",
+            "WITHIN something",
+            ["INSERT", "ION INTO table FORMAT RowBinary"],
+            [["select"] | "_extra 1"]
+          ] do
+        assert Query.build(statement).command == nil
+      end
+    end
+
+    test "empty and comment-only statements fail clearly" do
+      for statement <- [
+            "",
+            " \t\n\r\f\v",
+            "/* trace */",
+            "-- trace",
+            "-- trace\rINSERT INTO table FORMAT RowBinary",
+            "# trace\n",
+            "/* first */\r\n-- second\n",
+            [[], "/*", [" trace ", "*/"], "\r\n"]
+          ] do
+        assert_raise ArgumentError, ~r/SQL|statement|comment/, fn -> Query.build(statement) end
+      end
+    end
+
+    test "unterminated leading block comments fail clearly" do
+      for statement <- ["/* trace", "/* outer /* inner */", ["/", ["* trace", ?*]]] do
+        assert_raise ArgumentError, ~r/SQL|statement|comment/, fn -> Query.build(statement) end
+      end
+    end
+
+    test "explicit command overrides detection" do
+      assert Query.build("INSERTION INTO table FORMAT RowBinary", command: :insert).command ==
+               :insert
+
+      assert Query.build("/* custom SQL", command: :insert).command == :insert
+    end
+  end
+
+  describe "insert encoding" do
+    test "RowBinary retains rows with supported command prefixes", %{query_options: query_options} do
+      for prefix <- @insert_prefixes do
+        statement = [prefix, " INTO table FORMAT RowBinary"]
+        query = Query.build(statement, query_options)
+
+        assert {[], _headers, body} =
+                 DBConnection.Query.encode(query, [[123], [42]], types: ["UInt8"])
+
+        assert IO.iodata_to_binary(body) == IO.iodata_to_binary([statement, ?\n, <<123, 42>>])
+      end
+    end
+
+    test "RowBinaryWithNamesAndTypes retains the header and rows", %{query_options: query_options} do
+      names = ["x"]
+      types = ["UInt8"]
+      header = RowBinary.encode_names_and_types(names, types)
+
+      for prefix <- ["Insert", "/* trace */ INSERT", ["--", " trace\r\n", "In", "sert"]] do
+        statement = [prefix, " INTO table FORMAT RowBinaryWithNamesAndTypes"]
+        query = Query.build(statement, query_options)
+
+        assert {[], _headers, body} =
+                 DBConnection.Query.encode(query, [[123]], names: names, types: types)
+
+        assert IO.iodata_to_binary(body) == IO.iodata_to_binary([statement, ?\n, header, <<123>>])
+      end
+    end
+
+    test "raw binary, iodata and enumerable retain their payload", %{query_options: query_options} do
+      for prefix <- ["Insert", "\r\n/* trace */ INSERT", ["-- trace", "\nI", "nsert"]],
+          data <- [<<123, 42>>, [<<123>>, [42]], Stream.map([123, 42], &<<&1>>)] do
+        statement = [prefix, " INTO table FORMAT RowBinary"]
+        query = Query.build(statement, Keyword.put(query_options, :encode, false))
+        assert {[], _headers, body} = DBConnection.Query.encode(query, data, [])
+
+        body = if is_list(body), do: body, else: Enum.to_list(body)
+        assert IO.iodata_to_binary(body) == IO.iodata_to_binary([statement, ?\n, <<123, 42>>])
+      end
+    end
+
+    test "unrecognized commands with insert payloads fail with an actionable error", %{
+      query_options: query_options
+    } do
+      statement = "INSERTION INTO table FORMAT RowBinary"
+
+      for {params, build_options, encode_options} <- [
+            {[[123]], [], [types: ["UInt8"]]},
+            {[[123]], [], [names: ["x"], types: ["UInt8"]]},
+            {<<123>>, [encode: false], []},
+            {[<<123>>], [encode: false], []},
+            {Stream.map([123], &<<&1>>), [encode: false], []},
+            {{:stream, []}, [encode: false], []}
+          ] do
+        query = Query.build(statement, Keyword.merge(query_options, build_options))
+
+        assert_raise ArgumentError, ~r/command: :insert/, fn ->
+          DBConnection.Query.encode(query, params, encode_options)
+        end
+      end
+    end
+
+    test "unrecognized commands retain ordinary query parameters", %{query_options: query_options} do
+      for {params, encode, expected_params} <- [
+            {%{"value" => 123}, true, [{"param_value", "123"}]},
+            {%{"value" => 123}, false, [{"param_value", "123"}]},
+            {[123], true, [{"param_$0", "123"}]},
+            {[[123]], true, [{"param_$0", "[123]"}]}
+          ] do
+        query =
+          Query.build("CUSTOM {$0:Array(UInt8)}", Keyword.put(query_options, :encode, encode))
+
+        {url_params, _headers, body} = DBConnection.Query.encode(query, params, types: ["UInt8"])
+
+        if query.multipart do
+          assert url_params == []
+          body = IO.iodata_to_binary(body)
+          assert body =~ "CUSTOM {$0:Array(UInt8)}"
+
+          for {name, value} <- expected_params do
+            assert body =~ ~s(name="#{name}")
+            assert body =~ "\r\n\r\n#{value}\r\n"
+          end
+        else
+          assert url_params == expected_params
+          assert body == query.statement
+        end
+      end
+    end
+
+    test "explicit insert command retains rows when detection is unavailable", %{
+      query_options: query_options
+    } do
+      statement = "INSERTION INTO table FORMAT RowBinary"
+      query = Query.build(statement, Keyword.put(query_options, :command, :insert))
+      assert {[], _headers, body} = DBConnection.Query.encode(query, [[123]], types: ["UInt8"])
+      assert IO.iodata_to_binary(body) == statement <> "\n" <> <<123>>
     end
   end
 
@@ -59,6 +252,62 @@ defmodule Ch.QueryTest do
     test "iodata", %{conn: conn, query_options: query_options} do
       assert [[123]] =
                Ch.query!(conn, ["S", ?E, ["LEC" | "T"], " ", ~c"123"], [], query_options).rows
+    end
+
+    test "RowBinary inserts store rows with supported command prefixes", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      table = create_insert_table(conn, query_options)
+
+      for prefix <- @insert_prefixes do
+        Ch.query!(conn, "TRUNCATE TABLE #{table}", [], query_options)
+        statement = [prefix, " INTO #{table} FORMAT RowBinary"]
+
+        assert %Ch.Result{command: :insert} =
+                 Ch.query!(
+                   conn,
+                   statement,
+                   [[123], [42]],
+                   Keyword.put(query_options, :types, ["UInt8"])
+                 )
+
+        assert Ch.query!(conn, "SELECT x FROM #{table} ORDER BY x", [], query_options).rows ==
+                 [[42], [123]]
+      end
+    end
+
+    test "commented RowBinaryWithNamesAndTypes insert stores rows", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      table = create_insert_table(conn, query_options)
+      statement = "/* trace */\r\nInsert INTO #{table} FORMAT RowBinaryWithNamesAndTypes"
+      opts = Keyword.merge(query_options, names: ["x"], types: ["UInt8"])
+      Ch.query!(conn, statement, [[123], [42]], opts)
+
+      assert Ch.query!(conn, "SELECT x FROM #{table} ORDER BY x", [], query_options).rows ==
+               [[42], [123]]
+    end
+
+    test "raw inserts store binary, iodata and enumerable payloads", %{
+      conn: conn,
+      query_options: query_options
+    } do
+      table = create_insert_table(conn, query_options)
+      opts = Keyword.put(query_options, :encode, false)
+
+      for {prefix, data} <- [
+            {"Insert", <<123, 42>>},
+            {"\r\n/* trace */ INSERT", [<<123>>, [42]]},
+            {["-- trace\r", "\nIn", "sert"], Stream.map([123, 42], &<<&1>>)}
+          ] do
+        Ch.query!(conn, "TRUNCATE TABLE #{table}", [], query_options)
+        Ch.query!(conn, [prefix, " INTO #{table} FORMAT RowBinary"], data, opts)
+
+        assert Ch.query!(conn, "SELECT x FROM #{table} ORDER BY x", [], query_options).rows ==
+                 [[42], [123]]
+      end
     end
 
     test "decode basic types", %{conn: conn, query_options: query_options} do
@@ -661,5 +910,12 @@ defmodule Ch.QueryTest do
     assert {:ok, _} = Ch.query(pid, "SELECT 42", [], query_options)
     :timer.sleep(20)
     assert {:ok, _} = Ch.query(pid, "SELECT 42", [], query_options)
+  end
+
+  defp create_insert_table(conn, query_options) do
+    table = "query_insert_detection_#{System.unique_integer([:positive])}"
+    Ch.query!(conn, "CREATE TABLE #{table} (x UInt8) ENGINE = Memory", [], query_options)
+    on_exit(fn -> Ch.Test.query("DROP TABLE #{table}") end)
+    table
   end
 end

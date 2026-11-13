@@ -71,6 +71,8 @@ defmodule Ch.Query do
     {"UNDROP", :undrop}
   ]
 
+  @commands Map.new(statements)
+
   command_union =
     statements
     |> Enum.map(fn {_, command} -> command end)
@@ -80,26 +82,60 @@ defmodule Ch.Query do
   Atom representing the type of SQL command.
 
   Derived automatically from the start of the SQL statement (e.g., `"SELECT ..."` -> `:select`),
-  or provided explicitly via options.
+  ignoring leading SQL whitespace and comments and matching keywords case-insensitively.
+  Use `command: :insert` to explicitly identify an INSERT when automatic detection is unavailable.
   """
   @type command :: unquote(command_union)
 
-  defp extract_command(statement)
-
-  for {statement, command} <- statements do
-    defp extract_command(unquote(statement) <> _), do: unquote(command)
-    defp extract_command(unquote(String.downcase(statement)) <> _), do: unquote(command)
+  defp extract_command(statement) when is_list(statement) do
+    statement |> IO.iodata_to_binary() |> extract_command()
   end
 
-  defp extract_command(<<whitespace, rest::bytes>>) when whitespace in [?\s, ?\t, ?\n] do
-    extract_command(rest)
-  end
-
-  defp extract_command([first_segment | _] = statement) do
-    extract_command(first_segment) || extract_command(IO.iodata_to_binary(statement))
+  defp extract_command(statement) when is_binary(statement) do
+    statement = skip_prefix(statement)
+    extract_keyword(statement, statement, 0)
   end
 
   defp extract_command(_other), do: nil
+
+  defp skip_prefix(<<whitespace, rest::bytes>>) when whitespace in [9, 10, 11, 12, 13, 32] do
+    skip_prefix(rest)
+  end
+
+  defp skip_prefix("/*" <> rest), do: rest |> skip_block_comment(1) |> skip_prefix()
+
+  for prefix <- ["--", "//", "#!", "# "] do
+    defp skip_prefix(unquote(prefix) <> rest), do: rest |> skip_line_comment() |> skip_prefix()
+  end
+
+  defp skip_prefix(<<>>), do: raise(ArgumentError, "SQL statement contains no command")
+  defp skip_prefix(statement), do: statement
+
+  defp skip_line_comment(statement) do
+    case :binary.match(statement, "\n") do
+      {offset, 1} -> binary_part(statement, offset + 1, byte_size(statement) - offset - 1)
+      :nomatch -> <<>>
+    end
+  end
+
+  defp skip_block_comment("/*" <> rest, depth), do: skip_block_comment(rest, depth + 1)
+  defp skip_block_comment("*/" <> rest, 1), do: rest
+  defp skip_block_comment("*/" <> rest, depth), do: skip_block_comment(rest, depth - 1)
+  defp skip_block_comment(<<_byte, rest::bytes>>, depth), do: skip_block_comment(rest, depth)
+
+  defp skip_block_comment(<<>>, _depth) do
+    raise ArgumentError, "SQL statement has an unterminated leading block comment"
+  end
+
+  defp extract_keyword(<<byte, rest::bytes>>, statement, size)
+       when byte in ?a..?z or byte in ?A..?Z or byte in ?0..?9 or byte in [?_, ?$] do
+    extract_keyword(rest, statement, size + 1)
+  end
+
+  defp extract_keyword(_rest, statement, size) do
+    keyword = statement |> binary_part(0, size) |> String.upcase(:ascii)
+    Map.get(@commands, keyword)
+  end
 end
 
 defimpl DBConnection.Query, for: Ch.Query do
@@ -115,6 +151,10 @@ defimpl DBConnection.Query, for: Ch.Query do
   # stream: insert init
   @spec encode(Query.t(), {:stream, term}, [Ch.query_option()]) ::
           {:stream, {[{String.t(), String.t()}], Mint.Types.headers(), iodata}}
+  def encode(%Query{command: nil}, {:stream, _params}, _opts) do
+    raise_unknown_insert_command!()
+  end
+
   def encode(query, {:stream, params}, opts) do
     {:stream, encode(query, params, opts)}
   end
@@ -160,7 +200,44 @@ defimpl DBConnection.Query, for: Ch.Query do
     end
   end
 
-  def encode(%Query{multipart: true, statement: statement}, params, opts) do
+  def encode(%Query{command: nil} = query, params, opts) do
+    if insert_payload?(query, params, opts) do
+      raise_unknown_insert_command!()
+    end
+
+    encode_parameters(query, params, opts)
+  end
+
+  def encode(query, params, opts), do: encode_parameters(query, params, opts)
+
+  defp raise_unknown_insert_command! do
+    raise ArgumentError,
+          "cannot detect SQL command for insert payload; use command: :insert explicitly"
+  end
+
+  defp insert_payload?(query, params, opts) do
+    cond do
+      Keyword.get(opts, :names) ->
+        true
+
+      is_binary(params) ->
+        true
+
+      is_list(params) ->
+        params != [] and
+          (not query.encode or
+             (Keyword.has_key?(opts, :types) and is_list(hd(params)) and
+                format_row_binary?(query.statement)))
+
+      is_map(params) and not is_struct(params) ->
+        false
+
+      true ->
+        Enumerable.impl_for(params) != nil
+    end
+  end
+
+  defp encode_parameters(%Query{multipart: true, statement: statement}, params, opts) do
     types = Keyword.get(opts, :types)
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
@@ -177,7 +254,7 @@ defimpl DBConnection.Query, for: Ch.Query do
     {_no_query_params = [], headers, multipart}
   end
 
-  def encode(%Query{statement: statement}, params, opts) do
+  defp encode_parameters(%Query{statement: statement}, params, opts) do
     types = Keyword.get(opts, :types)
     default_format = if types, do: "RowBinary", else: "RowBinaryWithNamesAndTypes"
     format = Keyword.get(opts, :format) || default_format
