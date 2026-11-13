@@ -36,7 +36,7 @@ defmodule Ch.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:mint, "~> 1.8"},
+      {:mint, "~> 1.11"},
       {:db_connection, "~> 2.10.1"},
       {:jason, "~> 1.0"},
       {:decimal, "~> 3.0"},
