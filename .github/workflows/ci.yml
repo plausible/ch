@@ -11,7 +11,7 @@ on:
 jobs:
   test:
     name: "test @ elixir:${{ matrix.elixir }} otp:${{ matrix.otp }} clickhouse:${{ matrix.clickhouse }}${{ matrix.dialyzer && ' +dialyzer' || '' }}${{ matrix.lint && ' +lint' || '' }}"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     env:
       MIX_ENV: test
