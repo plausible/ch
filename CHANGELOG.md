@@ -2,8 +2,15 @@
 
 ## 0.9.3 (2026-10-15)
 
+- Check idle HTTP connections before sending queries and retry through the pool if the check fails. Stop automatically retrying queries once sending starts, preventing lost responses from silently duplicating inserts. https://github.com/plausible/ch/pull/467
+
+  - Pooled queries, including `SELECT` and `INSERT`, now return an error instead of retrying when the response times out after the query has been sent.
+  - A connection closing while sending a query or receiving its response now returns an error instead of retrying the pooled query. This includes `INSERT` statements sent via `Ch.query/4` with an Enumerable body.
+  - If an INSERT commits but its response is lost, Ch returns a connection error without repeating the completed write.
+  - Require Mint 1.11 or newer so nonblocking receive probes keep healthy connections open on timeout.
+
 - Preserve fractional seconds when Ecto casts `Time64` values; RowBinary encoding applies the declared precision. https://github.com/plausible/ch/pull/469
-- Pad small DateTime64 query parameters https://github.com/plausible/ch/issues/442
+- Pad small DateTime64 query parameters https://github.com/plausible/ch/pull/440
 
 ## 0.9.2 (2026-08-17)
 

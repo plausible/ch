@@ -91,6 +91,8 @@ defmodule Ch.Test do
     end
   end
 
+  defp verify_body(:chunked, "0\r\n\r\n"), do: true
+
   defp verify_body(:chunked, chunks) do
     String.ends_with?(chunks, "\r\n0\r\n\r\n")
   end
