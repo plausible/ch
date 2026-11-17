@@ -108,7 +108,7 @@ defmodule Ch.TypesTest do
       assert decode("JSON") == :json
       assert decode(" JSON ") == :json
 
-      assert decode("JSON(max_dynamic_types=10)") == :json
+      assert decode("JSON(max_dynamic_types=10)") == {:json, [max_dynamic_types: 10]}
 
       assert decode(" JSON ( max_dynamic_paths = 1024, max_dynamic_types = 32 ) ") == :json
 
@@ -120,13 +120,19 @@ defmodule Ch.TypesTest do
                SKIP ignored.path,
                SKIP REGEXP 'tmp_[,()]'
              )
-             """) == :json
+             """) ==
+               {:json,
+                [
+                  typed_paths: [{"payload)", {:map, :string, {:tuple, [:u8, :string]}}}],
+                  skip_paths: ["ignored.path"],
+                  skip_regexps: ["tmp_[,()]"]
+                ]}
 
       assert decode("Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))") ==
-               {:array, :json}
+               {:array, {:json, [max_dynamic_types: 16, max_dynamic_paths: 256]}}
 
       assert decode("Tuple(payload JSON(SKIP `ignored)`), id UInt8)") ==
-               {:tuple, [:json, :u8]}
+               {:tuple, [{:json, [skip_paths: ["ignored)"]]}, :u8]}
     end
 
     test "datetime" do
@@ -225,6 +231,140 @@ defmodule Ch.TypesTest do
 
       assert_raise ArgumentError, "Enum16 requires at least one mapping", fn ->
         encode({:enum16, []})
+      end
+    end
+  end
+
+  describe "JSON options" do
+    @json_cases [
+      {"JSON(max_dynamic_paths = 10, max_dynamic_types = 3)",
+       {:json, [max_dynamic_types: 3, max_dynamic_paths: 10]},
+       "JSON(max_dynamic_types=3, max_dynamic_paths=10)"},
+      {"JSON(max_dynamic_types=32)", :json, "JSON"},
+      {"JSON(b String, `a`.`b` UInt8)", {:json, [typed_paths: [{"a.b", :u8}, {"b", :string}]]},
+       "JSON(`a.b` UInt8, b String)"},
+      {"JSON(SKIP z, SKIP a.b, SKIP z)", {:json, [skip_paths: ["a.b", "z"]]},
+       "JSON(SKIP `a.b`, SKIP z)"},
+      {~S"JSON(skip regexp 'tmp_[,()]', SKIP REGEXP 'a\'b')",
+       {:json, [skip_regexps: ["a'b", "tmp_[,()]"]]},
+       ~S"JSON(SKIP REGEXP 'a\'b', SKIP REGEXP 'tmp_[,()]')"},
+      {"JSON(`select` UInt8, `from` UInt8)",
+       {:json, [typed_paths: [{"from", :u8}, {"select", :u8}]]},
+       "JSON(from UInt8, `select` UInt8)"},
+      {"JSON(`skip` UInt8, SKIP `skip`)",
+       {:json, [typed_paths: [{"skip", :u8}], skip_paths: ["skip"]]},
+       "JSON(`skip` UInt8, SKIP skip)"},
+      {"JSON(SKIP z, x UInt8, max_dynamic_types=3, SKIP REGEXP 'q', max_dynamic_paths=7, a String)",
+       {:json,
+        [
+          max_dynamic_types: 3,
+          max_dynamic_paths: 7,
+          typed_paths: [{"a", :string}, {"x", :u8}],
+          skip_paths: ["z"],
+          skip_regexps: ["q"]
+        ]},
+       "JSON(max_dynamic_types=3, max_dynamic_paths=7, a String, x UInt8, SKIP z, SKIP REGEXP 'q')"},
+      {~S"JSON(SKIP REGEXP 'a\d\.x')", {:json, [skip_regexps: [~S"a\d\.x"]]},
+       ~S"JSON(SKIP REGEXP 'a\\d\\.x')"},
+      {~S"JSON(SKIP REGEXP 'a\Nb\ec')", {:json, [skip_regexps: ["ab\ec"]]},
+       "JSON(SKIP REGEXP 'ab\ec')"},
+      {~S"JSON(`a\d` UInt8)", {:json, [typed_paths: [{~S"a\d", :u8}]]}, ~S"JSON(`a\\d` UInt8)"}
+    ]
+
+    test "decode and encode normalize to the canonical form" do
+      for {input, expected, canonical} <- @json_cases do
+        assert decode(input) == expected
+        assert IO.iodata_to_binary(encode(expected)) == canonical
+        assert decode(canonical) == expected
+      end
+    end
+
+    test "hint types are decoded types" do
+      assert decode("JSON(a DateTime64(3, 'UTC'), b Decimal(10, 2), c Array(Nullable(String)))") ==
+               {:json,
+                [
+                  typed_paths: [
+                    {"a", decode("DateTime64(3, 'UTC')")},
+                    {"b", decode("Decimal(10, 2)")},
+                    {"c", decode("Array(Nullable(String))")}
+                  ]
+                ]}
+    end
+
+    test "SHOW CREATE TABLE form" do
+      padded = "JSON(max_dynamic_types = 3, max_dynamic_paths = 10, a String,     SKIP q)"
+
+      assert decode(padded) ==
+               {:json,
+                [
+                  max_dynamic_types: 3,
+                  max_dynamic_paths: 10,
+                  typed_paths: [{"a", :string}],
+                  skip_paths: ["q"]
+                ]}
+    end
+
+    test "escapes" do
+      assert decode("JSON(SKIP REGEXP 'it''s')") == {:json, [skip_regexps: ["it's"]]}
+      assert decode("JSON(`a``b` UInt8)") == {:json, [typed_paths: [{"a`b", :u8}]]}
+
+      assert IO.iodata_to_binary(encode({:json, [typed_paths: [{"a`b", :u8}]]})) ==
+               ~S"JSON(`a\`b` UInt8)"
+    end
+
+    test "nesting" do
+      assert decode("Nullable(JSON(max_dynamic_paths=8))") ==
+               {:nullable, {:json, [max_dynamic_paths: 8]}}
+
+      assert decode("Map(String, JSON(SKIP q))") ==
+               {:map, :string, {:json, [skip_paths: ["q"]]}}
+
+      for s <- [
+            "Nullable(JSON(max_dynamic_paths=8))",
+            "Map(String, JSON(SKIP q))",
+            "Tuple(JSON(a UInt8), UInt8)",
+            "JSON(a JSON(max_dynamic_paths=3, b UInt8))",
+            "JSON(a Array(JSON(b UInt8)))"
+          ] do
+        assert decode(IO.iodata_to_binary(encode(decode(s)))) == decode(s)
+      end
+    end
+
+    test "hint named like a keyword" do
+      assert decode("JSON(skipx UInt8)") == {:json, [typed_paths: [{"skipx", :u8}]]}
+    end
+
+    test "unsupported hint types raise" do
+      assert_raise ArgumentError, ~r/failed to decode .*Nested/, fn ->
+        decode("JSON(a Nested(x UInt8))")
+      end
+
+      assert_raise ArgumentError, ~r/failed to decode .*Geometry/, fn ->
+        decode("JSON(a Geometry)")
+      end
+    end
+
+    test "errors" do
+      assert_raise ArgumentError, fn -> decode("JSON(foo=1)") end
+
+      assert_raise ArgumentError,
+                   ~s[failed to decode "JSON(a UInt8" as ClickHouse type (unexpected end of type while decoding)],
+                   fn -> decode("JSON(a UInt8") end
+
+      for input <- [
+            "JSON(SKIP REGEXP )",
+            "JSON(a UInt8, SKIP REGEXP )",
+            "JSON(max_dynamic_types=)"
+          ] do
+        assert_raise ArgumentError, ~r/failed to decode/, fn -> decode(input) end
+      end
+    end
+
+    test "json/1" do
+      assert Ch.Types.json([]) == :json
+
+      for opts <- [[:foo], [max_dynamic_types: "x"], [skip_paths: "a"], [skip_paths: :x, a: 1]] do
+        assert_raise ArgumentError, ~r/invalid JSON option/, fn -> Ch.Types.json(opts) end
       end
     end
   end

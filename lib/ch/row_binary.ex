@@ -107,6 +107,8 @@ defmodule Ch.RowBinary do
             ],
        do: t
 
+  defp encoding_type({:json, _opts} = t), do: t
+
   defp encoding_type({:datetime = d, tz}) when is_binary(tz), do: {d, tz}
 
   defp encoding_type({:fixed_string, _len} = t), do: t
@@ -187,6 +189,8 @@ defmodule Ch.RowBinary do
       nil -> 0
     end
   end
+
+  def encode({:json, _opts}, json), do: encode(:json, json)
 
   def encode(:json, json) do
     # assuming it can be sent as text and not "native" binary JSON
@@ -762,6 +766,8 @@ defmodule Ch.RowBinary do
   defp decoding_type(t) when is_binary(t) do
     decoding_type(Ch.Types.decode(t))
   end
+
+  defp decoding_type({:json, _opts}), do: :json
 
   defp decoding_type(t)
        when t in [

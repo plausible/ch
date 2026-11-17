@@ -530,6 +530,25 @@ defmodule Ch.RowBinaryTest do
     end
   end
 
+  describe "JSON with options" do
+    test "encoding_types/1 keeps options" do
+      assert Ch.RowBinary.encoding_types([{:json, [max_dynamic_paths: 5]}]) ==
+               [{:json, [max_dynamic_paths: 5]}]
+    end
+
+    test "encode_names_and_types/2" do
+      assert IO.iodata_to_binary(
+               Ch.RowBinary.encode_names_and_types(["j"], [{:json, [max_dynamic_paths: 5]}])
+             ) ==
+               <<1, 1, ?j, byte_size("JSON(max_dynamic_paths=5)"), "JSON(max_dynamic_paths=5)">>
+    end
+
+    test "encode_rows/2 matches plain JSON" do
+      assert Ch.RowBinary.encode_rows([[%{"a" => 1}]], [{:json, [max_dynamic_paths: 5]}]) ==
+               Ch.RowBinary.encode_rows([[%{"a" => 1}]], [:json])
+    end
+  end
+
   # TODO maybe use stream_data?
   describe "invalid arguments" do
     # https://github.com/plausible/ch/issues/166
