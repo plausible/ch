@@ -347,14 +347,37 @@ defmodule Ch.Connection do
     end
   end
 
+  defp get_disconnect_mode(
+         %HTTP{
+           scheme_as_string: "https",
+           private: %{settings: settings}
+         } = _conn
+       )
+       when is_list(settings) do
+    if {:cancel_http_readonly_queries_on_client_close, 1} in settings and
+         ({:readonly, 1} in settings or {:readonly, 2} in settings) do
+      :ungraceful
+    else
+      :graceful
+    end
+  end
+
+  defp get_disconnect_mode(_conn), do: :graceful
+
   @impl true
   def disconnect(error, {conn, _reader}) do
     disconnect(error, conn)
   end
 
   def disconnect(_error, conn) do
-    {:ok = ok, _conn} = HTTP.close(conn)
-    ok
+    case get_disconnect_mode(conn) do
+      :ungraceful ->
+        :ok
+
+      :graceful ->
+        {:ok, _conn} = HTTP.close(conn)
+        :ok
+    end
   end
 
   @typep response :: Mint.Types.status() | Mint.Types.headers() | binary
