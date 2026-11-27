@@ -34,7 +34,7 @@ defmodule Ch.DynamicTest do
 
     # Nothing 0x00
     assert select.("[]::Array(Nothing)") == [[], "Array(Nothing)"]
-    # assert insert.([]) == []
+    assert insert.([]) == []
 
     # UInt8 0x01
     assert select.("0::UInt8") == [0, "UInt8"]

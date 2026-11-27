@@ -508,6 +508,23 @@ defmodule Ch.RowBinaryTest do
       assert decode_rows(<<1, 2>>, [:u8, :u8]) == [[1, 2]]
     end
 
+    test "Dynamic empty array includes the array length byte" do
+      encoded = encode_rows([[[]]], ["Dynamic"]) |> IO.iodata_to_binary()
+      assert encoded == <<0x1E, 0x00, 0x00>>
+      assert decode_rows(encoded, ["Dynamic"]) == [[[]]]
+    end
+
+    test "Dynamic empty array before another column does not consume its bytes" do
+      encoded = encode_rows([[[], "x"]], ["Dynamic", "String"]) |> IO.iodata_to_binary()
+      assert decode_rows(encoded, ["Dynamic", "String"]) == [[[], "x"]]
+    end
+
+    test "Dynamic truncated two-byte empty array payload reports incomplete data" do
+      assert_raise ArgumentError, ~r/incomplete RowBinary data/, fn ->
+        decode_rows(<<0x1E, 0x00>>, ["Dynamic"])
+      end
+    end
+
     test "rejects invalid Variant type indexes" do
       assert_raise ArgumentError, "invalid Variant type index: 2", fn ->
         decode_rows(<<2>>, ["Variant(String, UInt32)"])
@@ -994,7 +1011,9 @@ defmodule Ch.RowBinaryTest do
 
       rows = [
         ["hello", 1],
-        [3.14, Date.utc_today()]
+        [3.14, Date.utc_today()],
+        [[], "hello"],
+        [[], []]
       ]
 
       assert rows |> encode_rows(types) |> byte_by_byte(types) == rows

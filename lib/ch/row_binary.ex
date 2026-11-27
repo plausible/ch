@@ -475,7 +475,7 @@ defmodule Ch.RowBinary do
       _ when is_float(value) -> [0x0E | encode(:f64, value)]
       %Date{} -> [0x0F | encode(:date, value)]
       %NaiveDateTime{} -> [0x11 | encode(:datetime, value)]
-      [] -> [0x1E, 0x00]
+      [] -> [0x1E, 0x00, 0]
     end
   end
 
